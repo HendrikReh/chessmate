@@ -45,3 +45,10 @@
 - Schedule schema changes during off-peak hours; place API in maintenance mode (return 503 with message).
 - Re-embed runs: throttle to protect OpenAI quota; monitor queue depth.
 - Upgrade process: update `docker-compose.yml` image tags, apply migrations, run smoke tests (`dune exec chessmate -- query "test run"`).
+
+## CI/CD Operations
+- Workflow file: `.github/workflows/ci.yml` executes on pushes to `main`, feature branches, and all PRs.
+- Runner: `ubuntu-latest` with OCaml 5.1.0 via `ocaml/setup-ocaml@v2` (caching disabled for portability).
+- Job sequence: dependency install → `dune build` → `dune test`.
+- Alerting: configure GitHub notification settings so failures page the on-call engineer; optionally mirror to ChatOps via GitHub webhooks.
+- Maintenance: update the workflow when OCaml/dune versions change; verify new versions by running the action on a feature branch before merging.

@@ -48,3 +48,10 @@ DUNE_PROFILE=release dune exec chessmate -- query "describe queenside majority" 
 - Tests failing due to missing services: ensure Docker containers are up and `.env` variables loaded.
 - Embedding calls rate-limited: temporarily mock `Embedding_client` with fixtures; record cassettes once VCR-like tests exist.
 - Qdrant schema errors: re-run migrations or wipe `data/qdrant` if using disposable dev data.
+
+## Continuous Integration
+- Every push and pull request triggers GitHub Actions workflow [`ci.yml`](../.github/workflows/ci.yml).
+- Pipeline steps: checkout, OCaml 5.1 setup, dependency install, `dune build`, `dune test`.
+- No remote caching configured; run times reflect full builds.
+- View results under the GitHub Actions tab. Always ensure your branch is green before requesting review.
+- Optional local dry-run: install [`act`](https://github.com/nektos/act) and execute `HOME=$PWD act -j build-and-test -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --container-architecture linux/amd64`. Some GitHub services (cache, secrets) are unavailable locally, so expect differences.

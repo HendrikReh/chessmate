@@ -40,3 +40,8 @@
 - Do write small, composable functions and favour explicit types.
 - Don’t commit secrets or `.env` files; rely on environment variables or secret managers.
 - Don’t merge failing pipelines or bypass code review.
+
+## Continuous Integration Expectations
+- GitHub Actions must be green before merge; enable required status checks on `main`.
+- Include CI badge in PR descriptions if the pipeline fails, along with a summary of the root cause and remediation plan.
+- Re-run workflows via the Actions tab after rebases or flaky failures; document flakes in an issue for follow-up.
