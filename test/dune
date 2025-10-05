@@ -1,3 +1,5 @@
 (test
  (name test_chessmate)
- (libraries chessmate alcotest))
+ (libraries chessmate alcotest stdio)
+ (deps
+  (file ../data/games/sample_game.pgn)))

@@ -24,6 +24,7 @@
 - Compile and run tests locally: `dune build && dune test`.
 - Integration tests (requires Docker): `docker-compose up -d` then `dune test --force`. Shut down with `docker-compose down`.
 - Use `WATCH=1 dune runtest` for rapid iteration on a specific suite.
+- Test output tips: Dune captures stdout by default; to stream logs live (e.g., parsed PGN dumps) run `dune test --no-buffer`. Add `--force` if the test target is already built.
 
 ## Development CLI Usage
 ```
@@ -60,3 +61,4 @@ DUNE_PROFILE=release dune exec chessmate -- query "describe queenside majority" 
 - No remote caching configured; run times reflect full builds.
 - View results under the GitHub Actions tab. Always ensure your branch is green before requesting review.
 - Optional local dry-run: install [`act`](https://github.com/nektos/act) and execute `HOME=$PWD act -j build-and-test -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --container-architecture linux/amd64`. Some GitHub services (cache, secrets) are unavailable locally, so expect differences.
+- Test output tips: Dune captures stdout by default; to stream test logs live (e.g., parsed PGN dumps) run `dune test --no-buffer`. Use `--force` once when the target is already up to date.
