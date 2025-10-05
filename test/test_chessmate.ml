@@ -1,6 +1,7 @@
 open! Base
 open Stdio
 open Alcotest
+open Chessmate
 
 let sample_pgn = {|
 [Event "Test Event"]
@@ -14,7 +15,7 @@ let sample_pgn = {|
 |}
 
 let test_parse_success () =
-  match Chessmate.Pgn_parser.parse sample_pgn with
+  match Pgn_parser.parse sample_pgn with
   | Error err -> failf "unexpected parse failure: %s" (Error.to_string_hum err)
   | Ok parsed ->
       let headers = parsed.headers in
@@ -33,14 +34,14 @@ let test_parse_success () =
 
 let test_parse_invalid () =
   let invalid = "[Event \"Test\"]\n\n*" in
-  match Chessmate.Pgn_parser.parse invalid with
+  match Pgn_parser.parse invalid with
   | Ok _ -> fail "expected parse failure"
   | Error _ -> ()
 
 let test_parse_sample_file () =
   let source_root = Stdlib.Sys.getenv_opt "DUNE_SOURCEROOT" |> Option.value ~default:"." in
   let filename = Stdlib.Filename.concat source_root "data/games/sample_game.pgn" in
-  match In_channel.read_all filename |> Chessmate.Pgn_parser.parse with
+  match In_channel.read_all filename |> Pgn_parser.parse with
   | Error err -> failf "failed to parse sample PGN: %s" (Error.to_string_hum err)
   | Ok parsed ->
       printf "Parsed headers:\n";
@@ -56,10 +57,32 @@ let test_parse_sample_file () =
       let white = List.Assoc.find parsed.headers ~equal:String.equal "White" in
       check (option string) "white player" (Some "Alpha") white
 
+let test_metadata_from_headers () =
+  let headers =
+    [ "Event", "Championship";
+      "Site", "Paris";
+      "Date", "2024.??.12";
+      "Round", "3";
+      "White", "Carlsen";
+      "Black", "Nepomniachtchi";
+      "WhiteElo", "2855";
+      "Result", "1-0";
+      "ECO", "B33" ]
+  in
+  let meta = Game_metadata.of_headers headers in
+  check (option string) "event" (Some "Championship") meta.event;
+  check (option string) "site" (Some "Paris") meta.site;
+  check (option string) "date" (Some "2024-01-12") meta.date;
+  check (option string) "eco" (Some "B33") meta.eco_code;
+  check string "white name" "Carlsen" meta.white.name;
+  check (option int) "white rating" (Some 2855) meta.white.rating;
+  check string "black name" "Nepomniachtchi" meta.black.name
+
 let suite =
   [ "parse success", `Quick, test_parse_success;
     "parse invalid", `Quick, test_parse_invalid;
-    "parse sample file", `Quick, test_parse_sample_file
+    "parse sample file", `Quick, test_parse_sample_file;
+    "metadata extraction", `Quick, test_metadata_from_headers
   ]
 
 let () =

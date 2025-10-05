@@ -1,0 +1,4 @@
+(executable
+ (name embedding_worker)
+ (public_name embedding_worker)
+ (libraries chessmate base stdio unix))

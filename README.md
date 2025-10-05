@@ -15,7 +15,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 - **Hybrid search:** combine OpenAI FEN embeddings with keyword filters for precise tactics or opening questions.
 - **Structured metadata:** Postgres schema stores games, players, positions, and annotations with ECO tags and ratings.
 - **CLI-first UX:** `chessmate ingest` for PGN ingestion, `chessmate query` to explore positions via natural language.
-- **Extensible architecture:** modular OCaml library (core/storage/embedding/query) ready for HTTP services and workers.
+- **Extensible architecture:** modular OCaml library (core/storage/embedding/query) plus an embedding worker scaffold for background vector sync.
 
 ## Getting Started
 1. Clone and enter the repository.
@@ -33,10 +33,11 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    dune build
    dune test
    ```
-5. Try the CLI stubs:
+5. Try the CLI stubs and worker loop:
    ```sh
    dune exec chessmate -- ingest fixtures/sample.pgn
    dune exec chessmate -- query "Find games with a queenside majority attack"
+   OPENAI_API_KEY=dummy DATABASE_URL=postgres://... dune exec embedding_worker
    ```
 
 ## Repository Structure
@@ -44,6 +45,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 lib/            # Core OCaml libraries (core, storage, embedding, query, cli)
 bin/            # CLI entry points
 scripts/        # Database migrations (`migrate.sh`, `migrations/`, seeds)
+services/       # Long-running services (e.g., embedding_worker)
 docs/           # Architecture, developer, ops, and planning docs
 test/           # Alcotest suites
 data/           # Bind-mounted volumes for Postgres and Qdrant
