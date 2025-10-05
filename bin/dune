@@ -1,0 +1,4 @@
+(executable
+ (public_name chessmate)
+ (name main)
+ (libraries chessmate))
