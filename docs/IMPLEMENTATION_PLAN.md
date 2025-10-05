@@ -185,3 +185,4 @@ services:
 
 ## Progress Log
 - Milestone 1 (Repository Scaffolding): baseline directory structure, stub modules with interfaces, and Alcotest smoke test added. `dune build` / `dune test` succeeding locally.
+- Milestone 2 (Ingestion Foundations): added PostgreSQL migration/seed scripts (`scripts/migrate.sh`, `scripts/migrations/`), replaced PGN parser with real header/move extraction, and wired `chessmate ingest` to parse PGNs.

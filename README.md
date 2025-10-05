@@ -43,7 +43,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 ```
 lib/            # Core OCaml libraries (core, storage, embedding, query, cli)
 bin/            # CLI entry points
-scripts/        # Migration utilities (placeholder)
+scripts/        # Database migrations (`migrate.sh`, `migrations/`, seeds)
 docs/           # Architecture, developer, ops, and planning docs
 test/           # Alcotest suites
 data/           # Bind-mounted volumes for Postgres and Qdrant

@@ -14,6 +14,11 @@
 - `data/`: Host-mounted volumes for Postgres (`data/postgres`) and Qdrant (`data/qdrant`).
 - `scripts/`: Database migrations, developer utilities.
 
+## Database Setup
+- Export `DATABASE_URL` (e.g., `postgres://chessmate:password@localhost:5432/chessmate`).
+- Run migrations: `./scripts/migrate.sh` (executes files in `scripts/migrations/`).
+- Optionally seed sample data for smoke tests: `psql "$DATABASE_URL" -f scripts/seed_sample_games.sql`.
+
 ## Build & Test Workflow
 - Format before commits: `dune fmt`.
 - Compile and run tests locally: `dune build && dune test`.

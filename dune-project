@@ -22,6 +22,7 @@
  (depends
   ocaml
   base
+  stdio
   (alcotest :with-test))
  (tags
   ("chess" "ocaml" "vector-search" "postgres" "qdrant")))
