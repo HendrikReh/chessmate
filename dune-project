@@ -5,25 +5,25 @@
 (generate_opam_files true)
 
 (source
- (github username/reponame))
+ (github HendrikReh/chessmate))
 
-(authors "Author Name <author@example.com>")
+(authors "Hendrik Reh <blacksmith-consulting.ai>")
 
-(maintainers "Maintainer Name <maintainer@example.com>")
+(maintainers "Hendrik Reh <blacksmith-consulting.ai>")
 
 (license LICENSE)
 
-(documentation https://url/to/documentation)
+(documentation https://github.com/HendrikReh/chessmate)
 
 (package
  (name chessmate)
  (synopsis "A short synopsis")
- (description "A longer description")
+ (description "Hybrid chess tutor combining Postgres metadata with Qdrant vector search and OCaml-powered ingestion/query services.")
  (depends
   ocaml
   base
   (alcotest :with-test))
  (tags
-  ("add topics" "to describe" your project)))
+  ("chess" "ocaml" "vector-search" "postgres" "qdrant")))
 
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/reference/dune-project/index.html
