@@ -9,7 +9,13 @@ let run path =
     match Pgn_parser.parse contents with
     | Error err -> Or_error.errorf "Failed to parse PGN: %s" (Error.to_string_hum err)
     | Ok parsed ->
-        let header_count = List.length parsed.headers in
-        let move_count = List.length parsed.moves in
-        printf "Parsed PGN with %d headers and %d moves\n" header_count move_count;
-        Or_error.return ()
+        let metadata = Game_metadata.of_headers parsed.headers in
+        Cli_common.with_db_url (fun url ->
+            match Repo_postgres.create url with
+            | Error err -> Error err
+            | Ok repo ->
+                (match Repo_postgres.insert_game repo ~metadata ~pgn:contents ~moves:parsed.moves with
+                | Ok (game_id, position_count) ->
+                    printf "Stored game %d with %d positions\n" game_id position_count;
+                    Or_error.return ()
+                | Error err -> Error err))

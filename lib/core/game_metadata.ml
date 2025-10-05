@@ -30,3 +30,51 @@ let empty =
     eco_code = None;
     result = None;
   }
+
+let find_header headers key = List.Assoc.find headers ~equal:String.equal key
+
+let parse_int_opt value =
+  Option.bind value ~f:(fun s -> Int.of_string_opt (String.strip s))
+
+let normalize_date value =
+  match value with
+  | None -> None
+  | Some raw ->
+      let trimmed = String.strip raw in
+      if String.is_empty trimmed then None
+      else
+        match String.split trimmed ~on:'.' with
+        | [yyyy; mm; dd] ->
+            if String.exists yyyy ~f:(Char.equal '?') then None
+            else
+              let fix part default_value =
+                if String.exists part ~f:(Char.equal '?') then default_value else part
+              in
+              let mm = fix mm "01" in
+              let dd = fix dd "01" in
+              Some (String.concat ~sep:"-" [ yyyy; mm; dd ])
+        | _ -> Some trimmed
+
+let sanitize_string value =
+  match value with
+  | None -> None
+  | Some s ->
+      let trimmed = String.strip s in
+      if String.is_empty trimmed then None else Some trimmed
+
+let player_from_headers headers color_key elo_key fide_key =
+  let name = Option.value (sanitize_string (find_header headers color_key)) ~default:"" in
+  let rating = parse_int_opt (find_header headers elo_key) in
+  let fide_id = sanitize_string (find_header headers fide_key) in
+  { name; rating; fide_id }
+
+let of_headers headers =
+  let event = sanitize_string (find_header headers "Event") in
+  let site = sanitize_string (find_header headers "Site") in
+  let date = normalize_date (find_header headers "Date") in
+  let round = sanitize_string (find_header headers "Round") in
+  let eco_code = sanitize_string (find_header headers "ECO") in
+  let result = sanitize_string (find_header headers "Result") in
+  let white = player_from_headers headers "White" "WhiteElo" "WhiteFideId" in
+  let black = player_from_headers headers "Black" "BlackElo" "BlackFideId" in
+  { event; site; date; round; white; black; eco_code; result }

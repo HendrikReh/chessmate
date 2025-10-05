@@ -19,3 +19,4 @@ type t = {
 
 val empty_player : player
 val empty : t
+val of_headers : (string * string) list -> t
