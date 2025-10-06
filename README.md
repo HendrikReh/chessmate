@@ -50,8 +50,8 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 6. Explore the available tooling:
    ```sh
    # Start the prototype query API (Opium server)
-   dune exec chessmate_api -- --port 8080
-
+   dune exec -- chessmate-api --port 8080
+   
    # In another shell, call the API via the CLI (set CHESSMATE_API_URL if you changed the port)
    CHESSMATE_API_URL=http://localhost:8080 dune exec chessmate -- query "Find King's Indian games where White is 2500 and Black 100 points lower"
 
@@ -194,6 +194,7 @@ Need a clean slate? Stop the containers (`docker compose down`), wipe the volume
 - [Architecture Overview](docs/ARCHITECTURE.md)
 - [Developer Handbook](docs/DEVELOPER.md)
 - [Operations Playbook](docs/OPERATIONS.md)
+- [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
 - [Collaboration Guidelines](docs/GUIDELINES.md)
 
 ## Contributing
