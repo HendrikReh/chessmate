@@ -27,5 +27,32 @@ type t = {
 
 val default : t
 
-val build_payload_filters : Query_intent.plan -> Query_intent.metadata_filter list
 val scoring_weights : t -> vector:float -> keyword:float -> float
+
+val build_payload_filters : Query_intent.plan -> Yojson.Safe.t list option
+(** Convert a query plan into Qdrant payload filter clauses. *)
+
+val query_vector : Query_intent.plan -> float list
+(** Deterministically derive a query embedding from the analysed intent. *)
+
+type vector_hit = {
+  game_id : int;
+  score : float;
+  phases : string list;
+  themes : string list;
+  keywords : string list;
+}
+
+val vector_hits_of_points : Repo_qdrant.scored_point list -> vector_hit list
+(** Parse Qdrant scored points into typed vector hits. *)
+
+val index_hits_by_game : vector_hit list -> vector_hit Map.M(Int).t
+(** Group vector hits by referenced game id. *)
+
+val normalize_vector_score : float -> float
+(** Normalise raw Qdrant scores into the 0.0–1.0 range. *)
+
+val merge_keywords : string list -> string list -> string list
+val merge_phases : string list -> string list -> string list
+val merge_themes : string list -> string list -> string list
+(** Deduplicate and merge metadata coming from SQL and Qdrant sources. *)

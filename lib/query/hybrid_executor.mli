@@ -18,26 +18,28 @@
 
 open! Base
 
-(** Wrapper around Qdrant HTTP API. *)
+(** Execute hybrid search by combining Postgres metadata with Qdrant vector hits. *)
 
-type point = {
-  id : string;
-  vector : float list;
-  payload : Yojson.Safe.t;
+type result = {
+  summary : Repo_postgres.game_summary;
+  total_score : float;
+  vector_score : float;
+  keyword_score : float;
+  phases : string list;
+  themes : string list;
+  keywords : string list;
 }
 
-type scored_point = {
-  id : string;
-  score : float;
-  payload : Yojson.Safe.t option;
+(** The outcome of executing a hybrid plan. *)
+type execution = {
+  plan : Query_intent.plan;
+  results : result list;
+  warnings : string list;
 }
 
-val upsert_points : point list -> unit Or_error.t
-(** Upsert a batch of points into the configured collection. *)
-
-val vector_search :
-  vector:float list ->
-  filters:Yojson.Safe.t list option ->
-  limit:int ->
-  scored_point list Or_error.t
-(** Perform a vector search returning scored points with payloads. *)
+val execute :
+  fetch_games:(Query_intent.plan -> Repo_postgres.game_summary list Or_error.t) ->
+  fetch_vector_hits:(Query_intent.plan -> Hybrid_planner.vector_hit list Or_error.t) ->
+  Query_intent.plan ->
+  execution Or_error.t
+(** Run a hybrid query using the supplied data providers. *)

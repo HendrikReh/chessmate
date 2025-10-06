@@ -29,6 +29,13 @@ type t = {
   moves : move list;
 }
 
+type partial_game = {
+  lines : string list;
+  have_moves : bool;
+}
+
+let default_valid_results = [ "1-0"; "0-1"; "1/2-1/2"; "*" ]
+
 let find_header headers key = List.Assoc.find headers ~equal:String.equal key
 
 let tag_value t key = find_header t.headers key
@@ -188,3 +195,64 @@ let parse_file path =
   Or_error.bind
     (Or_error.try_with (fun () -> Stdio.In_channel.read_all path))
     ~f:parse
+
+let fold_games ?on_error raw ~init ~f =
+  let handle_error =
+    match on_error with
+    | None -> fun _state ~index ~raw:_ err ->
+        Or_error.tag (Error err) ~tag:(Printf.sprintf "PGN game #%d" index)
+    | Some handler -> handler
+  in
+  let lines = String.split_lines raw in
+  let empty : partial_game = { lines = []; have_moves = false } in
+  let finalise collector state count =
+    match collector.lines with
+    | [] -> Or_error.return (state, count)
+    | lines ->
+        let raw_game = lines |> List.rev |> String.concat ~sep:"\n" |> String.strip in
+        if String.is_empty raw_game then Or_error.return (state, count)
+        else
+          let next_index = count + 1 in
+          match parse raw_game with
+          | Ok parsed ->
+              f state ~index:next_index ~raw:raw_game parsed
+              |> Or_error.map ~f:(fun state' -> state', next_index)
+          | Error err ->
+              handle_error state ~index:next_index ~raw:raw_game err
+              |> Or_error.map ~f:(fun state' -> state', next_index)
+  in
+  let rec step remaining collector state count =
+    match remaining with
+    | [] ->
+        finalise collector state count |> Or_error.map ~f:fst
+    | line :: rest ->
+        let trimmed = String.strip line in
+        let is_header = String.is_prefix trimmed ~prefix:"[" in
+        let is_event = String.is_prefix trimmed ~prefix:"[Event" in
+        let has_move_token = not is_header && not (String.is_empty trimmed) in
+        let should_start_new_game =
+          is_event && collector.have_moves && not (List.is_empty collector.lines)
+        in
+        if should_start_new_game then
+          finalise collector state count
+          |> Or_error.bind ~f:(fun (state', next_index) ->
+                 let next_collector : partial_game = { lines = [ line ]; have_moves = false } in
+                 step rest next_collector state' next_index)
+        else
+          let next_collector : partial_game =
+            { lines = line :: collector.lines
+            ; have_moves = collector.have_moves || has_move_token }
+          in
+          step rest next_collector state count
+  in
+  step lines empty init 0
+
+let parse_games raw =
+  fold_games raw ~init:[] ~f:(fun acc ~index:_ ~raw:_ game ->
+      Or_error.return (game :: acc))
+  |> Or_error.map ~f:List.rev
+
+let parse_file_games path =
+  Or_error.bind
+    (Or_error.try_with (fun () -> Stdio.In_channel.read_all path))
+    ~f:parse_games

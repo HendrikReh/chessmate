@@ -20,6 +20,9 @@ open! Base
 
 (** PGN parsing and normalization utilities. *)
 
+val default_valid_results : string list
+(** Valid tokens permitted in the [Result] tag. *)
+
 type move = {
   san : string;
   turn : int;
@@ -37,6 +40,24 @@ val parse : string -> t Or_error.t
 
 val parse_file : string -> t Or_error.t
 (** [parse_file path] reads [path] and delegates to [parse]. *)
+
+val fold_games :
+  ?on_error:('a -> index:int -> raw:string -> Error.t -> 'a Or_error.t) ->
+  string ->
+  init:'a ->
+  f:('a -> index:int -> raw:string -> t -> 'a Or_error.t) ->
+  'a Or_error.t
+(** Iterate through every game contained in a PGN blob without loading the entire
+    result set eagerly. The folding function receives the 1-based [index], the
+    original [raw] PGN text for that game, and the parsed representation. When
+    [on_error] is supplied, parsing failures are reported to the handler and
+    iteration continues; otherwise parsing failures abort the fold. *)
+
+val parse_games : string -> t list Or_error.t
+(** [parse_games raw_pgn] parses all games contained in [raw_pgn]. *)
+
+val parse_file_games : string -> t list Or_error.t
+(** [parse_file_games path] reads [path] and delegates to [parse_games]. *)
 
 val ply_count : t -> int
 val white_name : t -> string option
