@@ -18,7 +18,7 @@
 
 open! Base
 
-(** CLI entry point for PGN ingestion. *)
-
+(** Ingest a PGN file into the configured Postgres instance. *)
 val run : string -> unit Or_error.t
-(** [run path] ingests the PGN located at [path]. Stub for now. *)
+(** [run path] reads the PGN at [path], parses it, and persists metadata/
+    positions using [DATABASE_URL]. Prints a summary on success. *)

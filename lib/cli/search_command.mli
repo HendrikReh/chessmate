@@ -18,6 +18,8 @@
 
 open! Base
 
-(** CLI entry point for querying the tutor. *)
+(** CLI entry point for querying the `/query` HTTP API (backed by the prototype planning pipeline). *)
 
 val run : string -> unit Or_error.t
+(** [run question] posts [question] to the query API resolved by
+    [CHESSMATE_API_URL] and prints the formatted response. *)

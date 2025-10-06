@@ -19,6 +19,7 @@
 open! Base
 open Stdio
 
+(* Writes each FEN on its own line to the provided channel. *)
 let write_fens channel fens =
   List.iter fens ~f:(fun fen -> Out_channel.output_string channel fen; Out_channel.newline channel)
 

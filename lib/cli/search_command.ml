@@ -19,6 +19,8 @@
 open! Base
 
 let build_uri () =
+  (* CLI users configure CHESSMATE_API_URL; default is http://localhost:8080. We strip
+     trailing slashes so we can safely append /query. *)
   let base = Cli_common.api_base_url () in
   let normalised = String.rstrip base ~drop:(Char.equal '/') in
   Uri.of_string (normalised ^ "/query")
@@ -119,6 +121,7 @@ let run query =
   if String.is_empty (String.strip query) then Or_error.error_string "query cannot be empty"
   else
     let uri = build_uri () in
+    (* Run the Lwt promise to completion; capture the HTTP status and response body. *)
     match Lwt_main.run (perform_request uri (request_body query)) with
     | status, body ->
         Result.map (parse_response status body) ~f:(fun output ->
