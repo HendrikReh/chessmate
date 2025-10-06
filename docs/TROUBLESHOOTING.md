@@ -30,7 +30,13 @@ This guide collects the most common hiccups we have seen while working on Chessm
 - **Symptom:** `/query` responses contain only warnings such as `Vector search unavailable (...).`
   - **Fix:** Ensure `QDRANT_URL` points to a reachable instance. When Qdrant is down the API falls back to SQL results and adds warnings.
 - **Symptom:** Ingest jobs stall because embeddings never arrive.
-  - **Fix:** Confirm the embedding worker is running (`dune exec embedding_worker`). Check `OPENAI_API_KEY`/endpoint settings and review worker logs for rate-limit messages.
+  - **Fix:** Confirm the embedding worker is running (`dune exec chessmate -- embedding-worker`). Check `OPENAI_API_KEY`/endpoint settings and review worker logs for rate-limit messages.
+- **Symptom:** Worker runs, but `/query` still shows warnings about missing vectors.
+  - **Fix:** Verify embeddings are flowing end to end:
+    1. Queue depth: `psql postgres://chess:chess@localhost:5433/chessmate -c "SELECT status, COUNT(*) FROM embedding_jobs GROUP BY status;"` — `pending` should drop while `completed` rises.
+    2. Postgres vector IDs: `psql postgres://chess:chess@localhost:5433/chessmate -c "SELECT COUNT(*) FROM positions WHERE vector_id IS NOT NULL;"` — reports how many positions have received vector identifiers. A zero result means the embedding worker has not written any vectors back yet.
+    3. Qdrant collection: `curl "$QDRANT_URL/collections/positions/points/count"` — expect a positive count.
+    If any of these stay at zero, the worker likely can’t reach Qdrant/OpenAI; inspect worker logs for the failing job IDs and underlying errors.
 
 ## CLI Tips
 - Always export `DATABASE_URL` before running ingest/query commands.
