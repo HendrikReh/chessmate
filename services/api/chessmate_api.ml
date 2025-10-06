@@ -1,6 +1,6 @@
 (*  Chessmate - Hybrid chess tutor combining Postgres metadata with Qdrant
     vector search
-    Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
+Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -22,126 +22,76 @@ open Opium.Std
 
 module Result = struct
   type t = {
-    id : int;
-    white : string;
-    black : string;
-    result : string;
-    year : int;
-    event : string;
-    eco : string option;
-    opening : string;
+    summary : Repo_postgres.game_summary;
+    total_score : float;
+    vector_score : float;
+    keyword_score : float;
     phases : string list;
     themes : string list;
     keywords : string list;
-    white_elo : int option;
-    black_elo : int option;
-    synopsis : string;
   }
 
-  let to_json t ~score ~vector_score ~keyword_score =
-    let rating_fields =
-      List.filter_map
-        [ Option.map t.white_elo ~f:(fun value -> "white_elo", `Int value)
-        ; Option.map t.black_elo ~f:(fun value -> "black_elo", `Int value) ]
-        ~f:Fn.id
-    in
-    let eco_field = Option.map t.eco ~f:(fun code -> "eco", `String code) in
+  let synopsis summary =
+    let event = Option.value summary.Repo_postgres.event ~default:"Unspecified event" in
+    let result = Option.value summary.Repo_postgres.result ~default:"*" in
+    Printf.sprintf "%s vs %s — %s (%s)"
+      summary.Repo_postgres.white
+      summary.Repo_postgres.black
+      event
+      result
+
+  let year summary =
+    match summary.Repo_postgres.played_on with
+    | Some date when String.length date >= 4 -> (
+        match Int.of_string_opt (String.prefix date 4) with
+        | Some year -> year
+        | None -> 0 )
+    | _ -> 0
+
+  let opening_slug summary =
+    Option.value summary.Repo_postgres.opening_slug ~default:"unknown_opening"
+
+  let opening_name summary =
+    match summary.Repo_postgres.opening_name, summary.Repo_postgres.opening_slug with
+    | Some name, _ -> name
+    | None, Some slug ->
+        slug
+        |> String.split ~on:'_'
+        |> List.map ~f:String.capitalize
+        |> String.concat ~sep:" "
+    | None, None -> "Unknown opening"
+
+  let to_json t =
+    let summary = t.summary in
     `Assoc
-      ( [ "game_id", `Int t.id
-        ; "white", `String t.white
-        ; "black", `String t.black
-        ; "result", `String t.result
-        ; "year", `Int t.year
-        ; "event", `String t.event
-        ; "opening", `String t.opening
-        ; "phases", `List (List.map t.phases ~f:(fun phase -> `String phase))
-        ; "themes", `List (List.map t.themes ~f:(fun theme -> `String theme))
-        ; "keywords", `List (List.map t.keywords ~f:(fun keyword -> `String keyword))
-        ; "score", `Float score
-        ; "vector_score", `Float vector_score
-        ; "keyword_score", `Float keyword_score
-        ; "synopsis", `String t.synopsis ]
-      @ rating_fields
-      @ Option.to_list eco_field )
+      [ "game_id", `Int summary.Repo_postgres.id
+      ; "white", `String summary.Repo_postgres.white
+      ; "black", `String summary.Repo_postgres.black
+      ; "result", `String (Option.value summary.Repo_postgres.result ~default:"*")
+      ; "year", `Int (year summary)
+      ; "event", `String (Option.value summary.Repo_postgres.event ~default:"Unspecified event")
+      ; "opening_slug", `String (opening_slug summary)
+      ; "opening_name", `String (opening_name summary)
+      ; "eco"
+        , Option.value_map summary.Repo_postgres.eco_code ~default:`Null ~f:(fun eco -> `String eco)
+      ; "phases", `List (List.map t.phases ~f:(fun phase -> `String phase))
+      ; "themes", `List (List.map t.themes ~f:(fun theme -> `String theme))
+      ; "keywords", `List (List.map t.keywords ~f:(fun kw -> `String kw))
+      ; "white_elo"
+        , Option.value_map summary.Repo_postgres.white_rating ~default:`Null ~f:(fun value -> `Int value)
+      ; "black_elo"
+        , Option.value_map summary.Repo_postgres.black_rating ~default:`Null ~f:(fun value -> `Int value)
+      ; "synopsis", `String (synopsis summary)
+      ; "score", `Float t.total_score
+      ; "vector_score", `Float t.vector_score
+      ; "keyword_score", `Float t.keyword_score ]
 end
 
-let dataset : Result.t list =
-  [ { id = 1
-    ; white = "Garry Kasparov"
-    ; black = "Anatoly Karpov"
-    ; result = "1-0"
-    ; year = 1985
-    ; event = "Tilburg"
-    ; eco = Some "E69"
-    ; opening = "kings_indian_defense"
-    ; phases = [ "middlegame" ]
-    ; themes = [ "king_attack"; "tactics" ]
-    ; keywords = [ "indian"; "attack"; "sacrifice"; "kings" ]
-    ; white_elo = Some 2710
-    ; black_elo = Some 2610
-    ; synopsis =
-        "Kasparov sacrifices on h6 to crack Karpov's King's Indian fortress and converts the attack." }
-  ; { id = 2
-    ; white = "Viswanathan Anand"
-    ; black = "Vladimir Kramnik"
-    ; result = "0-1"
-    ; year = 2008
-    ; event = "World Championship"
-    ; eco = Some "B12"
-    ; opening = "caro_kann"
-    ; phases = [ "middlegame" ]
-    ; themes = [ "strategy"; "minority_attack" ]
-    ; keywords = [ "caro"; "kann"; "minority"; "queenside" ]
-    ; white_elo = Some 2780
-    ; black_elo = Some 2781
-    ; synopsis =
-        "Kramnik neutralises Anand's initiative in the Caro-Kann and wins a technical rook endgame." }
-  ; { id = 3
-    ; white = "Judith Polgar"
-    ; black = "Alexei Shirov"
-    ; result = "1/2-1/2"
-    ; year = 1997
-    ; event = "Linares"
-    ; eco = Some "C18"
-    ; opening = "french_defense"
-    ; phases = [ "endgame" ]
-    ; themes = [ "queenside_majority"; "endgame" ]
-    ; keywords = [ "french"; "endgame"; "draw"; "queenside" ]
-    ; white_elo = Some 2710
-    ; black_elo = Some 2725
-    ; synopsis =
-        "Polgar steers the French Tarrasch into a long endgame where a queenside majority holds the draw." }
-  ; { id = 4
-    ; white = "Magnus Carlsen"
-    ; black = "Fabiano Caruana"
-    ; result = "1-0"
-    ; year = 2019
-    ; event = "Wijk aan Zee"
-    ; eco = Some "B90"
-    ; opening = "sicilian_defense"
-    ; phases = [ "middlegame"; "endgame" ]
-    ; themes = [ "tactics"; "endgame" ]
-    ; keywords = [ "sicilian"; "attack"; "endgame"; "carlsen" ]
-    ; white_elo = Some 2835
-    ; black_elo = Some 2820
-    ; synopsis =
-        "Carlsen out-calculates Caruana in a rich Sicilian Najdorf and converts a bishop pair endgame." }
-  ; { id = 5
-    ; white = "Hou Yifan"
-    ; black = "Anna Muzychuk"
-    ; result = "1-0"
-    ; year = 2014
-    ; event = "Women's Grand Prix"
-    ; eco = Some "D37"
-    ; opening = "queens_gambit"
-    ; phases = [ "middlegame" ]
-    ; themes = [ "positional"; "queenside_majority" ]
-    ; keywords = [ "queens"; "gambit"; "positional"; "queenside" ]
-    ; white_elo = Some 2630
-    ; black_elo = Some 2550
-    ; synopsis =
-        "Hou Yifan presses a small edge in the Queen's Gambit and creates a winning queenside majority." }
-  ]
+let postgres_repo : Repo_postgres.t Or_error.t Lazy.t =
+  lazy
+    (match Stdlib.Sys.getenv_opt "DATABASE_URL" with
+    | Some url when not (String.is_empty (String.strip url)) -> Repo_postgres.create url
+    | _ -> Or_error.error_string "DATABASE_URL environment variable is required for chessmate-api")
 
 let plan_to_json (plan : Query_intent.plan) =
   `Assoc
@@ -162,15 +112,46 @@ let plan_to_json (plan : Query_intent.plan) =
             , Option.value_map plan.rating.max_rating_delta ~default:`Null ~f:(fun v -> `Int v) ]
     ]
 
-let filter_matches result (filter : Query_intent.metadata_filter) =
-  match filter.Query_intent.field with
-  | "opening" -> String.equal result.Result.opening filter.value
-  | "theme" -> List.mem result.themes filter.value ~equal:String.equal
-  | "phase" -> List.mem result.phases filter.value ~equal:String.equal
-  | "result" -> String.equal result.Result.result filter.value
+let phases_from_plan plan =
+  plan.Query_intent.filters
+  |> List.filter_map ~f:(fun filter ->
+         if String.equal filter.Query_intent.field "phase" then Some filter.Query_intent.value else None)
+  |> List.dedup_and_sort ~compare:String.compare
+
+let themes_from_plan plan =
+  plan.Query_intent.filters
+  |> List.filter_map ~f:(fun filter ->
+         if String.equal filter.Query_intent.field "theme" then Some filter.Query_intent.value else None)
+  |> List.dedup_and_sort ~compare:String.compare
+
+let eco_filter value =
+  let value = String.uppercase (String.strip value) in
+  match String.split value ~on:'-' with
+  | [ start_code; end_code ] when not (String.is_empty start_code) && not (String.is_empty end_code) ->
+      `Range (start_code, end_code)
+  | _ -> `Exact value
+
+let eco_matches eco_value filter_value =
+  match eco_value with
+  | None -> false
+  | Some eco -> (
+      match eco_filter filter_value with
+      | `Exact single -> String.equal (String.uppercase eco) single
+      | `Range (start_code, end_code) ->
+          let eco = String.uppercase eco in
+          String.(eco >= start_code && eco <= end_code))
+
+let opening_slug summary = Result.opening_slug summary
+
+let filter_matches summary (filter : Query_intent.metadata_filter) =
+  match String.lowercase filter.Query_intent.field with
+  | "opening" -> String.equal (opening_slug summary) (String.lowercase filter.Query_intent.value)
+  | "result" ->
+      String.equal (Option.value summary.Repo_postgres.result ~default:"*") filter.Query_intent.value
+  | "eco_range" -> eco_matches summary.Repo_postgres.eco_code filter.Query_intent.value
   | _ -> true
 
-let rating_matches result rating =
+let rating_matches summary rating =
   let meets threshold value_opt =
     match threshold, value_opt with
     | None, _ -> true
@@ -178,55 +159,77 @@ let rating_matches result rating =
     | Some _, None -> false
   in
   let meets_delta =
-    match rating.Query_intent.max_rating_delta, result.Result.white_elo, result.Result.black_elo with
+    match rating.Query_intent.max_rating_delta,
+          summary.Repo_postgres.white_rating,
+          summary.Repo_postgres.black_rating with
     | None, _, _ -> true
-    | Some max_delta, Some w, Some b -> Int.abs (w - b) <= max_delta
+    | Some delta, Some white, Some black -> Int.abs (white - black) <= delta
     | Some _, _, _ -> false
   in
-  meets rating.Query_intent.white_min result.Result.white_elo
-  && meets rating.Query_intent.black_min result.Result.black_elo
+  meets rating.Query_intent.white_min summary.Repo_postgres.white_rating
+  && meets rating.Query_intent.black_min summary.Repo_postgres.black_rating
   && meets_delta
 
-let keyword_overlap plan result =
-  let entry_keywords = Set.of_list (module String) result.Result.keywords in
-  let matches = List.count plan.Query_intent.keywords ~f:(fun keyword -> Set.mem entry_keywords keyword) in
+let tokenize text =
+  text
+  |> String.lowercase
+  |> String.map ~f:(fun ch -> if Char.is_alphanum ch then ch else ' ')
+  |> String.split ~on:' '
+  |> List.filter ~f:(fun token -> String.length token >= 3)
+
+let summary_keywords summary =
+  let sources =
+    [ Some summary.Repo_postgres.white
+    ; Some summary.Repo_postgres.black
+    ; summary.Repo_postgres.event
+    ; summary.Repo_postgres.opening_name
+    ; summary.Repo_postgres.opening_slug ]
+  in
+  sources
+  |> List.filter_map ~f:Fn.id
+  |> List.concat_map ~f:tokenize
+  |> List.dedup_and_sort ~compare:String.compare
+
+let keyword_overlap plan summary =
+  let summary_tokens = Set.of_list (module String) (summary_keywords summary) in
+  let matches = List.count plan.Query_intent.keywords ~f:(fun kw -> Set.mem summary_tokens kw) in
   let total = Int.max 1 (List.length plan.Query_intent.keywords) in
   Float.of_int matches /. Float.of_int total
 
-let vector_score plan result =
-  if List.is_empty plan.Query_intent.filters then 0.6
+let vector_score plan summary =
+  if not (rating_matches summary plan.Query_intent.rating) then 0.0
+  else if List.is_empty plan.Query_intent.filters then 0.6
   else
     let matched =
-      List.count plan.Query_intent.filters ~f:(fun filter -> filter_matches result filter)
+      List.count plan.Query_intent.filters ~f:(fun filter -> filter_matches summary filter)
     in
     0.4 +. (0.6 *. Float.of_int matched /. Float.of_int (List.length plan.Query_intent.filters))
 
-let score_result plan result =
-  let vector = Float.min 1.0 (vector_score plan result) in
-  let keyword = keyword_overlap plan result in
+let score_result plan summary =
+  let vector = Float.min 1.0 (vector_score plan summary) in
+  let keyword = keyword_overlap plan summary in
   let combined = Hybrid_planner.scoring_weights Hybrid_planner.default ~vector ~keyword in
   (combined, vector, keyword)
 
-let apply_plan plan =
-  dataset
-  |> List.filter ~f:(fun result ->
-         List.for_all plan.Query_intent.filters ~f:(filter_matches result)
-         && rating_matches result plan.Query_intent.rating)
-  |> List.map ~f:(fun result ->
-         let total, vector, keyword = score_result plan result in
-         (result, total, vector, keyword))
-  |> List.sort ~compare:(fun (_, a_score, _, _) (_, b_score, _, _) -> Float.compare b_score a_score)
-  |> fun results -> List.take results plan.Query_intent.limit
+let combined_keywords plan summary =
+  List.dedup_and_sort
+    ~compare:String.compare
+    (plan.Query_intent.keywords @ summary_keywords summary)
 
-let summarize_results results =
-  let references =
-    List.map results ~f:(fun (result, score, _, _) ->
-        { Result_formatter.game_id = result.Result.id
-        ; white = result.Result.white
-        ; black = result.Result.black
-        ; score })
-  in
-  Result_formatter.summarize references
+let build_result plan summary phases themes =
+  let total_score, vector_score, keyword_score = score_result plan summary in
+  { Result.summary
+  ; total_score
+  ; vector_score
+  ; keyword_score
+  ; phases
+  ; themes
+  ; keywords = combined_keywords plan summary }
+
+let fetch_games plan =
+  match Lazy.force postgres_repo with
+  | Error err -> Error err
+  | Ok repo -> Repo_postgres.search_games repo ~filters:plan.Query_intent.filters ~rating:plan.rating ~limit:plan.limit
 
 let respond_plain_text ?(status = `OK) text =
   let headers = Cohttp.Header.init_with "Content-Type" "text/plain; charset=utf-8" in
@@ -236,7 +239,7 @@ let respond_json ?(status = `OK) json =
   let headers = Cohttp.Header.init_with "Content-Type" "application/json" in
   App.respond' ~code:status ~headers (`String (Yojson.Safe.to_string json))
 
-let health_handler _req = respond_plain_text ~status:`OK "ok"
+let health_handler _req = respond_plain_text "ok"
 
 let extract_question req =
   let open Lwt.Syntax in
@@ -244,9 +247,7 @@ let extract_question req =
   | `GET -> Lwt.return (Uri.get_query_param (Request.uri req) "q")
   | `POST ->
       let* body = App.string_of_body_exn req in
-      let json_opt =
-        try Some (Yojson.Safe.from_string body) with Yojson.Json_error _ -> None
-      in
+      let json_opt = try Some (Yojson.Safe.from_string body) with Yojson.Json_error _ -> None in
       Lwt.return
         (Option.bind json_opt ~f:(fun json ->
              Yojson.Safe.Util.(json |> member "question" |> to_string_option)))
@@ -256,26 +257,41 @@ let query_handler req =
   let open Lwt.Syntax in
   let* question_opt = extract_question req in
   match Option.bind question_opt ~f:(fun q -> if String.is_empty (String.strip q) then None else Some q) with
-  | None ->
-      let payload = `Assoc [ "error", `String "question parameter missing" ] in
-      respond_json ~status:`Bad_request payload
+  | None -> respond_json ~status:`Bad_request (`Assoc [ "error", `String "question parameter missing" ])
   | Some question ->
       let plan = Query_intent.analyse { Query_intent.text = question } in
-      let matches = apply_plan plan in
-      let summary = summarize_results matches in
-      let results_json =
-        `List
-          (List.map matches ~f:(fun (result, score, vector, keyword) ->
-               Result.to_json result ~score ~vector_score:vector ~keyword_score:keyword))
-      in
-      let payload =
-        `Assoc
-          [ "question", `String question
-          ; "plan", plan_to_json plan
-          ; "summary", `String summary
-          ; "results", results_json ]
-      in
-      respond_json payload
+      (match fetch_games plan with
+      | Error err ->
+          respond_json ~status:`Internal_server_error
+            (`Assoc [ "error", `String (Error.to_string_hum err) ])
+      | Ok summaries ->
+          let phases = phases_from_plan plan in
+          let themes = themes_from_plan plan in
+          let results = summaries |> List.map ~f:(fun summary -> build_result plan summary phases themes) in
+          let sorted =
+            List.sort results ~compare:(fun a b -> Float.compare b.total_score a.total_score)
+          in
+          let limited = List.take sorted plan.limit in
+          let references =
+            List.map limited ~f:(fun result ->
+                { Result_formatter.game_id = result.summary.Repo_postgres.id
+                ; white = result.summary.Repo_postgres.white
+                ; black = result.summary.Repo_postgres.black
+                ; score = result.total_score })
+          in
+          let summary_text =
+            if List.is_empty limited then "No games matched the requested filters."
+            else Result_formatter.summarize references
+          in
+          let results_json = List.map limited ~f:Result.to_json in
+          let payload =
+            `Assoc
+              [ "question", `String question
+              ; "plan", plan_to_json plan
+              ; "summary", `String summary_text
+              ; "results", `List results_json ]
+          in
+          respond_json payload)
 
 let routes =
   App.empty
@@ -283,11 +299,10 @@ let routes =
   |> App.get "/query" query_handler
   |> App.post "/query" query_handler
 
-let determine_port () =
-  match Stdlib.Sys.getenv_opt "CHESSMATE_API_PORT" with
-  | Some value -> (match Int.of_string_opt value with Some port when port > 0 -> port | _ -> 8080)
-  | None -> 8080
-
 let () =
-  let port = determine_port () in
-  routes |> App.port port |> App.run_command
+  let port =
+    match Stdlib.Sys.getenv_opt "CHESSMATE_API_PORT" with
+    | Some value -> (match Int.of_string_opt value with Some port when port > 0 -> port | _ -> 8080)
+    | None -> 8080
+  in
+  App.run_command (routes |> App.port port)

@@ -12,7 +12,7 @@
 | 2 – Data ingestion foundations | ✅ complete | Real PGN parser, migrations, `chessmate ingest` wired to Postgres.
 | 3 – Embedding pipeline | ✅ complete | Jobs persisted, embedding worker loops, vector IDs recorded.
 | 4 – Hybrid query prototype | ✅ complete | Intent heuristics, `/query` API, CLI integration, ECO catalogue.
-| 5 – Evaluation & observability | 🚧 pending | Harness, metrics, CI hardening.
+| 5 – Evaluation & observability | 🚧 pending | Harness, metrics, CI hardening, containerized services.
 
 ## Architecture Overview
 ```mermaid
@@ -136,7 +136,7 @@ Future work: Planner hits live Postgres/Qdrant for hybrid scoring.
 
 ### Milestone 5 – Evaluation & Observability (🚧)
 **Objective:** Validate answer quality, prepare for production.
-- Tasks: build evaluation harness, integrate live Postgres/Qdrant planner, instrument metrics, containerize API/worker, add CI integration suite.
+- Tasks: integrate live Postgres + Qdrant planner, build evaluation harness with curated NL queries, instrument API/worker with metrics & `/metrics`, containerize API/worker, add CI integration suite that spins up the stack and runs smoke queries.
 - Checkpoints: evaluation report with thresholds; Prometheus metrics exposed; integration tests hit live stack; container images published.
 
 ## Progress Log
@@ -144,4 +144,4 @@ Future work: Planner hits live Postgres/Qdrant for hybrid scoring.
 - **Milestone 2:** PGN parser, migrations/seed scripts, `chessmate ingest` populates Postgres.
 - **Milestone 3:** embedding jobs persisted, worker loops embedding FENs via OpenAI, vector IDs stored; `chessmate fen` diagnostic command added.
 - **Milestone 4:** heuristic query planner, `/query` API prototype, CLI integration, ECO catalogue (`lib/chess/openings`), opening metadata persisted (`opening_name/opening_slug`).
-- **Next:** wire planner to live Postgres/Qdrant, evaluation harness, observability tooling.
+- **Next:** wire planner to live Postgres/Qdrant (replace curated dataset in `/query`), build evaluation harness + metrics, containerize API/worker and extend CI with integration tests.

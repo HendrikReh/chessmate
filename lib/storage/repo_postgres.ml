@@ -25,6 +25,35 @@ let ( let+ ) t f = Or_error.map t ~f
 module Job = Embedding_job
 module Metadata = Game_metadata
 
+type game_summary = {
+  id : int;
+  white : string;
+  black : string;
+  result : string option;
+  event : string option;
+  opening_slug : string option;
+  opening_name : string option;
+  eco_code : string option;
+  white_rating : int option;
+  black_rating : int option;
+  played_on : string option;
+}
+
+let option_of_string s =
+  let trimmed = String.strip s in
+  if String.is_empty trimmed then None else Some trimmed
+
+let int_option_of_string s = Option.bind (option_of_string s) ~f:Int.of_string_opt
+
+let normalize_eco_code s = String.uppercase (String.strip s)
+
+let eco_filter value =
+  let value = normalize_eco_code value in
+  match String.split value ~on:'-' with
+  | [ start_code; end_code ] when not (String.is_empty start_code) && not (String.is_empty end_code) ->
+      `Range (start_code, end_code)
+  | _ -> `Exact value
+
 (* Connection string wrapper delegating to the local [psql] client. *)
 type t = { conninfo : string }
 
@@ -197,6 +226,83 @@ let insert_game (repo : t) ~metadata ~pgn ~moves =
   let* game_id = insert_single_row repo sql in
   let+ inserted = insert_positions repo game_id moves 0 in
   (game_id, inserted)
+
+let parse_game_row line =
+  match String.split line ~on:'\t' with
+  | [ id_str
+    ; white
+    ; black
+    ; result
+    ; event
+    ; opening_slug
+    ; opening_name
+    ; eco_code
+    ; white_rating
+    ; black_rating
+    ; played_on ] ->
+      (match Int.of_string_opt id_str with
+      | None -> Or_error.errorf "Invalid game id: %s" id_str
+      | Some id ->
+          Or_error.return
+            { id
+            ; white = if String.is_empty white then "Unknown" else white
+            ; black = if String.is_empty black then "Unknown" else black
+            ; result = option_of_string result
+            ; event = option_of_string event
+            ; opening_slug = option_of_string opening_slug
+            ; opening_name = option_of_string opening_name
+            ; eco_code = option_of_string eco_code
+            ; white_rating = int_option_of_string white_rating
+            ; black_rating = int_option_of_string black_rating
+            ; played_on = option_of_string played_on
+            })
+  | _ -> Or_error.errorf "Unexpected game row: %s" line
+
+let build_conditions ~filters ~rating =
+  let conditions = ref [] in
+  List.iter filters ~f:(fun (filter : Query_intent.metadata_filter) ->
+      match String.lowercase filter.field with
+      | "opening" -> conditions := Printf.sprintf "g.opening_slug = %s" (sql_string filter.value) :: !conditions
+      | "result" -> conditions := Printf.sprintf "g.result = %s" (sql_string filter.value) :: !conditions
+      | "eco_range" ->
+          (match eco_filter filter.value with
+          | `Range (start_code, end_code) ->
+              conditions :=
+                Printf.sprintf "g.eco_code >= %s AND g.eco_code <= %s" (sql_string start_code) (sql_string end_code)
+                :: !conditions
+          | `Exact single -> conditions := Printf.sprintf "g.eco_code = %s" (sql_string single) :: !conditions)
+      | _ -> ());
+  (match rating.Query_intent.white_min with
+  | Some min -> conditions := Printf.sprintf "g.white_rating >= %d" min :: !conditions
+  | None -> ());
+  (match rating.Query_intent.black_min with
+  | Some min -> conditions := Printf.sprintf "g.black_rating >= %d" min :: !conditions
+  | None -> ());
+  (match rating.Query_intent.max_rating_delta with
+  | Some delta ->
+      conditions :=
+        Printf.sprintf
+          "g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL AND ABS(g.white_rating - g.black_rating) <= %d"
+          delta
+        :: !conditions
+  | None -> ());
+  !conditions
+
+let search_games repo ~filters ~rating ~limit =
+  let limit = Int.max 1 limit in
+  let conditions = build_conditions ~filters ~rating in
+  let where_clause =
+    if List.is_empty conditions then ""
+    else "WHERE " ^ String.concat ~sep:" AND " (List.rev conditions)
+  in
+  let sql =
+    Printf.sprintf
+      "SELECT g.id,\n              COALESCE(w.name, ''),\n              COALESCE(b.name, ''),\n              COALESCE(g.result, ''),\n              COALESCE(g.event, ''),\n              COALESCE(g.opening_slug, ''),\n              COALESCE(g.opening_name, ''),\n              COALESCE(g.eco_code, ''),\n              COALESCE(CAST(g.white_rating AS TEXT), ''),\n              COALESCE(CAST(g.black_rating AS TEXT), ''),\n              COALESCE(CAST(g.played_on AS TEXT), '')\n       FROM games g\n       LEFT JOIN players w ON g.white_player_id = w.id\n       LEFT JOIN players b ON g.black_player_id = b.id\n       %s\n       ORDER BY g.played_on DESC NULLS LAST, g.id DESC\n       LIMIT %d;"
+      where_clause
+      limit
+  in
+  let* rows = run_psql repo sql in
+  rows |> List.map ~f:parse_game_row |> Or_error.all
 
 let parse_job_row line =
   let parts = String.split ~on:'\t' line in

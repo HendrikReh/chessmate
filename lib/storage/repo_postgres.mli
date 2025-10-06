@@ -31,8 +31,28 @@ val insert_game :
   pgn:string ->
   moves:Pgn_parser.move list ->
   (int * int) Or_error.t
-(** Persist a parsed game and its moves. Returns [(game_id, inserted_positions)].
-    Currently a stub until the PostgreSQL driver is integrated. *)
+(** Persist a parsed game and its moves. Returns [(game_id, inserted_positions)]. *)
+
+type game_summary = {
+  id : int;
+  white : string;
+  black : string;
+  result : string option;
+  event : string option;
+  opening_slug : string option;
+  opening_name : string option;
+  eco_code : string option;
+  white_rating : int option;
+  black_rating : int option;
+  played_on : string option;
+}
+
+val search_games :
+  t ->
+  filters:Query_intent.metadata_filter list ->
+  rating:Query_intent.rating_filter ->
+  limit:int ->
+  game_summary list Or_error.t
 
 val fetch_pending_jobs : t -> limit:int -> Embedding_job.t list Or_error.t
 val mark_job_started : t -> job_id:int -> unit Or_error.t
