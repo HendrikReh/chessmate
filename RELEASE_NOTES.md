@@ -1,23 +1,19 @@
 # Release Notes
 
-## 0.3.0 – Milestone 3 (Embedding Pipeline & PGN → FEN)
-- Added `lib/chess/pgn_to_fen.ml/.mli`, a standalone engine that parses SAN, maintains board state (castling, en-passant, half/full-move counters) and produces FEN after every half-move.
-- Introduced the `pgn_to_fen` CLI (`dune exec pgn_to_fen -- <input.pgn> [output]`) for quick diagnostics and tooling.
-- Moved PGN/core helpers (`pgn_parser`, `game_metadata`, `fen`, `position_features`) into `lib/chess/` so all chess-specific logic lives together.
-- Wired `Repo_postgres` to the local `psql` client so embedding jobs transition through pending → started → completed/failure states, and extended the `embedding_worker` executable to exercise those hooks end to end.
-- Extended tests and fixtures to cover per-ply FEN sequences and new helper functions; updated docs/README with tooling guidance.
-- Re-licensed the project under GPL v3, updated metadata, and added notice headers to all sources.
+## 0.4.0 – Hybrid Query Prototype
+- Enhanced `Query_intent` heuristics: opening detection via ECO catalogue, rating/keyword extraction, configurable result limits, and Alcotest coverage.
+- Added `lib/chess/openings` (ECO → canonical names/slugs) and persisted `opening_name/opening_slug` through ingestion/migrations.
+- Delivered prototype `/query` API (`services/api/chessmate_api.ml`) with curated responses, plus CLI integration (`chessmate query`) configurable via `CHESSMATE_API_URL`.
+- Expanded docs (`README`, architecture, operations, developer handbook) with setup guides, API/CLI examples, and mermaid diagrams.
+- Updated dependencies (`lwt`, `opium`, `cohttp-lwt-unix`, `uri`), runbook updates, and added migration `0002_add_opening_columns.sql`.
 
-## 0.2.0 – Milestone 2 (Data Ingestion Foundations)
-- Introduced PostgreSQL migration and seed scripts (`scripts/migrate.sh`, `scripts/migrations/0001_init.sql`, `scripts/seed_sample_games.sql`) to stand up the relational schema locally.
-- Implemented real PGN parsing in `lib/chess/pgn_parser.ml`, handling headers, stripping comments, and extracting SAN moves with ply/turn metadata.
-- Expanded Alcotest coverage including disk-backed sample PGN, plus console dumps for debugging.
-- Wired `chessmate ingest` to parse PGN files and report counts, laying groundwork for database persistence.
+## 0.3.0 – Embedding Pipeline & PGN → FEN
+- Introduced `lib/chess/pgn_to_fen` and CLI, moved chess logic into `lib/chess`, and wired `Repo_postgres`/`embedding_worker` for job lifecycle.
+- Extended tests/fixtures for FEN generation; documents refreshed for tooling guidance.
+- Re-licensed under GPL v3 with notice headers across sources.
 
-## 0.1.0 – Milestone 1 (Scaffold)
-- Scaffolded OCaml library structure with `chess`, `storage`, `embedding`, `query`, and `cli` namespaces; every module ships with `.mli` interfaces and `open! Base` defaults.
-- Added placeholder implementations for PGN parsing, FEN helpers, storage adapters, embedding client, query planner, and CLI commands, each returning `Or_error` stubs for now.
-- Established Alcotest baseline suite (`test/test_chessmate.ml`) to guard the current parser stub behaviour; wired tests through `dune`.
-- Created documentation set: implementation plan, architecture overview, developer handbook, operations playbook, and collaboration guidelines.
-- Introduced Docker Compose sketch and data directory layout, ensuring Postgres/Qdrant volumes mount under `data/`.
-- Refreshed README with project summary, badges, setup steps, and links to key docs; updated opam metadata to point at the `HendrikReh/chessmate` repository.
+## 0.2.0 – Data Ingestion Foundations
+- Added migrations/seed scripts, real PGN parser, `chessmate ingest` CLI, and supporting tests/logging.
+
+## 0.1.0 – Scaffolding
+- Baseline OCaml project structure, CLI stubs, documentation set, Docker Compose sketch.

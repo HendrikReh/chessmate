@@ -34,6 +34,8 @@ type t = {
   white : player;
   black : player;
   eco_code : string option;
+  opening_name : string option;
+  opening_slug : string option;
   result : string option;
 }
 
@@ -46,6 +48,8 @@ let empty =
     white = empty_player;
     black = empty_player;
     eco_code = None;
+    opening_name = None;
+    opening_slug = None;
     result = None;
   }
 
@@ -92,7 +96,20 @@ let of_headers headers =
   let date = normalize_date (find_header headers "Date") in
   let round = sanitize_string (find_header headers "Round") in
   let eco_code = sanitize_string (find_header headers "ECO") in
+  let opening_header = sanitize_string (find_header headers "Opening") in
+  let canonical_from_eco = Option.bind eco_code ~f:Openings.canonical_name_of_eco in
+  let opening_name =
+    match opening_header, canonical_from_eco with
+    | Some name, _ -> Some name
+    | None, Some canonical -> Some canonical
+    | None, None -> None
+  in
+  let opening_slug =
+    match opening_name with
+    | Some name -> Some (Openings.slugify name)
+    | None -> Option.bind eco_code ~f:Openings.slug_of_eco
+  in
   let result = sanitize_string (find_header headers "Result") in
   let white = player_from_headers headers "White" "WhiteElo" "WhiteFideId" in
   let black = player_from_headers headers "Black" "BlackElo" "BlackFideId" in
-  { event; site; date; round; white; black; eco_code; result }
+  { event; site; date; round; white; black; eco_code; opening_name; opening_slug; result }

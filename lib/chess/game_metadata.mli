@@ -32,6 +32,8 @@ type t = {
   white : player;
   black : player;
   eco_code : string option;
+  opening_name : string option;
+  opening_slug : string option;
   result : string option;
 }
 

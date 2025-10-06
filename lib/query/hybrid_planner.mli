@@ -27,5 +27,5 @@ type t = {
 
 val default : t
 
-val build_payload_filters : Query_intent.plan -> (string * string) list
+val build_payload_filters : Query_intent.plan -> Query_intent.metadata_filter list
 val scoring_weights : t -> vector:float -> keyword:float -> float

@@ -179,7 +179,7 @@ let insert_game (repo : t) ~metadata ~pgn ~moves =
   let* black_id = upsert_player repo metadata.Metadata.black in
   let sql =
     Printf.sprintf
-      "INSERT INTO games\n       (white_player_id, black_player_id, event, site, round, played_on, eco_code, result, white_rating, black_rating, pgn)\n       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id;"
+      "INSERT INTO games\n       (white_player_id, black_player_id, event, site, round, played_on, eco_code, opening_name, opening_slug, result, white_rating, black_rating, pgn)\n       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id;"
       (sql_int_opt white_id)
       (sql_int_opt black_id)
       (sql_string_opt metadata.event)
@@ -187,6 +187,8 @@ let insert_game (repo : t) ~metadata ~pgn ~moves =
       (sql_string_opt metadata.round)
       (sql_string_opt metadata.date)
       (sql_string_opt metadata.eco_code)
+      (sql_string_opt metadata.opening_name)
+      (sql_string_opt metadata.opening_slug)
       (sql_string_opt metadata.result)
       (sql_int_opt metadata.white.rating)
       (sql_int_opt metadata.black.rating)

@@ -19,6 +19,11 @@
 open! Base
 
 let with_db_url f =
-  match Sys.getenv "DATABASE_URL" with
+  match Stdlib.Sys.getenv_opt "DATABASE_URL" with
   | None -> Or_error.error_string "DATABASE_URL not set"
   | Some url -> f url
+
+let api_base_url () =
+  match Stdlib.Sys.getenv_opt "CHESSMATE_API_URL" with
+  | Some value when not (String.is_empty (String.strip value)) -> value
+  | _ -> "http://localhost:8080"

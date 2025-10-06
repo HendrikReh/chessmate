@@ -18,10 +18,22 @@
 
 open! Base
 
-(** Shared helpers for command-line entry points. *)
+(** Canonical opening metadata backed by ECO ranges. *)
 
-val with_db_url : (string -> 'a Or_error.t) -> 'a Or_error.t
-(** Fetch [DATABASE_URL] from the environment using [Stdlib.Sys.getenv_opt] and apply the provided function. *)
+type entry
 
-val api_base_url : unit -> string
-(** Resolve the query API base URL from [CHESSMATE_API_URL] or default to [http://localhost:8080]. *)
+val all : entry list
+(** Entire opening catalogue. *)
+
+val canonical_name_of_eco : string -> string option
+(** [canonical_name_of_eco eco] resolves [eco] (e.g. "E60") to a canonical opening
+    name if the ECO code is covered by the catalogue. *)
+
+val slug_of_eco : string -> string option
+(** Slug (lowercase, underscore) for the [eco] family. *)
+
+val slugify : string -> string
+(** Slugify an opening name for storage/filtering. *)
+
+val filters_for_text : string -> (string * string) list
+(** Build metadata filters for the given lowercased, punctuation-stripped text. *)

@@ -1,60 +1,73 @@
 # Operations Playbook
 
 ## Service Topology
-- `postgres`: stores canonical PGNs, metadata, and job queues. Bound to `data/postgres` for persistence.
-- `qdrant`: vector store for FEN embeddings, exposed on 6333/6334. Uses `data/qdrant` volume.
-- `chessmate-api`: HTTP service handling NL queries, hybrid planning, and response rendering.
-- `embedding-worker`: background OCaml worker ingesting FEN jobs, calling OpenAI, and syncing Qdrant + Postgres.
-- `redis` (optional): queue backend if Postgres LISTEN/NOTIFY is insufficient.
+- **postgres**: canonical PGN/metadata store, embedding job queue. Volume: `data/postgres`.
+- **qdrant**: vector store for FEN embeddings, exposed on 6333/6334. Volume: `data/qdrant`.
+- **chessmate-api**: Opium HTTP service (prototype) for `/query`.
+- **embedding-worker**: OCaml worker polling `embedding_jobs`, calling OpenAI, updating Qdrant/Postgres.
+- **(optional) redis/others**: future queue/cache components once required.
 
-## Deployment
-1. Copy `.env.example` → `.env` and fill secrets (`DATABASE_URL`, `QDRANT_URL`, `OPENAI_API_KEY`).
-2. Validate the Compose file before starting services: `docker compose config` (warning about the legacy `version` key is safe to ignore, or remove the key entirely).
-3. Start the data stores locally: `docker compose up -d postgres qdrant`.
-4. Run database migrations: `docker compose exec postgres psql -U chess -d chessmate -f scripts/migrate.sql` (replace with the dune-based migrator once available).
-5. Warm caches and seed data once the ingestion CLI lands (milestone 4): `dune exec chessmate -- ingest fixtures/sample.pgn`.
-6. Launch host-based services (until we ship dedicated containers):
-   ```sh
-   OPENAI_API_KEY=... DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec embedding_worker
-   ```
-   The HTTP query API and CLI wrapper will be containerized alongside milestone 4 deliverables.
+## Bootstrapping Environment
+```sh
+# set connection strings for local dev
+export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
+export CHESSMATE_API_URL=http://localhost:8080
+
+# start core services (first run pulls images)
+docker compose up -d postgres qdrant
+
+# apply migrations (idempotent)
+./scripts/migrate.sh
+
+# seed sample PGNs (optional)
+chessmate ingest test/fixtures/extended_sample_game.pgn
+```
+
+### Service Startup
+- Query API (prototype): `dune exec chessmate_api -- --port 8080`.
+- Embedding worker: `OPENAI_API_KEY=... chessmate embedding-worker`.
+- CLI queries: `chessmate query "find king's indian games"` (ensure API is running).
 
 ## Runtime Management
-- Health checks: `/health` (API), `/metrics` (Prometheus once wired), Postgres `pg_isready`, Qdrant `/healthz`.
-- Logs: use `docker compose logs -f <service>` or ship to a centralized collector (Loki/ELK) via sidecars.
-- Scaling: replicate `embedding-worker` to handle spikes; keep `postgres` and `qdrant` single instances unless failover design added.
+- **Health checks**:
+  - API: `GET /health`.
+  - Postgres: `docker compose exec postgres pg_isready -U chess`.
+  - Qdrant: `curl http://localhost:6333/healthz`.
+- **Logs**: `docker compose logs -f <service>`; ship to Loki/ELK once observability stack is wired.
+- **Scaling**: replicate `embedding-worker` to clear job backlogs; Postgres/Qdrant remain single-instance until HA work lands.
 
 ## Backups & Restore
-- Postgres: nightly `pg_dump` stored in secure object storage + WAL archiving for PITR.
-- Qdrant: schedule `qdrant snapshot create --path /qdrant/storage/snapshots/<timestamp>` via cron container.
-- Restore procedure: stop services → restore Postgres dump → restore Qdrant snapshot → restart workers → re-run ingestion to reconcile deltas.
+- **Postgres**: schedule `pg_dump` + WAL archiving; store artifacts in secure object storage.
+- **Qdrant**: use built-in snapshots (`qdrant snapshot create --path /qdrant/storage/snapshots/<ts>`); sync to external storage.
+- **Restore workflow**: stop services → restore Postgres dump → restore Qdrant snapshot → rerun migrations (if needed) → restart worker/API → re-ingest if deltas are missing.
 
 ## Security & Access
-- Place services behind a reverse proxy (Traefik/nginx) terminating TLS.
-- Enable basic auth or mTLS for Qdrant HTTP API; rotate tokens quarterly.
-- Restrict embedding worker egress to OpenAI endpoints via firewall rules.
-- Use separate Postgres roles for application (`chessmate_app`) and admin tasks.
+- Terminate TLS at reverse proxy (nginx/Traefik) in front of API & Qdrant.
+- Protect Qdrant with auth (token/mTLS); rotate credentials regularly.
+- Restrict worker egress to OpenAI hosts via firewall rules.
+- Separate Postgres roles (application vs. admin) and use least privilege.
+- Rotate `OPENAI_API_KEY`, DB passwords, and tokens per incident response policy.
 
 ## Monitoring & Alerting
-- Metrics to track: request latency, query success rate, embedding throughput, queue depth, Postgres replication lag.
-- Alerts: API latency > 2s sustained, worker queue backlog > 500 items, embedding failures > 5% per hour, disk usage > 80% on `data/` volumes.
-- Dashboard: combine Postgres exporter, Qdrant Prometheus metrics, and custom OCaml counters.
+- Track: API latency/p95, query success rate, embedding throughput, job queue depth, Postgres replication lag, disk usage on `data/` volumes.
+- Alerts: latency > 2s sustained, backlog > 500 jobs, embedding failure rate > 5%/h, disk utilization > 80%, Qdrant/DB down.
+- Dashboard: combine Postgres exporter, Qdrant metrics, and OCaml counters (future Prometheus integration).
 
-## Incident Response Checklist
-1. Acknowledge alert in paging tool.
-2. Inspect logs + metrics for correlated spikes.
-3. If Qdrant unavailable, fail queries fast (API returns 503) and disable workers.
-4. If Postgres degraded, pause ingestion and run read-only mode until recovery.
-5. Document root cause, mitigation, and follow-up tasks in `docs/INCIDENTS/<date>.md`.
+## Incident Response
+1. Acknowledge alert/page.
+2. Check dashboards/logs for correlated spikes.
+3. If Qdrant down: return 503s quickly, pause worker.
+4. If Postgres degraded: pause ingestion, run read-only mode.
+5. Capture root cause + mitigation in `docs/INCIDENTS/<date>.md`; assign follow-up actions.
 
-## Maintenance Windows
-- Schedule schema changes during off-peak hours; place API in maintenance mode (return 503 with message).
-- Re-embed runs: throttle to protect OpenAI quota; monitor queue depth.
-- Upgrade process: update `docker-compose.yml` image tags, apply migrations, run smoke tests (`dune exec chessmate -- query "test run"`).
+## Maintenance Procedures
+- Schema changes: schedule during low traffic; return maintenance responses (503) for API.
+- Re-embedding jobs: throttle worker to stay within OpenAI quota; monitor queue depth/durations.
+- Upgrades: bump Docker images, apply migrations, run smoke tests (`chessmate query "test"`), restart services.
+- Stack reset: `docker compose down`; remove `data/postgres`, `data/qdrant`; bring services back up, re-run migrations, re-ingest.
 
-## CI/CD Operations
-- Workflow file: `.github/workflows/ci.yml` executes on pushes to `main`, feature branches, and all PRs.
-- Runner: `ubuntu-latest` with OCaml 5.1.0 via `ocaml/setup-ocaml@v2` (caching disabled for portability).
-- Job sequence: dependency install → `dune build` → `dune test`.
-- Alerting: configure GitHub notification settings so failures page the on-call engineer; optionally mirror to ChatOps via GitHub webhooks.
-- Maintenance: update the workflow when OCaml/dune versions change; verify new versions by running the action on a feature branch before merging.
+## CI/CD Considerations
+- GitHub Actions (`.github/workflows/ci.yml`) runs `dune build` + `dune test` on pushes/PRs.
+- Use pull-request checks as gatekeepers before deploy.
+- For release candidates: document validation commands (`dune build`, `dune runtest`, sample ingest/query run) in PR description.
+- Future hardening: add integration suite hitting `/query` against live Postgres/Qdrant in CI/CD, automate container builds/pushes.

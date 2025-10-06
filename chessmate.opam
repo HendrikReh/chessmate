@@ -16,6 +16,10 @@ depends: [
   "base"
   "stdio"
   "yojson"
+  "uri"
+  "lwt"
+  "cohttp-lwt-unix"
+  "opium"
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]

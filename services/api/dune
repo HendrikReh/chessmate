@@ -1,0 +1,4 @@
+(executable
+ (name chessmate_api)
+ (public_name chessmate-api)
+ (libraries chessmate opium yojson lwt))

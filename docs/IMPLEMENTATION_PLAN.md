@@ -1,189 +1,147 @@
 # Implementation Plan
 
 ## Objectives & Scope
-- Build a self-hosted chess tutor ("chessmate") capable of answering natural-language questions by correlating structured game metadata with position similarity.
-- Use PostgreSQL for canonical PGN storage and metadata, Qdrant for position embeddings, and OpenAI for embedding generation.
-- Provide OCaml tooling: CLI for ingestion and retrieval, shared library components, and HTTP services that orchestrate hybrid search.
+- Build a self-hosted chess tutor (“chessmate”) that answers natural-language questions by combining structured metadata with position similarity.
+- Use PostgreSQL for canonical PGN storage, Qdrant for vector embeddings, OpenAI for embedding generation.
+- Ship OCaml tooling: ingestion/query CLIs, shared libraries, embedding worker, and HTTP API for hybrid search.
 
-## High-Level Architecture
-- **Relational tier (PostgreSQL)**: stores games, players, positions, annotations, and vector IDs; exposes views for analytics and materialized opening statistics.
-- **Vector tier (Qdrant)**: hosts FEN embeddings plus optional sparse representations; payload mirrors key metadata for filtered hybrid search.
-- **Embedding worker**: OCaml service batching FEN snapshots, calling OpenAI embeddings, inserting vectors into Qdrant, and recording vector IDs in PostgreSQL.
-- **Query/QA service**: HTTP API (Opium/Dream) performing NL parsing, hybrid query planning, Qdrant + Postgres reconciliation, and answer composition.
-- **CLIs**: `chessmate ingest` for PGN processing and `chessmate query` for user questions, both calling internal services via HTTP.
+## Current Status Snapshot
+| Milestone | Status | Notes |
+|-----------|--------|-------|
+| 1 – Repository scaffolding | ✅ complete | Baseline structure, Alcotest smoke tests, CLI stubs.
+| 2 – Data ingestion foundations | ✅ complete | Real PGN parser, migrations, `chessmate ingest` wired to Postgres.
+| 3 – Embedding pipeline | ✅ complete | Jobs persisted, embedding worker loops, vector IDs recorded.
+| 4 – Hybrid query prototype | ✅ complete | Intent heuristics, `/query` API, CLI integration, ECO catalogue.
+| 5 – Evaluation & observability | 🚧 pending | Harness, metrics, CI hardening.
+
+## Architecture Overview
+```mermaid
+graph TD
+  subgraph Clients
+    CLI[CLI (chessmate)]
+  end
+  subgraph Services
+    API[Query API (Opium)]
+    Worker[Embedding Worker]
+  end
+  subgraph Storage
+    PG[(PostgreSQL)]
+    QD[(Qdrant)]
+  end
+  subgraph Integrations
+    OpenAI[(OpenAI Embeddings)]
+  end
+
+  CLI -- "HTTP /query" --> API
+  CLI -- "Ingest PGN" --> PG
+  API -- "Metadata lookups" --> PG
+  API -- "Vector search" --> QD
+  Worker -- "Embedding jobs" --> PG
+  Worker -- "Vectors" --> QD
+  Worker -- "Embed FENs" --> OpenAI
+```
 
 ## Data Model Plan
-- `games`: PGN text, ECO, event/site/date, players, ratings, outcome, tags JSONB, timestamps.
-- `players`: name, aliases, FIDE data, rating history snapshots.
-- `positions`: game reference, ply number, FEN text/hash, SAN, evaluation score, vector ID (UUID), feature flags.
-- `annotations`: optional human/engine commentary attached to positions or games.
-- Indices: B-tree for rating/ply filters, GIN/pg_trgm for text, unique `(game_id, ply)` constraint; mirrored payload keys in Qdrant for filtering.
+- `games`: PGN text, ECO, opening slug, event/site/date, players, ratings, result, tags.
+- `players`: name, aliases/FIDE IDs, rating peaks.
+- `positions`: game_id, ply, FEN, SAN, eval, `vector_id`, JSON tags, timestamps.
+- `embedding_jobs`: status machine (`pending`, `in_progress`, `completed`, `failed`), FEN payload.
+- Indexes: B-tree for ratings, eco/opening slug, job status; GIN/trgm for textual search.
+- Qdrant payload mirrors key filters (opening, players, move metadata).
 
 ## Library Structure (`lib/`)
-- `chess/`: chess-specific logic (`pgn_parser`, `game_metadata`, `position_features`, `pgn_to_fen`).
-- `storage/`: persistence layers (`Repo_postgres`, `Repo_qdrant`, `Ingestion_queue`).
-- `embedding/`: OpenAI client, caching, and payload builders (`Embedding_client`, `Embeddings_cache`, `Vector_payload`).
-- `query/`: NL intent mapping, hybrid planner, result formatting (`Query_intent`, `Hybrid_planner`, `Result_formatter`).
-- `cli/`: shared utilities for CLI commands (`Cli_common`, `Ingest_command`, `Search_command`).
-- Each `.ml` opens `Base` via `open! Base`; `.mli` files expose minimal public signatures.
+- `chess/`: PGN parser, game metadata, FEN engine, ECO catalogue (`openings`).
+- `storage/`: `Repo_postgres`, queue helpers, Qdrant adapter (future).
+- `embedding/`: OpenAI client stubs, caching (planned), payload builders.
+- `query/`: intent heuristics, hybrid planner scaffold, result formatter.
+- `cli/`: ingest/query commands, shared env helpers.
 
 ## Services & Workflows
-1. **Ingestion flow**
-   - Parse PGN → normalize metadata and positions → store in Postgres.
-   - Enqueue embedding jobs with FEN + metadata snapshot.
-   - Worker fetches jobs, calls OpenAI embeddings, upserts to Qdrant, writes vector IDs back.
-   - Supports re-embedding with job priorities and throttling.
-2. **Query flow**
-   - CLI/API receives NL query → intent mapper extracts structured constraints.
-   - Planner builds hybrid request (dense + sparse, filter clauses) → queries Qdrant.
-   - Reconcile with Postgres to fetch full PGN context, ensure rating/opening filters.
-   - Compose natural-language answer with evidence list; optionally call LLM for phrasing.
+### Ingestion / Embedding Flow
+```mermaid
+sequenceDiagram
+  participant CLI as chessmate ingest
+  participant Parser as PGN Parser
+  participant PG as PostgreSQL
+  participant Jobs as embedding_jobs
+  participant Worker as Embedding Worker
+  participant OpenAI as OpenAI API
+  participant QD as Qdrant
+
+  CLI->>Parser: parse headers/SAN/FEN
+  Parser-->>CLI: metadata + moves
+  CLI->>PG: insert players/games/positions (opening slug/ECO)
+  CLI->>Jobs: enqueue embedding jobs
+  Worker->>Jobs: poll pending job
+  Worker->>PG: mark job started
+  Worker->>OpenAI: request embeddings
+  OpenAI-->>Worker: vectors
+  Worker->>QD: upsert vectors & payload
+  Worker->>PG: mark job completed (vector_id)
+```
+
+### Query Flow (Prototype)
+```mermaid
+sequenceDiagram
+  participant User as User/CLI
+  participant API as Query API
+  participant Intent as Query Intent
+  participant Catalog as Openings Catalogue
+  participant Planner as Hybrid Planner
+
+  User->>API: GET/POST /query
+  API->>Intent: analyse(question)
+  Intent->>Catalog: lookup opening synonyms → ECO ranges
+  Catalog-->>Intent: opening slug/range
+  Intent-->>Planner: filters, rating, keywords
+  Planner-->>API: curated results (prototype dataset)
+  API-->>User: JSON response
+```
+Future work: Planner hits live Postgres/Qdrant for hybrid scoring.
 
 ## Testing Strategy
-- Unit tests for core modules and planners using Alcotest with mirrors under `test/`.
-- Integration tests using dockerized Postgres/Qdrant fixtures run via `dune test`.
-- Regression suites with known chess queries to validate answer stability after changes.
+- Unit tests (Alcotest) for PGN parser, metadata extraction, query intent heuristics.
+- Integration tests (future) against Dockerized Postgres/Qdrant for ingest/query pipelines.
+- Regression suite of NL queries once the live hybrid planner ships.
+- CI (GitHub Actions) runs `dune build`, `dune runtest` on pushes/PRs.
 
-## Deployment & Operations
-- Docker Compose stack: Postgres, Qdrant, `chessmate-api`, `embedding-worker`, optional Redis/Postgres job queue. Mount persistent volumes to `./data/postgres` and `./data/qdrant` so database files reside in the repository tree rather than the container filesystem.
-- Secure Qdrant behind reverse proxy (mTLS/token); manage OpenAI secrets via environment config.
-- Backups: Postgres dumps + WAL archiving; Qdrant snapshots stored encrypted.
-- Observability: structured logs (JSON), Prometheus metrics for OCaml services, health endpoints.
-
-### Directory Layout (current)
-```
-.
-├── bin/
-├── docs/
-├── lib/
-│   ├── chess/
-│   ├── storage/
-│   ├── embedding/
-│   ├── query/
-│   └── cli/
-├── services/
-├── test/
-│   └── fixtures/
-├── data/
-├── scripts/
-└── docker-compose.yml
-```
-
-### docker-compose.yml Sketch
-```yaml
-version: "3.9"
-services:
-  postgres:
-    image: postgres:16
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: chessmate
-      POSTGRES_PASSWORD: change-me
-      POSTGRES_DB: chessmate
-    volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    restart: unless-stopped
-    volumes:
-      - ./data/qdrant:/qdrant/storage
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-
-  chessmate-api:
-    build: ./services/api
-    depends_on:
-      - postgres
-      - qdrant
-    environment:
-      DATABASE_URL: postgres://chessmate:change-me@postgres:5432/chessmate
-      QDRANT_URL: http://qdrant:6333
-    ports:
-      - "8080:8080"
-
-  embedding-worker:
-    build: ./services/embedding_worker
-    depends_on:
-      - postgres
-      - qdrant
-    environment:
-      DATABASE_URL: postgres://chessmate:change-me@postgres:5432/chessmate
-      QDRANT_URL: http://qdrant:6333
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-
-  redis:
-    image: redis:7
-    restart: unless-stopped
-    volumes:
-      - ./data/redis:/data
-```
+## Deployment & Operations Snapshot
+- Docker Compose stack (local dev): Postgres + Qdrant, volumes under `data/postgres`, `data/qdrant`.
+- Run migrations via `./scripts/migrate.sh` (idempotent); CLI commands rely on `DATABASE_URL` / `CHESSMATE_API_URL`.
+- Embedding worker & API currently run via `dune exec`; containerization slated for milestone 5.
+- Backups: `pg_dump` + WAL archiving, Qdrant snapshots stored securely.
+- Observability (planned): structured logs, Prometheus metrics, health endpoints.
+- Security: guardrails include TLS terminator, Qdrant auth, least-privilege DB roles, API keys.
 
 ## Milestones & Checkpoints
+### Milestone 1 – Repository Scaffolding (✅)
+**Objective:** Establish project skeleton, build system, initial tests.
+- Tasks: scaffold modules, add Alcotest smoke tests, set up CLI stubs, ensure `dune build`.
+- Checkpoints: `dune build`, `dune fmt --check`, `dune test` pass; directory layout matches plan.
 
-### Milestone 1 – Repository Scaffolding
-**Objective:** Establish project skeleton, build system, and initial tests.
-- Tasks:
-  - Create `lib/` subdirectories with `dune` files; ensure each module compiles (`open! Base`).
-  - Add `test/` suites with Alcotest smoke tests (e.g., verify `Pgn_parser` placeholder).
-  - Configure `bin/` CLI entry points (no functionality yet) and ensure `dune build` passes.
-- Checkpoints:
-  - `dune build` and `dune fmt --check` succeed CI locally.
-  - `dune test` runs at least one Alcotest suite.
-  - Repository tree matches documented layout (including `data/` dirs).
+### Milestone 2 – Data Ingestion Foundations (✅)
+**Objective:** Parse PGNs, persist metadata, expose schema migrations.
+- Tasks: replace PGN parser with real extraction, add migrations/seeds, build `chessmate ingest`.
+- Checkpoints: ingest sample PGN → Postgres populated; `SELECT count(*) FROM positions` matches expectation; integration test validates round-trip.
 
-### Milestone 2 – Data Ingestion Foundations
-**Objective:** Parse PGNs, persist metadata, and expose schema migrations.
-- Tasks:
-  - Implement `Pgn_parser` to extract headers, SAN moves, and generate FEN snapshots.
-  - Create SQL migrations (e.g., via `sql/` or embedded migrations) for `games`, `players`, `positions`, `annotations` tables.
-  - Develop `Repo_postgres` with CRUD operations; seed sample PGNs for integration tests.
-  - Build CLI subcommand `chessmate ingest` that parses a PGN and populates Postgres.
-- Checkpoints:
-  - Running `dune exec chessmate ingest sample.pgn` loads data and reports success.
-  - Postgres tables populated; `SELECT count(*) FROM positions` shows expected rows.
-  - Alcotest integration test verifies round-trip (PGN → DB → reconstructed PGN segment).
+### Milestone 3 – Embedding Pipeline (✅)
+**Objective:** Generate embeddings, sync Qdrant with Postgres.
+- Tasks: implement embedding client (retries/throttle), payload builder, `embedding_worker` service, CLI enqueue path.
+- Checkpoints: Docker stack brings up Postgres/Qdrant; worker inserts vectors; Postgres rows receive `vector_id`; Qdrant payload contains metadata.
 
-### Milestone 3 – Embedding Pipeline
-**Objective:** Generate embeddings and synchronize Qdrant with Postgres.
-- Tasks:
-  - Implement `Embedding_client` to call OpenAI with retries/throttling.
-  - Add `Vector_payload` builder mapping FEN + metadata to Qdrant payload schema.
-  - Create `embedding-worker` service (OCaml) consuming jobs from queue table/Redis.
-  - Expose CLI command to enqueue FEN snapshots (`chessmate ingest --enqueue-only`).
-- Checkpoints:
-  - Local Docker Compose stack brings up Postgres + Qdrant; worker inserts vectors successfully.
-  - Postgres rows receive valid `vector_id` references after worker completes.
-  - `curl` to Qdrant shows inserted points with payload filters (e.g., `player_white`).
+### Milestone 4 – Hybrid Query Prototype (✅)
+**Objective:** Answer NL questions via heuristic hybrid pipeline.
+- Tasks: upgrade `Query_intent` heuristics (openings, ratings, keywords), add `/query` Opium API, wire `chessmate query` CLI, seed ECO catalogue.
+- Checkpoints: CLI returns ranked responses with filters; unit tests cover intent edge cases; docs updated (README, architecture, operations).
 
-### Milestone 4 – Hybrid Query Service
-**Objective:** Answer natural-language questions by combining vector and relational filters.
-- Tasks:
-  - Implement `Query_intent` module translating NL queries into structured filters (rule-based prototype).
-  - Build `Hybrid_planner` to craft Qdrant Query API requests with RRF weights.
-  - Develop HTTP API (`chessmate-api`) with endpoints `/query` and `/games/:id`.
-  - Implement CLI `chessmate query` hitting the API and displaying ranked results.
-- Checkpoints:
-  - `dune exec chessmate query "find me five games..."` returns a ranked response referencing both vector similarity and metadata filters.
-  - Unit tests cover intent parsing edge cases (opening names, rating constraints).
-  - Integration test validates combined Qdrant + Postgres filtering within Docker Compose.
-
-### Milestone 5 – Evaluation & Observability
-**Objective:** Validate answer quality and production readiness.
-- Tasks:
-  - Build evaluation harness with curated NL questions and expected evidence sets.
-  - Instrument services with metrics (request latency, embed throughput) and health probes.
-  - Document runbooks for backups, re-embedding, and scaling.
-  - Add CI workflows for lint/test, integration tests against Docker Compose, and deployment packaging.
-- Checkpoints:
-  - Evaluation harness produces pass/fail report; baseline accuracy threshold defined.
-  - Prometheus metrics exposed at `/metrics`; dashboards/alerts configured.
-  - CI pipeline green on main branch; release artifact or container published.
+### Milestone 5 – Evaluation & Observability (🚧)
+**Objective:** Validate answer quality, prepare for production.
+- Tasks: build evaluation harness, integrate live Postgres/Qdrant planner, instrument metrics, containerize API/worker, add CI integration suite.
+- Checkpoints: evaluation report with thresholds; Prometheus metrics exposed; integration tests hit live stack; container images published.
 
 ## Progress Log
-- Milestone 1 (Repository Scaffolding): baseline directory structure, stub modules with interfaces, and Alcotest smoke test added. `dune build` / `dune test` succeeding locally.
-- Milestone 2 (Ingestion Foundations): added PostgreSQL migration/seed scripts (`scripts/migrate.sh`, `scripts/migrations/`), replaced PGN parser with real header/move extraction, and wired `chessmate ingest` to parse PGNs.
-- Milestone 3 (Embedding Pipeline): header parsing maps onto structured `Game_metadata.t`; `chessmate ingest` now persists via `psql` CLI helpers (players/games/positions/jobs); `embedding_worker` polls `embedding_jobs`, calls OpenAI embeddings via `curl`, and drives job state transitions; standalone `pgn_to_fen` CLI converts single-game PGNs into per-ply FEN strings for diagnostics.
+- **Milestone 1:** baseline directory structure, modules, Alcotest smoke test. `dune build`/`dune test` green.
+- **Milestone 2:** PGN parser, migrations/seed scripts, `chessmate ingest` populates Postgres.
+- **Milestone 3:** embedding jobs persisted, worker loops embedding FENs via OpenAI, vector IDs stored; `pgn_to_fen` diagnostic CLI added.
+- **Milestone 4:** heuristic query planner, `/query` API prototype, CLI integration, ECO catalogue (`lib/chess/openings`), opening metadata persisted (`opening_name/opening_slug`).
+- **Next:** wire planner to live Postgres/Qdrant, evaluation harness, observability tooling.

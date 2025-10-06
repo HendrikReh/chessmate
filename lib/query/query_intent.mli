@@ -20,7 +20,14 @@
 
 type rating_filter = {
   white_min : int option;
-  black_max_delta : int option;
+  black_min : int option;
+  max_rating_delta : int option;
+}
+
+(** Metadata filter aligned with payload fields stored in Postgres/Qdrant. *)
+type metadata_filter = {
+  field : string;
+  value : string;
 }
 
 type request = {
@@ -28,8 +35,14 @@ type request = {
 }
 
 type plan = {
-  filters : (string * string) list;
+  original : request;
+  cleaned_text : string;
+  keywords : string list;
+  filters : metadata_filter list;
   rating : rating_filter;
+  limit : int;
 }
+
+val default_limit : int
 
 val analyse : request -> plan

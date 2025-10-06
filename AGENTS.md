@@ -19,7 +19,7 @@ Always restate the user task for yourself, outline the intended steps, then exec
 - `opam install . --deps-only --with-test`
 - `dune build`
 - `dune test` (use `--no-buffer` to stream PGN/FEN logs)
-- `dune exec chessmate -- ingest …`, `dune exec chessmate -- query …` (tracked for milestone 4; currently under active development)
+- `dune exec chessmate -- ingest …`, `dune exec chessmate -- query …` (set `CHESSMATE_API_URL` when targeting a non-default port)
 - `dune exec pgn_to_fen -- <game.pgn>` for quick FEN verification.
 
 ## Coding Style & Etiquette

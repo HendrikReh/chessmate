@@ -24,6 +24,10 @@
   base
   stdio
   yojson
+  uri
+  lwt
+  cohttp-lwt-unix
+  opium
   (alcotest :with-test))
  (tags
   ("chess" "ocaml" "vector-search" "postgres" "qdrant")))

@@ -34,7 +34,23 @@ setup.log
 
 # Local OPAM switch
 _opam/
-.DS_Store
-/.vscode
-data/db/
+
+# Data directories
+/data/postgres/
+/data/qdrant/
+/data/redis/
+
+# Environments
+.venv/
+venv/
+*.DS_Store
+/.vscode/
+/.idea/
+/.direnv/
 /.env
+.env.local
+.env.*.backup
+
+# Logs & temp files
+*.log
+*.tmp

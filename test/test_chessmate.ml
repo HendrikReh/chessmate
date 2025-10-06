@@ -114,6 +114,8 @@ let test_metadata_from_headers () =
   check (option string) "site" (Some "Paris") meta.site;
   check (option string) "date" (Some "2024-01-12") meta.date;
   check (option string) "eco" (Some "B33") meta.eco_code;
+  check (option string) "opening name" (Some "Sicilian Defense") meta.opening_name;
+  check (option string) "opening slug" (Some "sicilian_defense") meta.opening_slug;
   check string "white name" "Carlsen" meta.white.name;
   check (option int) "white rating" (Some 2855) meta.white.rating;
   check string "black name" "Nepomniachtchi" meta.black.name
@@ -146,14 +148,56 @@ let test_fen_after_move () =
   | Ok fen ->
       check string "FEN after white 39"
         "8/p1kb1R2/1p3p2/2p5/2P1P1p1/PP2Pr2/4K3/8 b - - 2 39" fen
-         
+
+let to_filter_pairs filters =
+  List.map filters ~f:(fun f -> f.Query_intent.field, f.Query_intent.value)
+
+let test_query_intent_opening () =
+  let request =
+    { Query_intent.text =
+        "Find top 3 King's Indian games where white is rated at least 2500 and black is 100 points lower"
+    }
+  in
+  let plan = Query_intent.analyse request in
+  check int "limit" 3 plan.Query_intent.limit;
+  check (option int) "white min" (Some 2500) plan.Query_intent.rating.white_min;
+  check (option int) "black min" None plan.Query_intent.rating.black_min;
+  check (option int) "rating delta" (Some 100) plan.Query_intent.rating.max_rating_delta;
+  let filters = to_filter_pairs plan.Query_intent.filters in
+  let has_opening_filter =
+    List.exists filters ~f:(fun (field, value) ->
+        String.equal field "opening" && String.equal value "kings_indian_defense")
+  in
+  check bool "opening filter" true has_opening_filter;
+  check bool "keyword includes indian" true (List.mem plan.Query_intent.keywords "indian" ~equal:String.equal)
+
+let test_query_intent_draw () =
+  let request =
+    { Query_intent.text = "Show me five games that end in a draw in the French Defense endgame" }
+  in
+  let plan = Query_intent.analyse request in
+  check int "limit fallback" 5 plan.Query_intent.limit;
+  let filters = to_filter_pairs plan.Query_intent.filters in
+  let expect_pairs =
+    [ "opening", "french_defense";
+      "phase", "endgame";
+      "result", "1/2-1/2" ]
+  in
+  List.iter expect_pairs ~f:(fun expected ->
+      let has_filter =
+        List.mem filters expected ~equal:(fun (a1, b1) (a2, b2) -> String.equal a1 a2 && String.equal b1 b2)
+      in
+      check bool "expected filter present" true has_filter)
+
 let suite =
   [ "parse sample game", `Quick, test_parse_sample_game;
     "parse invalid", `Quick, test_parse_invalid;
     "parse extended sample game", `Quick, test_parse_extended_sample_game;
     "metadata extraction", `Quick, test_metadata_from_headers;
     "sample FEN sequence", `Quick, test_fen_sequence_sample;
-    "fen after move", `Quick, test_fen_after_move
+    "fen after move", `Quick, test_fen_after_move;
+    "query intent opening", `Quick, test_query_intent_opening;
+    "query intent draw", `Quick, test_query_intent_draw
   ]
 
 let () =

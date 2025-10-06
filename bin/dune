@@ -1,7 +1,7 @@
 (executable
  (public_name chessmate)
  (name main)
- (libraries chessmate))
+ (libraries chessmate cohttp-lwt-unix lwt yojson uri))
 
 (executable
  (public_name pgn_to_fen)

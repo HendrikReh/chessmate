@@ -1,7 +1,7 @@
 # Chessmate
 
 [![OCaml](https://img.shields.io/badge/OCaml-%3E%3D%205.1-orange.svg)](https://ocaml.org)
-[![Version](https://img.shields.io/badge/Version-0.3.0-blue.svg)](RELEASE_NOTES.md)
+[![Version](https://img.shields.io/badge/Version-0.4.0-blue.svg)](RELEASE_NOTES.md)
 [![Status](https://img.shields.io/badge/Status-Proof%20of%20Concept-yellow.svg)](docs/IMPLEMENTATION_PLAN.md)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/HendrikReh/chessmate/ci.yml?branch=main)](https://github.com/HendrikReh/chessmate/actions)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -9,18 +9,21 @@
 [![Collaboration](https://img.shields.io/badge/Collaboration-Guidelines-blue.svg)](docs/GUIDELINES.md)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-active-green.svg)](https://github.com/HendrikReh/chessmate/graphs/commit-activity)
 
-Self-hosted chess tutor that blends relational data (PostgreSQL) with vector search (Qdrant) to answer natural-language questions about ~4k annotated games. OCaml powers ingestion, hybrid retrieval, and CLI tooling.
+Self-hosted chess tutor that blends relational data (PostgreSQL) with vector search (Qdrant) to answer natural-language questions about annotated chess games. OCaml powers ingestion, hybrid retrieval, and CLI tooling.
 
 ## Requirements
-- PostgreSQL client (`psql`) available on the `PATH` for running migrations and database writes.
-- `curl` (used by the embedding worker to call the OpenAI API).
+- OCaml 5.1.0 (managed via opam) and Dune ≥ 3.20.
+- Docker & Docker Compose (local Postgres + Qdrant stack).
+- PostgreSQL client (`psql`) on your `PATH`.
+- `curl` (embedding worker diagnostics).
+- Optional: `OPENAI_API_KEY` if you want to run the embedding worker against OpenAI.
 
 ## Feature Highlights
-- **PGN ingestion pipeline:** parse headers/SAN, derive per-ply FEN snapshots, and persist metadata for downstream services.
+- **PGN ingestion pipeline:** parses headers/SAN, derives per-ply FEN snapshots, extracts ECO codes, and persists metadata (players, openings, results) to Postgres.
+- **Opening catalogue:** maps natural-language opening phrases to ECO ranges (`lib/chess/openings`), so queries like “King’s Indian games” become deterministic filters.
+- **Prototype hybrid search:** milestone 4 ships an Opium-based `/query` API (`dune exec chessmate_api`) plus `chessmate query` CLI surfacing intent analysis and curated sample results.
 - **Embedding worker skeleton:** polls `embedding_jobs`, calls OpenAI embeddings, and records vector identifiers ready for Qdrant sync.
-- **Structured module layout:** chess logic under `lib/chess`, persistence in `lib/storage`, embeddings in `lib/embedding`, query planning under `lib/query`, and CLI glue in `lib/cli`.
-- **PGN → FEN tooling:** `dune exec pgn_to_fen -- <game.pgn>` prints the FEN after each half-move for quick analysis.
-- **Road to hybrid search:** milestone 4 will wire intent parsing, hybrid planning, and the HTTP query API (`docs/IMPLEMENTATION_PLAN.md`).
+- **Diagnostics tooling:** `dune exec pgn_to_fen -- <game.pgn>` prints per-ply FENs; ingestion/worker CLIs emit structured logs for troubleshooting.
 
 ## Getting Started
 1. Clone and enter the repository.
@@ -29,21 +32,38 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    opam switch create . 5.1.0
    opam install . --deps-only --with-test
    ```
-3. Launch backing services (Postgres, Qdrant) via Docker:
+3. Launch backing services (Postgres, Qdrant) via Docker (first run may take a minute while images download):
    ```sh
    docker compose up -d postgres qdrant
    ```
-4. Build and run tests:
+4. Initialize the database (migrations expect `DATABASE_URL` to be set):
+   ```sh
+   # Example connection string; adjust credentials/port if you changed docker-compose.yml
+   export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
+   ./scripts/migrate.sh
+   ```
+5. Build & test the workspace:
    ```sh
    dune build
-   dune test
+   dune runtest
    ```
-5. Explore the available tooling:
+6. Explore the available tooling:
    ```sh
+   # Start the prototype query API (Opium server)
+   dune exec chessmate_api -- --port 8080
+
+   # In another shell, call the API via the CLI (set CHESSMATE_API_URL if you changed the port)
+   CHESSMATE_API_URL=http://localhost:8080 dune exec chessmate -- query "Find King's Indian games where White is 2500 and Black 100 points lower"
+
+   # Ingest a PGN (persists players/games/positions/openings)
+   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec chessmate -- ingest test/fixtures/extended_sample_game.pgn
+
+   # Run the embedding worker loop (requires OPENAI_API_KEY for real embeddings)
    OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec embedding_worker
+
+   # Generate FENs from a PGN for quick inspection
    dune exec pgn_to_fen -- test/fixtures/sample_game.pgn
    ```
-   The `chessmate` CLI entrypoint is a work in progress; ingestion and query commands will land with milestone 4.
 
 ## Repository Structure
 ```
@@ -55,6 +75,106 @@ docs/           # Architecture, developer, ops, and planning docs
 test/           # Alcotest suites
 data/           # Bind-mounted volumes for Postgres and Qdrant
 ```
+
+## Services & CLIs
+- `dune exec chessmate_api -- --port 8080`: starts the prototype query HTTP API.
+- `dune exec chessmate -- ingest <pgn>`: parses and persists PGNs (requires `DATABASE_URL`).
+- `dune exec chessmate -- query "…"`: sends questions to the running query API (uses `CHESSMATE_API_URL`, defaults to `http://localhost:8080`).
+- `dune exec embedding_worker`: polls `embedding_jobs`, calls OpenAI, and updates vector IDs.
+- `dune exec pgn_to_fen -- <pgn>`: prints FEN after each half-move for debugging.
+
+### CLI Usage
+Example ingestion and query session (assuming Postgres is running locally):
+```sh
+export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
+CHESSMATE_API_URL=http://localhost:8080
+
+# Ingest a PGN
+chessmate ingest test/fixtures/extended_sample_game.pgn
+# => Stored game 1 with 77 positions
+
+# Ask a question (make sure the API is running in another shell)
+chessmate query "Show French Defense draws with queenside majority endings"
+# => Summary, filters, and curated results printed to stdout
+```
+
+Worker loop with log snippets (using a dummy API key in dry-run mode):
+```sh
+OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+  chessmate embedding-worker
+# [worker] starting polling loop
+# [worker] job 42 completed
+```
+
+FEN tooling for sanity checks:
+```sh
+dune exec pgn_to_fen -- test/fixtures/sample_game.pgn | head -n 5
+# rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1
+# rnbqkb1r/pppppppp/5n2/8/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 1 2
+# ...
+```
+
+## API Examples
+### GET
+```sh
+curl "http://localhost:8080/query?q=Find+King%27s+Indian+games+where+white+is+2500"
+```
+
+### POST
+```sh
+curl -X POST http://localhost:8080/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Show five French Defense endgames that end in a draw"}'
+```
+
+Typical JSON response:
+```json
+{
+  "question": "show five french defense endgames that end in a draw",
+  "plan": {
+    "cleaned_text": "show five french defense endgames that end in a draw",
+    "limit": 5,
+    "filters": [
+      { "field": "opening", "value": "french_defense" },
+      { "field": "eco_range", "value": "C00-C19" },
+      { "field": "phase", "value": "endgame" },
+      { "field": "result", "value": "1/2-1/2" }
+    ],
+    "keywords": ["french", "defense", "endgames", "draw" ],
+    "rating": { "white_min": null, "black_min": null, "max_rating_delta": null }
+  },
+  "summary": "Found 3 curated matches for the requested opening and result.",
+  "results": [
+    {
+      "game_id": 1,
+      "white": "Judith Polgar",
+      "black": "Alexei Shirov",
+      "result": "1/2-1/2",
+      "year": 1997,
+      "event": "Linares",
+      "opening": "french_defense",
+      "score": 0.82,
+      "vector_score": 0.74,
+      "keyword_score": 0.60,
+      "synopsis": "Polgar steers the French Tarrasch into an endgame where a queenside majority holds the draw."
+    }
+  ]
+}
+```
+
+## Repository Structure
+```
+lib/            # OCaml libraries (chess, storage, embedding, query, cli)
+bin/            # CLI entry points
+scripts/        # Database migrations (`migrate.sh`, `migrations/`, seeds)
+services/       # Long-running services (e.g., embedding_worker, API prototype)
+docs/           # Architecture, developer, ops, and planning docs
+test/           # Alcotest suites
+data/           # Bind-mounted volumes for Postgres and Qdrant
+```
+
+## Resetting the Stack
+Need a clean slate? Stop the containers (`docker compose down`), wipe the volumes (`rm -rf data/postgres data/qdrant`), bring services back up, rerun migrations, then re-ingest your PGNs as shown above.
 
 ## Documentation
 - [Implementation Plan](docs/IMPLEMENTATION_PLAN.md)
