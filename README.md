@@ -11,6 +11,10 @@
 
 Self-hosted chess tutor that blends relational data (PostgreSQL) with vector search (Qdrant) to answer natural-language questions about ~4k annotated games. OCaml powers ingestion, hybrid retrieval, and CLI tooling.
 
+## Requirements
+- PostgreSQL client (`psql`) available on the `PATH` for running migrations and database writes.
+- `curl` (used by the embedding worker to call the OpenAI API).
+
 ## Features
 - **Hybrid search:** combine OpenAI FEN embeddings with keyword filters for precise tactics or opening questions.
 - **Structured metadata:** Postgres schema stores games, players, positions, and annotations with ECO tags and ratings.

@@ -23,6 +23,7 @@
   ocaml
   base
   stdio
+  yojson
   (alcotest :with-test))
  (tags
   ("chess" "ocaml" "vector-search" "postgres" "qdrant")))

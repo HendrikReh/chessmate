@@ -5,6 +5,7 @@
 - Pull build deps: `opam install . --deps-only --with-test`.
 - Confirm Dune works: `dune build`, `dune test`, `dune fmt --check`.
 - Start services via `docker-compose up postgres qdrant` when developing ingestion or query code.
+- Tooling prerequisites: PostgreSQL client (`psql`) and `curl` must be available for persistence and OpenAI embeddings.
 
 ## Repository Layout
 - `lib/`: OCaml libraries split into `core/`, `storage/`, `embedding/`, `query/`, `cli/`.

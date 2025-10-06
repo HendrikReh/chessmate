@@ -15,6 +15,7 @@ depends: [
   "ocaml"
   "base"
   "stdio"
+  "yojson"
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]

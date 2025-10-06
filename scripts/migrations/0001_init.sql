@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS positions (
   fen            TEXT NOT NULL,
   san            TEXT,
   eval_cp        INTEGER,
-  vector_id      UUID,
+  vector_id      TEXT,
   tags           JSONB DEFAULT '{}'::JSONB,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(game_id, ply)
