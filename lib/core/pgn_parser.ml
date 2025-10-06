@@ -11,6 +11,32 @@ type t = {
   moves : move list;
 }
 
+let find_header headers key = List.Assoc.find headers ~equal:String.equal key
+
+let tag_value t key = find_header t.headers key
+
+let ply_count t = List.length t.moves
+
+let parse_int_opt value = Option.bind value ~f:Int.of_string_opt
+
+let white_name t = tag_value t "White"
+let black_name t = tag_value t "Black"
+
+let white_rating t = tag_value t "WhiteElo" |> parse_int_opt
+let black_rating t = tag_value t "BlackElo" |> parse_int_opt
+
+let event t = tag_value t "Event"
+let site t = tag_value t "Site"
+let round t = tag_value t "Round"
+let result t = tag_value t "Result"
+let event_date t = tag_value t "EventDate"
+
+let white_move t move_number =
+  List.find t.moves ~f:(fun move -> Int.(move.turn = move_number) && Int.(move.ply % 2 = 1))
+
+let black_move t move_number =
+  List.find t.moves ~f:(fun move -> Int.(move.turn = move_number) && Int.(move.ply % 2 = 0))
+
 let drop_while s ~f =
   let len = String.length s in
   let rec find i =

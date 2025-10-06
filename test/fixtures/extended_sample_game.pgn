@@ -1,0 +1,102 @@
+[Event "Interpolis International Tournament"]
+[Site "Tilburg NED"]
+[Date "1994.09.11"]
+[Round "1.1"]
+[White "Seirawan, Y"]
+[Black "Smyslov, V"]
+[Result "0-1"]
+[WhiteElo "2568"]
+[BlackElo "2690"]
+[EventDate "1994.09.10"]
+[ECO "E11"]
+[PlyCount "77"]
+[TEST_TAG_1 "VALUE_TEST_TAG_1"]
+[TEST_TAG_2 "VALUE_TEST_TAG_2"]
+
+1.d4 Nf6 2.c4 e6 3.Nf3 Bb4+ 4.Nbd2 c5 5.a3 Bxd2+ 6.Bxd2 d6 7.dxc5 dxc5 8.Qc2 
+Nbd7 9.O-O-O Qc7 10.g3 Ng4 {Deep HIARCS 15.2: +0.74/8} ( 10...O-O {Deep HIARCS
+15.2: +0.29/9} 11.Bg2 ) 11.Bf4 ( 11.Bf4 {Deep HIARCS 15.2: +0.74/8} 11...e5 
+12.Bh3 h5 13.Bxg4 hxg4 14.Nxe5 Nxe5 15.Rd5 Rh5 16.Rhd1 Be6 17.Rxe5 Rxe5 18.Qh7 
+Rd8 19.Rxd8+ Qxd8 20.Bxe5 Bxc4 21.Qh8+ Kd7 22.Qxg7 Bxe2 23.Qxf7+ Kc6 24.Qe6+ 
+Kb5 ) 11...e5 12.Bh3 h5 13.Bxg4 ( 13.Bxg4 {Deep HIARCS 15.2: +0.74/8} 13...hxg4 
+14.Nxe5 Nxe5 15.Rd5 Rh5 16.Rhd1 Be6 17.Rxe5 Rxe5 18.Qh7 Rd8 19.Rxd8+ Qxd8 
+20.Bxe5 Bxc4 21.Qh8+ Kd7 22.Qxg7 Bxe2 23.Qxf7+ Kc6 24.Qe6+ Kb5 25.Qb3+ Ka6 ) 
+13...hxg4 ( 13...hxg4 {Deep HIARCS 15.2: +0.99/8} 14.Nxe5 Nxe5 15.Rd5 Rh5 
+16.Rhd1 Be6 17.Rxe5 Rxe5 18.Qh7 Rd8 19.Rxd8+ Qxd8 20.Bxe5 Bxc4 ) 14.Nxe5 $1 ( 
+14.Nxe5 {Deep HIARCS 15.2: +0.82/9} 14...Nxe5 ) 14...Nxe5 ( 14...Nxe5 {Deep
+HIARCS 15.2: +0.72/9} 15.Rd5 Be6 16.Rxe5 Qc6 17.Qe4 Qxe4 18.Rxe4 O-O-O 19.b3 
+Rh5 ) 15.Rd5 ( 15.Rd5 {Deep HIARCS 15.2: +0.83/9} 15...Be6 16.Rxe5 Qc6 17.Qe4 
+Qxe4 18.Rxe4 O-O-O 19.b3 b6 20.Re5 Kb7 ) 15...Rh5 ( 15...Rh5 {Deep HIARCS 15.2:
++0.90/8} 16.Rhd1 Be6 17.Rxe5 Rxe5 18.Qh7 Rd8 19.Rxd8+ Qxd8 20.Bxe5 g6 21.Qh8+ 
+Kd7 22.Qxd8+ Kxd8 23.b3 ) 16.Rxe5+ {Deep HIARCS 15.2: +0.16/8} ( 16.Rhd1 {Deep
+HIARCS 15.2: +0.91/8} 16...Be6 17.Rxe5 Rxe5 18.Qh7 Rd8 19.Rxd8+ Qxd8 20.Bxe5 g6 
+21.Qh8+ Kd7 22.Qxd8+ Kxd8 23.b3 ) 16...Rxe5 ( 16...Rxe5 {Deep HIARCS 15.2:
++0.16/8} 17.Qh7 f6 18.Rd1 Kf7 19.Bxe5 fxe5 20.Qh5+ Kf6 21.Qh8 Rb8 ) 17.Qh7 ( 
+17.Qh7 {Deep HIARCS 15.2: -1.64/9} 17...Qe7 ) 17...f6 $2 {Deep HIARCS 15.2:
++0.16/9} ( 17...Qe7 {Deep HIARCS 15.2: -1.31/8} 18.Bxe5 Qxe5 19.Qg8+ Kd7 
+20.Rd1+ Kc6 21.Rd8 Qf5 22.Qxg7 Qe6 ) 18.Rd1 $1 ( 18.Rd1 {Deep HIARCS 15.2:
++0.16/9} 18...Kf7 19.Bxe5 fxe5 20.Qh5+ Kf6 21.Qh8 Rb8 22.Qf8+ Kg6 23.Rd6+ Kh7 
+24.Rd8 b6 ) 18...Kf7 ( 18...Kf7 {Deep HIARCS 15.2: +0.22/9} 19.Bxe5 fxe5 
+20.Qh5+ Kf6 21.Qh8 a5 22.Qf8+ Kg6 23.f4 exf4 24.Qe8+ Kh7 ) 19.Qh8 {Deep HIARCS
+15.2: -1.36/9} ( 19.Bxe5 {Deep HIARCS 15.2: -1.17/9} 19...Qxe5 ) 19...Qc6 {Deep
+HIARCS 15.2: -0.63/7} ( 19...Qb6 {Deep HIARCS 15.2: -1.36/9} 20.Bxe5 ) 20.Rd8 
+$4 {Deep HIARCS 15.2: -5.32/7} ( 20.Bxe5 {Deep HIARCS 15.2: -0.63/7} 20...fxe5 
+21.Rd8 Kg6 22.Qf8 Qa4 23.Qd6+ Kh7 24.Qd3+ g6 ) 20...Re8 {Deep HIARCS 15.2:
+-3.91/9} ( 20...Rxe2 {Deep HIARCS 15.2: -5.32/7} 21.Qh5+ Ke7 22.Rd3 Qe4 
+23.Qxc5+ Kf7 24.Qh5+ g6 ) 21.Qh5+ ( 21.Qh5+ {Deep HIARCS 15.2: -3.91/9} 
+21...Ke7 ) 21...Ke7 ( 21...Ke7 {Deep HIARCS 15.2: -3.58/7} 22.Rxe8+ Qxe8 
+23.Qxc5+ Kf7 24.Qh5+ g6 25.Qh7+ Ke6 26.b3 Bd7 27.Kb2 Kf5 28.Be3 b6 ) 22.Rd6 
+{Deep HIARCS 15.2: -4.82/8} ( 22.Rxe8+ {Deep HIARCS 15.2: -3.68/8} 22...Qxe8 ) 
+22...Qe4 ( 22...Qe4 {Deep HIARCS 15.2: -4.82/8} 23.Rd3 Kf8 24.Qxc5+ Kg8 25.Be3 
+Bf5 26.Qd5+ Qe6 27.Qxe6+ Bxe6 28.b3 Kf7 29.Rd6 Rh8 30.Kb2 ) 23.Rd3 $1 ( 23.Rd3 
+{Deep HIARCS 15.2: -4.77/9} 23...Kf8 24.Qxc5+ Kg8 25.Be3 b6 26.Qd5+ Qxd5 
+27.cxd5 Bf5 28.Rd4 Rad8 29.d6 g5 30.Kd1 ) 23...Be6 {Deep HIARCS 15.2: -2.43/10} 
+( 23...Kf8 {Deep HIARCS 15.2: -4.79/8} 24.Qxc5+ ) 24.Bd6+ ( 24.Bd6+ {Deep HIARCS
+15.2: -2.43/10} 24...Kd8 25.Bxc5+ Bd7 26.Qf7 Qe6 27.Qxg7 Kc7 28.Bd6+ Kc8 29.Rd2 
+b6 30.b3 Kb7 31.Bf4 Rad8 ) 24...Kd8 ( 24...Kd8 {Deep HIARCS 15.2: -1.75/7} 
+25.Bxc5+ Bd7 26.Qf7 Qe6 27.Qxg7 b6 28.Bf8 Kc7 ) 25.Be5+ $4 {Deep HIARCS 15.2:
+-6.09/8} ( 25.Bxc5+ {Deep HIARCS 15.2: -1.84/9} 25...Bd7 ) 25...Bd7 ( 25...Bd7 
+{Deep HIARCS 15.2: -6.09/8} 26.Qf7 Qf5 27.Bf4 g5 28.Be3 Qe6 29.Qg6 b6 30.b3 Kc7 
+) 26.Qf7 ( 26.Qf7 {Deep HIARCS 15.2: -6.09/10} 26...Qf5 27.Bf4 g5 28.Be3 Qe6 
+29.Qg6 b6 30.b3 Kc7 31.Rd5 Rad8 32.Kb2 Qe7 33.Ka2 Kb7 ) 26...Qf5 ( 26...Qf5 
+{Deep HIARCS 15.2: -6.09/8} 27.Bf4 g5 28.Be3 Qe6 29.Qg6 b6 30.b3 Kc7 31.Rd5 
+Rad8 32.Kb2 Qe7 33.Ka2 Kb7 ) 27.Bf4 ( 27.Bf4 {Deep HIARCS 15.2: -6.09/8} 
+27...g5 28.Be3 Qe6 29.Qg6 b6 30.b3 Kc7 31.Rd5 Rad8 32.Kb2 Qe7 33.Ka2 Kb7 ) 
+27...g5 $1 ( 27...g5 {Deep HIARCS 15.2: -6.09/9} 28.Be3 Qe6 29.Qg6 b6 30.b3 Kc7 
+31.Rd5 Rad8 32.Kb2 Qe7 ) 28.Be3 ( 28.Be3 {Deep HIARCS 15.2: -6.05/9} 28...Qe6 
+29.Qxe6 Rxe6 30.Kd1 b6 31.b4 cxb4 32.axb4 Kc7 33.Ra3 Rd6+ 34.Ke1 ) 28...Qe6 ( 
+28...Qe6 {Deep HIARCS 15.2: -6.00/9} 29.Qxe6 Rxe6 30.Bxc5 Rxe2 31.Bd4 Re6 
+32.Bc3 Kc7 33.Rd5 ) 29.Qg7 {Deep HIARCS 15.2: -6.31/9} ( 29.Rxd7+ {Deep HIARCS
+15.2: -6.00/10} 29...Qxd7 ) 29...b6 ( 29...b6 {Deep HIARCS 15.2: -6.31/9} 30.b3 
+Qe7 31.Qg6 Kc7 32.Rd5 Rad8 33.Kb2 Rh8 34.Qd3 Rxh2 35.Ka2 Rh1 ) 30.Rd5 ( 30.Rd5 
+{Deep HIARCS 15.2: -6.49/8} 30...Kc7 31.b3 Rad8 32.Qg6 Qe7 33.Kb2 Rh8 34.Rd1 
+Qe5+ 35.Ka2 Rxh2 ) 30...Qe7 $1 ( 30...Qe7 {Deep HIARCS 15.2: -5.25/8} 31.Rxg5 
+Qxg7 32.Rxg7 Rh8 33.Kd2 Rc8 34.Kc3 Rxh2 35.b4 cxb4+ 36.axb4 Be6 37.c5 bxc5 ) 
+31.Rxg5 ( 31.Rxg5 {Deep HIARCS 15.2: -5.22/10} 31...Qxg7 32.Rxg7 Rh8 33.Kd2 Rc8 
+34.Rg6 Rc6 35.Kc3 f5 36.Rg7 Rxh2 37.Bg5+ Ke8 ) 31...Qxg7 ( 31...Qxg7 {Deep
+HIARCS 15.2: -5.12/9} 32.Rxg7 Rh8 33.Kd2 Rc8 34.b3 Rxh2 35.Kc3 a5 36.Rf7 Rc6 
+37.b4 axb4+ 38.axb4 cxb4+ 39.Kxb4 ) 32.Rxg7 ( 32.Rxg7 {Deep HIARCS 15.2:
+-5.31/8} 32...Rh8 33.Kd2 Rc8 34.Bf4 Rxh2 35.Ke3 a5 36.Rg8+ Ke7 37.Rg7+ Ke8 
+38.b3 ) 32...Kc7 {Deep HIARCS 15.2: -4.70/9} ( 32...Rh8 {Deep HIARCS 15.2:
+-5.25/9} 33.Kd2 Rc8 34.Bf4 Rxh2 35.Ke3 a5 36.b3 Bf5 ) 33.b3 {Deep HIARCS 15.2:
+-5.23/10} ( 33.Rg6 {Deep HIARCS 15.2: -4.70/9} 33...Re4 34.Rxf6 Rh8 35.Kd2 Rxh2 
+36.b3 Kb7 ) 33...Rxe3 $1 ( 33...Rxe3 {Deep HIARCS 15.2: -5.23/10} 34.fxe3 Rh8 
+35.Kd2 Rxh2 36.Rf7 Rh3 37.Ke1 f5 38.Kf1 Kd6 39.Kg2 ) 34.fxe3 ( 34.fxe3 {Deep
+HIARCS 15.2: -5.21/9} 34...Rh8 35.Rf7 Rxh2 36.Kd1 Rg2 37.Kd2 Rxg3 38.Rxf6 Rg1 
+39.Rg6 Rb1 ) 34...Rh8 ( 34...Rh8 {Deep HIARCS 15.2: -5.05/10} 35.Rf7 ) 35.e4 
+{Deep HIARCS 15.2: -6.18/9} ( 35.Rf7 {Deep HIARCS 15.2: -4.88/8} 35...Rxh2 
+36.Kd2 Rh3 37.Rxf6 Rxg3 38.Rg6 Rh3 39.Rg7 Kd6 ) 35...Rxh2 ( 35...Rxh2 {Deep
+HIARCS 15.2: -6.18/9} 36.Rg6 Rxe2 37.Rxf6 Re3 38.e5 Rxb3 39.Kd2 Rxg3 40.e6 ) 
+36.Kd2 {Deep HIARCS 15.2: -6.23/9} ( 36.Kd1 {Deep HIARCS 15.2: -6.15/9} 
+36...Rg2 37.e3 Kd6 38.a4 Rxg3 39.Kd2 Rf3 40.Ke2 Rh3 ) 36...Rg2 {Deep HIARCS
+15.2: -6.27/10} ( 36...Rh3 {Deep HIARCS 15.2: -6.23/9} 37.e3 Rxg3 38.Ke2 Kd6 
+39.e5+ fxe5 40.Rg6+ Ke7 41.Rg7+ Ke8 42.Kd3 Bf5+ 43.Ke2 ) 37.Rf7 {Deep HIARCS
+15.2: -6.35/8} ( 37.Rg6 {Deep HIARCS 15.2: -6.27/10} 37...Rxg3 38.e3 Rf3 39.Rg7 
+Kd6 40.Ke2 b5 41.cxb5 Bxb5+ 42.Kd2 Bd7 ) 37...Rxg3 ( 37...Rxg3 {Deep HIARCS
+15.2: -6.35/8} 38.e3 Rg2+ 39.Kd3 Rb2 40.Kc3 Rf2 41.e5 Rf3 42.exf6 Rxe3+ 43.Kb2 
+) 38.e3 ( 38.e3 {Deep HIARCS 15.2: -6.15/9} 38...Rg2+ 39.Kd3 Rb2 40.Kc3 Rf2 
+41.Rg7 Rf3 42.Kd2 Kc6 43.Ke2 a6 44.a4 Kd6 ) 38...Rf3 {Deep HIARCS 15.2: -6.00/9} 
+( 38...Rg2+ {Deep HIARCS 15.2: -6.19/10} 39.Kc3 ) 39.Ke2 {On time White loses
+0.32 pawn per move (2 blunders), Black loses 0.17 pawn per move (1 mistakes).} 
+( 39.Ke2 {Deep HIARCS 15.2: -6.00/9} 39...Kd6 ) 0-1
+

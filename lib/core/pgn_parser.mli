@@ -15,5 +15,17 @@ type t = {
 }
 
 val parse : string -> t Or_error.t
-(** [parse raw_pgn] parses [raw_pgn] text into structured data.
-    Stub currently returns an error until the real parser is implemented. *)
+
+val ply_count : t -> int
+val white_name : t -> string option
+val black_name : t -> string option
+val white_rating : t -> int option
+val black_rating : t -> int option
+val event : t -> string option
+val site : t -> string option
+val round : t -> string option
+val result : t -> string option
+val event_date : t -> string option
+val white_move : t -> int -> move option
+val black_move : t -> int -> move option
+val tag_value : t -> string -> string option

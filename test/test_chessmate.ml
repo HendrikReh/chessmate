@@ -3,34 +3,38 @@ open Stdio
 open Alcotest
 open Chessmate
 
-let sample_pgn = {|
-[Event "Test Event"]
-[Site "Somewhere"]
-[Date "2024.01.01"]
-[White "Sample White"]
-[Black "Sample Black"]
-[Result "1-0"]
+let load_fixture name =
+  let source_root = Stdlib.Sys.getenv_opt "DUNE_SOURCEROOT" |> Option.value ~default:"." in
+  let path = Stdlib.Filename.concat source_root (Stdlib.Filename.concat "test/fixtures" name) in
+  In_channel.read_all path
 
-1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0
-|}
-
-let test_parse_success () =
+let test_parse_sample_game () =
+  let sample_pgn = load_fixture "sample_game.pgn" in
   match Pgn_parser.parse sample_pgn with
   | Error err -> failf "unexpected parse failure: %s" (Error.to_string_hum err)
   | Ok parsed ->
       let headers = parsed.headers in
       let moves = parsed.moves in
-      let find_header key = List.Assoc.find headers ~equal:String.equal key in
-      check (option string) "white header" (Some "Sample White") (find_header "White");
-      check (option string) "result header" (Some "1-0") (find_header "Result");
+      check int "header count" 6 (List.length headers);
+      check int "ply count" 6 (Pgn_parser.ply_count parsed);
+      check (option string) "white header" (Some "Sample White") (Pgn_parser.white_name parsed);
+      check (option string) "black header" (Some "Sample Black") (Pgn_parser.black_name parsed);
+      check (option string) "result header" (Some "1-0") (Pgn_parser.result parsed);
+      check (option int) "white elo" None (Pgn_parser.white_rating parsed);
+      check (option int) "black elo" None (Pgn_parser.black_rating parsed);
       check int "move count" 6 (List.length moves);
       let first_move = List.hd_exn moves in
       check string "first move" "e4" first_move.san;
       check int "first turn" 1 first_move.turn;
-      check int "first ply" 1 first_move.ply;
       let last_move = List.last_exn moves in
       check string "last move" "a6" last_move.san;
-      check int "last ply" 6 last_move.ply
+      check int "last ply" 6 last_move.ply;
+      (match Pgn_parser.white_move parsed 3 with
+      | Some move -> check string "white move 3" "Bb5" move.san
+      | None -> fail "missing white move 3");
+      (match Pgn_parser.black_move parsed 3 with
+      | Some move -> check string "black move 3" "a6" move.san
+      | None -> fail "missing black move 3")
 
 let test_parse_invalid () =
   let invalid = "[Event \"Test\"]\n\n*" in
@@ -38,9 +42,9 @@ let test_parse_invalid () =
   | Ok _ -> fail "expected parse failure"
   | Error _ -> ()
 
-let test_parse_sample_file () =
+let test_parse_extended_sample_game () =
   let source_root = Stdlib.Sys.getenv_opt "DUNE_SOURCEROOT" |> Option.value ~default:"." in
-  let filename = Stdlib.Filename.concat source_root "data/games/sample_game.pgn" in
+  let filename = Stdlib.Filename.concat source_root "test/fixtures/extended_sample_game.pgn" in
   match In_channel.read_all filename |> Pgn_parser.parse with
   | Error err -> failf "failed to parse sample PGN: %s" (Error.to_string_hum err)
   | Ok parsed ->
@@ -49,13 +53,31 @@ let test_parse_sample_file () =
       printf "Parsed moves:\n";
       List.iter parsed.moves ~f:(fun move ->
           printf "  ply=%d turn=%d san=%s\n" move.ply move.turn move.san);
-      check int "header count" 8 (List.length parsed.headers);
-      check int "move count" 45 (List.length parsed.moves);
+      check (option string) "event" (Some "Interpolis International Tournament") (Pgn_parser.event parsed);
+      check (option string) "site" (Some "Tilburg NED") (Pgn_parser.site parsed);
+      check (option string) "round" (Some "1.1") (Pgn_parser.round parsed);
+      check (option string) "white name" (Some "Seirawan, Y") (Pgn_parser.white_name parsed);
+      check (option string) "black name" (Some "Smyslov, V") (Pgn_parser.black_name parsed);
+      check (option int) "white elo" (Some 2568) (Pgn_parser.white_rating parsed);
+      check (option int) "black elo" (Some 2690) (Pgn_parser.black_rating parsed);
+      check (option string) "result" (Some "0-1") (Pgn_parser.result parsed);
+      check (option string) "event date" (Some "1994.09.10") (Pgn_parser.event_date parsed);
+      check int "move count" 77 (List.length parsed.moves);
       let last = List.last_exn parsed.moves in
-      check string "last move" "Qxg7#" last.san;
-      check int "last ply" 45 last.ply;
-      let white = List.Assoc.find parsed.headers ~equal:String.equal "White" in
-      check (option string) "white player" (Some "Alpha") white
+      check string "last move" "Ke2" last.san;
+      check int "last ply" 77 last.ply;
+      check int "ply count" 77 (Pgn_parser.ply_count parsed);
+      check bool "analysis move filtered" true
+        (not (List.exists parsed.moves ~f:(fun move -> String.equal move.san "Kd6")));
+      check (option string) "tag test1" (Some "VALUE_TEST_TAG_1") (Pgn_parser.tag_value parsed "TEST_TAG_1");
+      check (option string) "white player" (Some "Seirawan, Y") (Pgn_parser.white_name parsed);
+      check (option string) "black player" (Some "Smyslov, V") (Pgn_parser.black_name parsed);
+      (match Pgn_parser.white_move parsed 17 with
+      | Some move -> check string "white move 17" "Qh7" move.san
+      | None -> fail "missing white move 17");
+      (match Pgn_parser.black_move parsed 17 with
+      | Some move -> check string "black move 17" "f6" move.san
+      | None -> fail "missing black move 17")
 
 let test_metadata_from_headers () =
   let headers =
@@ -79,9 +101,9 @@ let test_metadata_from_headers () =
   check string "black name" "Nepomniachtchi" meta.black.name
 
 let suite =
-  [ "parse success", `Quick, test_parse_success;
+  [ "parse sample game", `Quick, test_parse_sample_game;
     "parse invalid", `Quick, test_parse_invalid;
-    "parse sample file", `Quick, test_parse_sample_file;
+    "parse extended sample game", `Quick, test_parse_extended_sample_game;
     "metadata extraction", `Quick, test_metadata_from_headers
   ]
 

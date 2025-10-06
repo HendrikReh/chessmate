@@ -1,0 +1,9 @@
+[Event "Test Event"]
+[Site "Somewhere"]
+[Date "2024.01.01"]
+[White "Sample White"]
+[Black "Sample Black"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0
+
