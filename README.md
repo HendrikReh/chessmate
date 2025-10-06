@@ -79,6 +79,7 @@ data/           # Bind-mounted volumes for Postgres and Qdrant
 ## Services & CLIs
 - `dune exec chessmate_api -- --port 8080`: starts the prototype query HTTP API.
 - `chessmate ingest <pgn>`: parses and persists PGNs (requires `DATABASE_URL`).
+- `chessmate twic-precheck <pgn>`: scans TWIC PGNs for malformed entries before ingestion.
 - `chessmate query "…"`: sends questions to the running query API (`CHESSMATE_API_URL` defaults to `http://localhost:8080`).
 - `chessmate fen <pgn> [output]`: prints FEN after each half-move (optional output file).
 - `OPENAI_API_KEY=… chessmate embedding-worker`: polls `embedding_jobs`, calls OpenAI, updates vector IDs.

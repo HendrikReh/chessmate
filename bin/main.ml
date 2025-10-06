@@ -26,6 +26,7 @@ Usage: chessmate <command> [options]
 
 Commands:
   ingest <pgn-file>        Parse a PGN and persist it (requires DATABASE_URL)
+  twic-precheck <pgn-file> Inspect a TWIC PGN and report malformed games
   query  <question>        Send a natural-language question to the query API
   fen <pgn-file> [output]  Emit FEN after each half-move (optional output file)
   embedding-worker         Placeholder (use `dune exec embedding_worker` for now)
@@ -40,6 +41,11 @@ let exit_with_error err =
 
 let run_ingest path =
   match Ingest_command.run path with
+  | Ok () -> ()
+  | Error err -> exit_with_error err
+
+let run_twic_precheck path =
+  match Twic_precheck_command.run path with
   | Ok () -> ()
   | Error err -> exit_with_error err
 
@@ -70,6 +76,8 @@ let () =
   | _ :: ("help" | "--help" | "-h") :: _ -> print_usage ()
   | _ :: "ingest" :: [] -> exit_with_error (Error.of_string "ingest requires a PGN file path")
   | _ :: "ingest" :: path :: _ -> run_ingest path
+  | _ :: "twic-precheck" :: [] -> exit_with_error (Error.of_string "twic-precheck requires a PGN file path")
+  | _ :: "twic-precheck" :: path :: _ -> run_twic_precheck path
   | _ :: "query" :: [] -> exit_with_error (Error.of_string "query requires a question to ask")
   | _ :: "query" :: question_parts -> run_query question_parts
   | _ :: "fen" :: args -> run_fen args

@@ -11,6 +11,12 @@ This guide collects the most common hiccups we have seen while working on Chessm
     cp /tmp/twic1611.utf8.pgn data/games/twic1611.pgn
     ```
     The transliteration keeps smart quotes/dashes readable. Once converted, rerun `chessmate ingest` and Postgres will accept the file.
+- **Symptom:** Ingestion aborts with `PGN game #315 "PGN contained no moves"` or similar.
+  - **Fix:** Run the preflight check to see all suspect entries:
+    ```sh
+    dune exec chessmate -- twic-precheck data/games/twic1611.pgn
+    ```
+    The report lists each problematic PGN block and an actionable fix (delete editorial fragments, add missing `[Result]` tags, etc.). Clean up the reported entries, then re-run ingestion. You can continue from the first failing index if earlier games already landed in Postgres.
 - **Symptom:** `Stored game 3 with 65 positions` when the source PGN holds many games.
   - **Fix:** Upgrade to the multi-game ingest (already merged). Ensure you are running the latest binary; older builds only processed the first game.
 

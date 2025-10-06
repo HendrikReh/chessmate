@@ -189,6 +189,153 @@ let test_query_intent_draw () =
       in
       check bool "expected filter present" true has_filter)
 
+let multi_game_pgn = {|
+[Event "Game One"]
+[Site "Testville"]
+[Date "2024.01.01"]
+[Round "1"]
+[White "Alpha"]
+[Black "Beta"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 1-0
+
+[Event "Game Two"]
+[Site "Testville"]
+[Date "2024.01.02"]
+[Round "2"]
+[White "Gamma"]
+[Black "Delta"]
+[Result "0-1"]
+
+1. d4 d5 2. c4 e6 3. Nc3 Nf6 4. Bg5 Be7 0-1
+|}
+
+let test_parse_multiple_games () =
+  match Pgn_parser.parse_games multi_game_pgn with
+  | Error err -> failf "multi-game parse failed: %s" (Error.to_string_hum err)
+  | Ok games ->
+      check int "game count" 2 (List.length games);
+      let first = List.hd_exn games in
+      let second = List.nth_exn games 1 in
+      check (option string) "first result" (Some "1-0") (Pgn_parser.result first);
+      check (option string) "second result" (Some "0-1") (Pgn_parser.result second)
+
+let test_fold_games_preserves_raw () =
+  match
+    Pgn_parser.fold_games multi_game_pgn ~init:[] ~f:(fun acc ~index ~raw game ->
+        ignore game;
+        Or_error.return ((index, raw) :: acc))
+  with
+  | Error err -> failf "fold_games failed: %s" (Error.to_string_hum err)
+  | Ok games ->
+      let ordered = List.rev games in
+      match ordered with
+      | [ (first_index, first_raw); (second_index, second_raw) ] ->
+          check int "first index" 1 first_index;
+          check int "second index" 2 second_index;
+          check bool "first raw retains header"
+            true (String.is_substring first_raw ~substring:"[Event \"Game One\"]");
+          check bool "second raw retains header"
+            true (String.is_substring second_raw ~substring:"[Event \"Game Two\"]")
+      | _ -> fail "unexpected number of games from fold"
+
+let malformed_twic_excerpt = {|
+[Event "Valid"]
+[Site "Testville"]
+[Date "2024.01.03"]
+[Round "3"]
+[White "Player A"]
+[Black "Player B"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 1-0
+
+[Event "Broken
+This is editorial commentary without proper PGN formatting.
+|}
+
+let test_fold_games_reports_parse_errors () =
+  let handler acc ~index ~raw err =
+    Or_error.return ((index, Error.to_string_hum err, raw) :: acc)
+  in
+  match
+    Pgn_parser.fold_games ~on_error:handler malformed_twic_excerpt ~init:[] ~f:(fun acc ~index:_ ~raw:_ _ ->
+        Or_error.return acc)
+  with
+  | Error err -> failf "fold_games unexpectedly aborted: %s" (Error.to_string_hum err)
+  | Ok issues ->
+      match issues with
+      | [ (index, message, raw) ] ->
+          check int "parse error index" 2 index;
+          check bool "non-empty error message" (not (String.is_empty message)) true;
+          check bool "preview includes commentary"
+            true (String.is_substring raw ~substring:"editorial commentary")
+      | _ -> fail "expected exactly one parse error"
+
+let sample_summary =
+  { Repo_postgres.id = 1
+  ; white = "Magnus Carlsen"
+  ; black = "Viswanathan Anand"
+  ; result = Some "1-0"
+  ; event = Some "World Championship"
+  ; opening_slug = Some "kings_indian_defense"
+  ; opening_name = Some "King's Indian Defense"
+  ; eco_code = Some "E94"
+  ; white_rating = Some 2870
+  ; black_rating = Some 2780
+  ; played_on = Some "2014-11-11" }
+
+let make_vector_points game_id score ~phases ~themes ~keywords =
+  let payload =
+    `Assoc
+      [ "game_id", `Int game_id
+      ; "phases", `List (List.map phases ~f:(fun phase -> `String phase))
+      ; "themes", `List (List.map themes ~f:(fun theme -> `String theme))
+      ; "keywords", `List (List.map keywords ~f:(fun kw -> `String kw))
+      ]
+  in
+  [ { Repo_qdrant.id = Int.to_string game_id; score; payload = Some payload } ]
+
+let test_hybrid_executor_merges_vector_hits () =
+  let question =
+    "Show me King's Indian games where white is rated at least 2800 and highlight middlegame tactics"
+  in
+  let plan = Query_intent.analyse { Query_intent.text = question } in
+  let fetch_games _ = Or_error.return [ sample_summary ] in
+  let vector_hits =
+    make_vector_points sample_summary.Repo_postgres.id 0.92
+      ~phases:[ "middlegame" ]
+      ~themes:[ "tactics" ]
+      ~keywords:[ "indian"; "attack" ]
+    |> Hybrid_planner.vector_hits_of_points
+  in
+  let fetch_vectors _ = Or_error.return vector_hits in
+  match Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors plan with
+  | Error err -> failf "hybrid executor failed: %s" (Error.to_string_hum err)
+  | Ok execution ->
+      check int "result count" 1 (List.length execution.Hybrid_executor.results);
+      check (list string) "warnings" [] execution.Hybrid_executor.warnings;
+      let result = List.hd_exn execution.Hybrid_executor.results in
+      check bool "phases merged" true (List.mem result.phases "middlegame" ~equal:String.equal);
+      check bool "themes merged" true (List.mem result.themes "tactics" ~equal:String.equal);
+      check bool "keywords merged" true (List.mem result.keywords "indian" ~equal:String.equal);
+      check bool "vector score propagated" true Float.(abs (result.vector_score -. 0.92) < 1e-6)
+
+let test_hybrid_executor_warns_on_vector_failure () =
+  let plan =
+    Query_intent.analyse
+      { Query_intent.text = "Find King's Indian games with white above 2800 rating" }
+  in
+  let fetch_games _ = Or_error.return [ sample_summary ] in
+  let fetch_vectors _ = Or_error.error_string "boom" in
+  match Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors plan with
+  | Error err -> failf "unexpected failure: %s" (Error.to_string_hum err)
+  | Ok execution ->
+      check bool "warnings emitted" true (not (List.is_empty execution.Hybrid_executor.warnings));
+      let result = List.hd_exn execution.Hybrid_executor.results in
+      check bool "fallback vector score" true (Float.(result.vector_score > 0.0))
+
 let suite =
   [ "parse sample game", `Quick, test_parse_sample_game;
     "parse invalid", `Quick, test_parse_invalid;
@@ -197,7 +344,12 @@ let suite =
     "sample FEN sequence", `Quick, test_fen_sequence_sample;
     "fen after move", `Quick, test_fen_after_move;
     "query intent opening", `Quick, test_query_intent_opening;
-    "query intent draw", `Quick, test_query_intent_draw
+    "query intent draw", `Quick, test_query_intent_draw;
+    "parse multiple games", `Quick, test_parse_multiple_games;
+    "fold games preserves raw", `Quick, test_fold_games_preserves_raw;
+    "fold games reports parse errors", `Quick, test_fold_games_reports_parse_errors;
+    "hybrid executor merges vector hits", `Quick, test_hybrid_executor_merges_vector_hits;
+    "hybrid executor warns on vector failure", `Quick, test_hybrid_executor_warns_on_vector_failure
   ]
 
 let () =
