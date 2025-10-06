@@ -11,7 +11,7 @@ Always restate the user task for yourself, outline the intended steps, then exec
 ## Project Structure Highlights
 - `lib/chess/`: PGN parsing, metadata helpers, and PGN→FEN engine (new home for all chess-specific modules).
 - `lib/storage/`, `lib/embedding/`, `lib/query/`, `lib/cli/`: persistence, embeddings, planning, and shared CLI code.
-- `bin/`: CLI entry points (`chessmate`, `pgn_to_fen`, …).
+- `bin/`: CLI entry points (`chessmate`, plus legacy `pgn_to_fen`).
 - `services/`: long-running executables such as the embedding worker.
 - `test/fixtures/`: canonical PGN fixtures used by tests.
 
@@ -20,7 +20,7 @@ Always restate the user task for yourself, outline the intended steps, then exec
 - `dune build`
 - `dune test` (use `--no-buffer` to stream PGN/FEN logs)
 - `dune exec chessmate -- ingest …`, `dune exec chessmate -- query …` (set `CHESSMATE_API_URL` when targeting a non-default port)
-- `dune exec pgn_to_fen -- <game.pgn>` for quick FEN verification.
+- `chessmate fen <game.pgn>` for quick FEN verification.
 
 ## Coding Style & Etiquette
 - Two-space indentation, `open! Base` at the top of `.ml` files, and explicit `.mli` signatures.

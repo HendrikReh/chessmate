@@ -10,9 +10,9 @@
 7. Ensure `psql`, Docker (with Compose), and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker.
 
 ## Repository Layout (Top Level)
-- `lib/chess/`: PGN/FEN parsing, metadata helpers, ECO → opening catalogue, `pgn_to_fen` utilities.
-- `lib/storage/`, `lib/embedding/`, `lib/query/`, `lib/cli/`: persistence, embedding clients, query planner, and shared CLI modules.
-- `bin/`: CLI entry points (`chessmate`, `pgn_to_fen`).
+- `lib/chess/`: PGN/FEN parsing, metadata helpers, ECO catalogue, FEN tooling.
+- `lib/storage/`, `lib/embedding/`, `lib/query/`, `lib/cli/`: persistence, embedding clients, query planner, shared CLI modules.
+- `bin/`: CLI entry points (`chessmate`).
 - `services/`: long-running executables (embedding worker, query API prototype).
 - `scripts/`: migrations/seeding helpers.
 - `docs/`: architecture, operations, developer, contribution guides.
@@ -51,7 +51,7 @@ chessmate query "Show French Defense draws with queenside majority"
 OPENAI_API_KEY=dummy chessmate embedding-worker
 
 # FEN diagnostics
-chessmate pgn-to-fen test/fixtures/sample_game.pgn | head -n 5
+chessmate fen test/fixtures/sample_game.pgn | head -n 5
 ```
 
 ## Coding Standards

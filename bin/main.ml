@@ -20,15 +20,19 @@ open! Base
 open Stdio
 open Chessmate
 
-let usage_lines =
-  [ "Usage: chessmate <command> [options]";
-    "";
-    "Commands:";
-    "  ingest <pgn-file>   Parse a PGN and persist it using DATABASE_URL";
-    "  query <question>    Send a natural-language question to the query API";
-    "  help                Show this message" ]
+let usage =
+  {|
+Usage: chessmate <command> [options]
 
-let print_usage () = List.iter usage_lines ~f:(fun line -> printf "%s\n" line)
+Commands:
+  ingest <pgn-file>        Parse a PGN and persist it (requires DATABASE_URL)
+  query  <question>        Send a natural-language question to the query API
+  fen <pgn-file> [output]  Emit FEN after each half-move (optional output file)
+  embedding-worker         Placeholder (use `dune exec embedding_worker` for now)
+  help                     Show this message
+|}
+
+let print_usage () = printf "%s\n" usage
 
 let exit_with_error err =
   eprintf "Error: %s\n" (Error.to_string_hum err);
@@ -41,19 +45,36 @@ let run_ingest path =
 
 let run_query parts =
   let question = String.concat ~sep:" " parts |> String.strip in
-  match Search_command.run question with
-  | Ok () -> ()
-  | Error err -> exit_with_error err
+  if String.is_empty question then exit_with_error (Error.of_string "query requires a question")
+  else (
+    match Search_command.run question with
+    | Ok () -> ()
+    | Error err -> exit_with_error err)
+
+let run_fen parts =
+  match parts with
+  | [] -> exit_with_error (Error.of_string "fen requires a PGN file path")
+  | [ input ] ->
+      (match Pgn_to_fen_command.run ~input ~output:None with
+      | Ok () -> ()
+      | Error err -> exit_with_error err)
+  | input :: output :: _ ->
+      (match Pgn_to_fen_command.run ~input ~output:(Some output) with
+      | Ok () -> ()
+      | Error err -> exit_with_error err)
 
 let () =
   match Array.to_list Stdlib.Sys.argv with
+  | _ :: [] -> print_usage ()
+  | [] -> print_usage ()
   | _ :: ("help" | "--help" | "-h") :: _ -> print_usage ()
   | _ :: "ingest" :: [] -> exit_with_error (Error.of_string "ingest requires a PGN file path")
   | _ :: "ingest" :: path :: _ -> run_ingest path
   | _ :: "query" :: [] -> exit_with_error (Error.of_string "query requires a question to ask")
   | _ :: "query" :: question_parts -> run_query question_parts
-  | _ :: [] -> print_usage ()
-  | [] -> print_usage ()
+  | _ :: "fen" :: args -> run_fen args
+  | _ :: "embedding-worker" :: _ ->
+      exit_with_error (Error.of_string "embedding-worker command not yet wired; use dune exec embedding_worker")
   | _ ->
       print_usage ();
       Stdlib.exit 1

@@ -18,25 +18,15 @@
 
 open! Base
 open Stdio
-open Chessmate
 
-let usage =
-  "Usage: pgn_to_fen <input.pgn> [output.txt]"
+let write_fens channel fens =
+  List.iter fens ~f:(fun fen -> Out_channel.output_string channel fen; Out_channel.newline channel)
 
-let exit_with_error err =
-  eprintf "Error: %s\n" (Error.to_string_hum err);
-  Stdlib.exit 1
-
-let () =
-  match Array.to_list Stdlib.Sys.argv |> List.tl with
-  | Some [ input ] ->
-      (match Pgn_to_fen_command.run ~input ~output:None with
-      | Ok () -> ()
-      | Error err -> exit_with_error err)
-  | Some [ input; output ] ->
-      (match Pgn_to_fen_command.run ~input ~output:(Some output) with
-      | Ok () -> ()
-      | Error err -> exit_with_error err)
-  | _ ->
-      eprintf "%s\n" usage;
-      Stdlib.exit 1
+let run ~input ~output =
+  match Pgn_to_fen.fens_of_file input with
+  | Error _ as err -> err
+  | Ok fens ->
+      (match output with
+      | None -> write_fens Out_channel.stdout fens
+      | Some path -> Out_channel.with_file path ~f:(fun oc -> write_fens oc fens));
+      Or_error.return ()

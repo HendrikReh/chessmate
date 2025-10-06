@@ -183,3 +183,8 @@ let parse raw_pgn =
             Or_error.error_string "PGN contained no moves"
           else
             Or_error.return { headers; moves }))
+
+let parse_file path =
+  Or_error.bind
+    (Or_error.try_with (fun () -> Stdio.In_channel.read_all path))
+    ~f:parse

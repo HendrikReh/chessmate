@@ -33,6 +33,10 @@ type t = {
 }
 
 val parse : string -> t Or_error.t
+(** [parse raw_pgn] returns headers and moves extracted from a PGN string. *)
+
+val parse_file : string -> t Or_error.t
+(** [parse_file path] reads [path] and delegates to [parse]. *)
 
 val ply_count : t -> int
 val white_name : t -> string option

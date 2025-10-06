@@ -17,26 +17,6 @@
 *)
 
 open! Base
-open Stdio
-open Chessmate
 
-let usage =
-  "Usage: pgn_to_fen <input.pgn> [output.txt]"
-
-let exit_with_error err =
-  eprintf "Error: %s\n" (Error.to_string_hum err);
-  Stdlib.exit 1
-
-let () =
-  match Array.to_list Stdlib.Sys.argv |> List.tl with
-  | Some [ input ] ->
-      (match Pgn_to_fen_command.run ~input ~output:None with
-      | Ok () -> ()
-      | Error err -> exit_with_error err)
-  | Some [ input; output ] ->
-      (match Pgn_to_fen_command.run ~input ~output:(Some output) with
-      | Ok () -> ()
-      | Error err -> exit_with_error err)
-  | _ ->
-      eprintf "%s\n" usage;
-      Stdlib.exit 1
+val run : input:string -> output:string option -> unit Or_error.t
+(** Convert [input] PGN into per-ply FEN strings. When [output] is [None], writes to stdout. *)

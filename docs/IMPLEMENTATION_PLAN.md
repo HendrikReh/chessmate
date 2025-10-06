@@ -142,6 +142,6 @@ Future work: Planner hits live Postgres/Qdrant for hybrid scoring.
 ## Progress Log
 - **Milestone 1:** baseline directory structure, modules, Alcotest smoke test. `dune build`/`dune test` green.
 - **Milestone 2:** PGN parser, migrations/seed scripts, `chessmate ingest` populates Postgres.
-- **Milestone 3:** embedding jobs persisted, worker loops embedding FENs via OpenAI, vector IDs stored; `pgn_to_fen` diagnostic CLI added.
+- **Milestone 3:** embedding jobs persisted, worker loops embedding FENs via OpenAI, vector IDs stored; `chessmate fen` diagnostic command added.
 - **Milestone 4:** heuristic query planner, `/query` API prototype, CLI integration, ECO catalogue (`lib/chess/openings`), opening metadata persisted (`opening_name/opening_slug`).
 - **Next:** wire planner to live Postgres/Qdrant, evaluation harness, observability tooling.

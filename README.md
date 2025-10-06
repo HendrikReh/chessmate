@@ -23,7 +23,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 - **Opening catalogue:** maps natural-language opening phrases to ECO ranges (`lib/chess/openings`), so queries like “King’s Indian games” become deterministic filters.
 - **Prototype hybrid search:** milestone 4 ships an Opium-based `/query` API (`dune exec chessmate_api`) plus `chessmate query` CLI surfacing intent analysis and curated sample results.
 - **Embedding worker skeleton:** polls `embedding_jobs`, calls OpenAI embeddings, and records vector identifiers ready for Qdrant sync.
-- **Diagnostics tooling:** `dune exec pgn_to_fen -- <game.pgn>` prints per-ply FENs; ingestion/worker CLIs emit structured logs for troubleshooting.
+- **Diagnostics tooling:** `chessmate fen <game.pgn>` prints per-ply FENs; ingestion/worker CLIs emit structured logs for troubleshooting.
 
 ## Getting Started
 1. Clone and enter the repository.
@@ -62,7 +62,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec embedding_worker
 
    # Generate FENs from a PGN for quick inspection
-   dune exec pgn_to_fen -- test/fixtures/sample_game.pgn
+   chessmate fen test/fixtures/sample_game.pgn
    ```
 
 ## Repository Structure
@@ -78,13 +78,13 @@ data/           # Bind-mounted volumes for Postgres and Qdrant
 
 ## Services & CLIs
 - `dune exec chessmate_api -- --port 8080`: starts the prototype query HTTP API.
-- `dune exec chessmate -- ingest <pgn>`: parses and persists PGNs (requires `DATABASE_URL`).
-- `dune exec chessmate -- query "…"`: sends questions to the running query API (uses `CHESSMATE_API_URL`, defaults to `http://localhost:8080`).
-- `dune exec embedding_worker`: polls `embedding_jobs`, calls OpenAI, and updates vector IDs.
-- `dune exec pgn_to_fen -- <pgn>`: prints FEN after each half-move for debugging.
+- `chessmate ingest <pgn>`: parses and persists PGNs (requires `DATABASE_URL`).
+- `chessmate query "…"`: sends questions to the running query API (`CHESSMATE_API_URL` defaults to `http://localhost:8080`).
+- `chessmate fen <pgn> [output]`: prints FEN after each half-move (optional output file).
+- `OPENAI_API_KEY=… chessmate embedding-worker`: polls `embedding_jobs`, calls OpenAI, updates vector IDs.
 
 ### CLI Usage
-Example ingestion and query session (assuming Postgres is running locally):
+Example CLI session (assuming Postgres is running locally):
 ```sh
 export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
 CHESSMATE_API_URL=http://localhost:8080
@@ -96,6 +96,9 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
 # Ask a question (make sure the API is running in another shell)
 chessmate query "Show French Defense draws with queenside majority endings"
 # => Summary, filters, and curated results printed to stdout
+
+# Generate FENs
+chessmate fen test/fixtures/sample_game.pgn > /tmp/fens.txt
 ```
 
 Worker loop with log snippets (using a dummy API key in dry-run mode):
@@ -108,7 +111,7 @@ OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmat
 
 FEN tooling for sanity checks:
 ```sh
-dune exec pgn_to_fen -- test/fixtures/sample_game.pgn | head -n 5
+chessmate fen test/fixtures/sample_game.pgn | head -n 5
 # rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1
 # rnbqkb1r/pppppppp/5n2/8/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 1 2
 # ...
