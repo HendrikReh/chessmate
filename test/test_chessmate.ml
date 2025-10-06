@@ -100,11 +100,42 @@ let test_metadata_from_headers () =
   check (option int) "white rating" (Some 2855) meta.white.rating;
   check string "black name" "Nepomniachtchi" meta.black.name
 
+let test_fen_sequence_sample () =
+  let sample_pgn = load_fixture "extended_sample_game.pgn" in
+  match Pgn_to_fen.fens_of_string sample_pgn with
+  | Error err -> failf "FEN generation failed: %s" (Error.to_string_hum err)
+  | Ok fens ->
+      check int "total plies" 77 (List.length fens);
+      let expected_prefix =
+        [ "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1"
+        ; "rnbqkb1r/pppppppp/5n2/8/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 1 2"
+        ; "rnbqkb1r/pppppppp/5n2/8/2PP4/8/PP2PPPP/RNBQKBNR b KQkq c3 0 2"
+        ; "rnbqkb1r/pppp1ppp/4pn2/8/2PP4/8/PP2PPPP/RNBQKBNR w KQkq - 0 3"
+        ; "rnbqkb1r/pppp1ppp/4pn2/8/2PP4/5N2/PP2PPPP/RNBQKB1R b KQkq - 1 3"
+        ; "rnbqk2r/pppp1ppp/4pn2/8/1bPP4/5N2/PP2PPPP/RNBQKB1R w KQkq - 2 4"
+        ; "rnbqk2r/pppp1ppp/4pn2/8/1bPP4/5N2/PP1NPPPP/R1BQKB1R b KQkq - 3 4"
+        ; "rnbqk2r/pp1p1ppp/4pn2/2p5/1bPP4/5N2/PP1NPPPP/R1BQKB1R w KQkq c6 0 5"
+        ; "rnbqk2r/pp1p1ppp/4pn2/2p5/1bPP4/P4N2/1P1NPPPP/R1BQKB1R b KQkq - 0 5"
+        ]
+      in
+      let actual_prefix = List.take fens (List.length expected_prefix) in
+      check (list string) "FEN prefix" expected_prefix actual_prefix
+
+let test_fen_after_move () =
+  let pgn = load_fixture "extended_sample_game.pgn" in
+  match Pgn_to_fen.fen_after_move pgn ~color:`White ~move_number:39 with
+  | Error err -> failf "fen_after_move failure: %s" (Error.to_string_hum err)
+  | Ok fen ->
+      check string "FEN after white 39"
+        "8/p1kb1R2/1p3p2/2p5/2P1P1p1/PP2Pr2/4K3/8 b - - 2 39" fen
+         
 let suite =
   [ "parse sample game", `Quick, test_parse_sample_game;
     "parse invalid", `Quick, test_parse_invalid;
     "parse extended sample game", `Quick, test_parse_extended_sample_game;
-    "metadata extraction", `Quick, test_metadata_from_headers
+    "metadata extraction", `Quick, test_metadata_from_headers;
+    "sample FEN sequence", `Quick, test_fen_sequence_sample;
+    "fen after move", `Quick, test_fen_after_move
   ]
 
 let () =

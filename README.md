@@ -1,7 +1,7 @@
 # Chessmate
 
 [![OCaml](https://img.shields.io/badge/OCaml-%3E%3D%205.1-orange.svg)](https://ocaml.org)
-[![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg)](RELEASE_NOTES.md)
+[![Version](https://img.shields.io/badge/Version-0.3.0-blue.svg)](RELEASE_NOTES.md)
 [![Status](https://img.shields.io/badge/Status-Proof%20of%20Concept-yellow.svg)](docs/IMPLEMENTATION_PLAN.md)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/HendrikReh/chessmate/ci.yml?branch=main)](https://github.com/HendrikReh/chessmate/actions)
 [![License](https://img.shields.io/github/license/HendrikReh/chessmate)](LICENSE)
@@ -20,6 +20,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 - **Structured metadata:** Postgres schema stores games, players, positions, and annotations with ECO tags and ratings.
 - **CLI-first UX:** `chessmate ingest` for PGN ingestion, `chessmate query` to explore positions via natural language.
 - **Extensible architecture:** modular OCaml library (core/storage/embedding/query) plus an embedding worker scaffold for background vector sync.
+- **PGN → FEN tooling:** `dune exec pgn_to_fen -- <game.pgn>` prints the FEN after every half-move for quick analysis.
 
 ## Getting Started
 1. Clone and enter the repository.
@@ -42,6 +43,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    dune exec chessmate -- ingest fixtures/sample.pgn
    dune exec chessmate -- query "Find games with a queenside majority attack"
    OPENAI_API_KEY=dummy DATABASE_URL=postgres://... dune exec embedding_worker
+   dune exec pgn_to_fen -- test/fixtures/sample_game.pgn
    ```
 
 ## Repository Structure

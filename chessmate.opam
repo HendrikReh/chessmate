@@ -3,8 +3,8 @@ opam-version: "2.0"
 synopsis: "A short synopsis"
 description:
   "Hybrid chess tutor combining Postgres metadata with Qdrant vector search and OCaml-powered ingestion/query services."
-maintainer: ["Hendrik Reh <blacksmith-consulting.ai>"]
-authors: ["Hendrik Reh <blacksmith-consulting.ai>"]
+maintainer: ["Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>"]
+authors: ["Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>"]
 license: "LICENSE"
 tags: ["chess" "ocaml" "vector-search" "postgres" "qdrant"]
 homepage: "https://github.com/HendrikReh/chessmate"

@@ -7,9 +7,9 @@
 (source
  (github HendrikReh/chessmate))
 
-(authors "Hendrik Reh <blacksmith-consulting.ai>")
+(authors "Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>")
 
-(maintainers "Hendrik Reh <blacksmith-consulting.ai>")
+(maintainers "Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>")
 
 (license LICENSE)
 

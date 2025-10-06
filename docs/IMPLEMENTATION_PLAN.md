@@ -186,4 +186,4 @@ services:
 ## Progress Log
 - Milestone 1 (Repository Scaffolding): baseline directory structure, stub modules with interfaces, and Alcotest smoke test added. `dune build` / `dune test` succeeding locally.
 - Milestone 2 (Ingestion Foundations): added PostgreSQL migration/seed scripts (`scripts/migrate.sh`, `scripts/migrations/`), replaced PGN parser with real header/move extraction, and wired `chessmate ingest` to parse PGNs.
-- Milestone 3 (Embedding Pipeline): header parsing maps onto structured `Game_metadata.t`; `chessmate ingest` now persists via `psql` CLI helpers (players/games/positions/jobs); `embedding_worker` polls `embedding_jobs`, calls OpenAI embeddings via `curl`, and drives job state transitions.
+- Milestone 3 (Embedding Pipeline): header parsing maps onto structured `Game_metadata.t`; `chessmate ingest` now persists via `psql` CLI helpers (players/games/positions/jobs); `embedding_worker` polls `embedding_jobs`, calls OpenAI embeddings via `curl`, and drives job state transitions; standalone `pgn_to_fen` CLI converts single-game PGNs into per-ply FEN strings for diagnostics.

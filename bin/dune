@@ -2,3 +2,8 @@
  (public_name chessmate)
  (name main)
  (libraries chessmate))
+
+(executable
+ (public_name pgn_to_fen)
+ (name pgn_to_fen)
+ (libraries chessmate stdio))

@@ -1,5 +1,12 @@
 # Release Notes
 
+## 0.3.0 – Milestone 3 (Embedding Pipeline & PGN → FEN)
+- Added `lib/chess/pgn_to_fen.ml/.mli`, a standalone engine that parses SAN, maintains board state (castling, en-passant, half/full-move counters) and produces FEN after every half-move.
+- Introduced the `pgn_to_fen` CLI (`dune exec pgn_to_fen -- <input.pgn> [output]`) for quick diagnostics and tooling.
+- Moved PGN/core helpers (`pgn_parser`, `game_metadata`, `fen`, `position_features`) into `lib/chess/` so all chess-specific logic lives together.
+- Integrated a stubbed `Repo_postgres` implementation and `embedding_worker` executable wiring job lifecycle hooks, ready for real DB/embedding drivers.
+- Extended tests and fixtures to cover per-ply FEN sequences and new helper functions; updated docs/README with tooling guidance.
+
 ## 0.2.0 – Milestone 2 (Data Ingestion Foundations)
 - Introduced PostgreSQL migration and seed scripts (`scripts/migrate.sh`, `scripts/migrations/0001_init.sql`, `scripts/seed_sample_games.sql`) to stand up the relational schema locally.
 - Implemented real PGN parsing in `lib/core/pgn_parser.ml`, handling headers, stripping comments, and extracting SAN moves with ply/turn metadata.

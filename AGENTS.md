@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+## Prompt execution guideline
+Structure any request properly for yourself, then execute it systematically.
+
 ## Environment Setup & Tooling
 Use the local opam switch stored in `_opam/`. Run `opam switch set .` once per shell so Dune and linters resolve dependencies consistently. Keep OCaml, Dune, and ocamlformat versions in sync with `chessmate.opam`; update that file before introducing new tooling.
 

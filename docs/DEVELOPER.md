@@ -28,6 +28,7 @@
 - Test output tips: Dune captures stdout by default; to stream logs live (e.g., parsed PGN dumps) run `dune test --no-buffer`. Add `--force` if the test target is already built.
 - `chessmate ingest` currently parses PGNs and prepares SQL-ready metadata; the PostgreSQL write path is stubbed until the driver is integrated (Milestone 3 follow-up).
 - Embedding worker: run `OPENAI_API_KEY=<key> DATABASE_URL=<postgres-uri> dune exec embedding_worker` to poll the queue. The worker currently exercises the control loop and job state transitions; database operations still return stub responses until the driver is added.
+- PGN → FEN utility: run `dune exec pgn_to_fen -- <input.pgn> [output.txt]` to emit the FEN after each half-move. Useful for verifying ingestion data and debugging SAN parsing.
 
 ## Development CLI Usage
 ```
