@@ -17,6 +17,7 @@
 - CLI/services: centralize side effects in `lib/storage` modules, keep `lib/chess` pure.
 - Use pattern matching, avoid partial functions, add concise comments for non-obvious logic.
 - Apply `dune fmt` before commits; ensure `dune build` and `dune test` pass locally.
+- Keep GPL notice headers at the top of every source/interface file; copy the template from existing modules when adding new files.
 
 ## Testing Expectations
 - Unit tests with Alcotest for each new module; co-locate fixtures under `test/`.
