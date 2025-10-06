@@ -97,8 +97,18 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
 chessmate query "Show French Defense draws with queenside majority endings"
 # => Summary, filters, and curated results printed to stdout
 
-# Generate FENs
-chessmate fen test/fixtures/sample_game.pgn > /tmp/fens.txt
+# Generate FENs (stdout, filtered, file output)
+chessmate fen test/fixtures/sample_game.pgn
+chessmate fen test/fixtures/sample_game.pgn | head -n 5
+chessmate fen test/fixtures/sample_game.pgn /tmp/fens.txt
+
+# Show plan as JSON
+chessmate query --json "Find King's Indian games" | jq '.'
+
+# Batch ingest PGNs (simple shell loop)
+for pgn in fixtures/*.pgn; do
+  chessmate ingest "$pgn"
+done
 ```
 
 Worker loop with log snippets (using a dummy API key in dry-run mode):

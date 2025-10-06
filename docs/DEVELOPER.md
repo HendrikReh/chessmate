@@ -54,6 +54,23 @@ OPENAI_API_KEY=dummy chessmate embedding-worker
 chessmate fen test/fixtures/sample_game.pgn | head -n 5
 ```
 
+### Parsing PGNs Programmatically
+```ocaml
+# let raw = Stdio.In_channel.read_all "game.pgn";;
+val raw : string = "..."
+# match Chessmate.Pgn_parser.parse raw with
+  | Ok game -> List.take game.moves 3
+  | Error err -> raise_s [%sexp "parse failure", (err : Error.t)]
+;;
+- : Chessmate.Pgn_parser.move list = [ ... ]
+
+# match Chessmate.Pgn_parser.parse_file "game.pgn" with
+  | Ok game -> Chessmate.Game_metadata.of_headers game.headers
+  | Error err -> raise_s [%sexp "parse-file failure", (err : Error.t)]
+;;
+- : Chessmate.Game_metadata.t = { ... }
+```
+
 ## Coding Standards
 - Adopt `open! Base`; expose only required signatures via `.mli`.
 - Keep pure logic under `lib/chess`; place side-effects (database, network) in `lib/storage` or service modules.
