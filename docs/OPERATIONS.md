@@ -9,13 +9,19 @@
 
 ## Deployment
 1. Copy `.env.example` → `.env` and fill secrets (`DATABASE_URL`, `QDRANT_URL`, `OPENAI_API_KEY`).
-2. `docker-compose pull` (or `build` for internal services) then `docker-compose up -d`.
-3. Run database migrations: `docker-compose exec postgres psql -U chessmate -f scripts/migrate.sql` (or `dune exec scripts/migrate.exe` once implemented).
-4. Warm caches by running `dune exec chessmate -- ingest fixtures/sample.pgn` against the live stack.
+2. Validate the Compose file before starting services: `docker compose config` (warning about the legacy `version` key is safe to ignore, or remove the key entirely).
+3. Start the data stores locally: `docker compose up -d postgres qdrant`.
+4. Run database migrations: `docker compose exec postgres psql -U chess -d chessmate -f scripts/migrate.sql` (replace with the dune-based migrator once available).
+5. Warm caches and seed data once the ingestion CLI lands (milestone 4): `dune exec chessmate -- ingest fixtures/sample.pgn`.
+6. Launch host-based services (until we ship dedicated containers):
+   ```sh
+   OPENAI_API_KEY=... DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec embedding_worker
+   ```
+   The HTTP query API and CLI wrapper will be containerized alongside milestone 4 deliverables.
 
 ## Runtime Management
 - Health checks: `/health` (API), `/metrics` (Prometheus once wired), Postgres `pg_isready`, Qdrant `/healthz`.
-- Logs: use `docker-compose logs -f <service>` or ship to centralized collector (Loki/ELK) via sidecars.
+- Logs: use `docker compose logs -f <service>` or ship to a centralized collector (Loki/ELK) via sidecars.
 - Scaling: replicate `embedding-worker` to handle spikes; keep `postgres` and `qdrant` single instances unless failover design added.
 
 ## Backups & Restore

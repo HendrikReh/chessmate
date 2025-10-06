@@ -11,7 +11,7 @@
 
 (maintainers "Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>")
 
-(license LICENSE)
+(license "GPL-3.0-or-later")
 
 (documentation https://github.com/HendrikReh/chessmate)
 

@@ -1,26 +1,38 @@
 # Repository Guidelines
 
-## Prompt execution guideline
-Structure any request properly for yourself, then execute it systematically.
+## Prompt Execution Guideline
+Always restate the user task for yourself, outline the intended steps, then execute systematically. This keeps chronology clear and avoids missed requirements.
 
 ## Environment Setup & Tooling
-Use the local opam switch stored in `_opam/`. Run `opam switch set .` once per shell so Dune and linters resolve dependencies consistently. Keep OCaml, Dune, and ocamlformat versions in sync with `chessmate.opam`; update that file before introducing new tooling.
+- Use the local opam switch stored in `_opam/`. Run `eval $(opam env --set-switch)` (or `opam switch create .`) in each shell so Dune and linters resolve dependencies consistently.
+- `psql` and `curl` must be available on the `PATH` (used by migration scripts and the embedding worker).
+- Keep OCaml, Dune, and ocamlformat versions aligned with `chessmate.opam` before introducing new tooling.
 
-## Project Structure & Module Organization
-The workspace root contains `dune-project`, `lib/` for reusable chess logic, `bin/` for CLI entry points (`main.ml` today), and `test/` for automated suites. Compiled artifacts land under `_build/`. Place diagrams or write-ups beside the relevant code (for example `lib/board/`), and keep experimental spikes in throwaway branches rather than committing them.
+## Project Structure Highlights
+- `lib/chess/`: PGN parsing, metadata helpers, and PGN→FEN engine (new home for all chess-specific modules).
+- `lib/storage/`, `lib/embedding/`, `lib/query/`, `lib/cli/`: persistence, embeddings, planning, and shared CLI code.
+- `bin/`: CLI entry points (`chessmate`, `pgn_to_fen`, …).
+- `services/`: long-running executables such as the embedding worker.
+- `test/fixtures/`: canonical PGN fixtures used by tests.
 
-## Build, Test, and Development Commands
-- `opam install . --deps-only --with-test`: install and refresh dependencies declared in `chessmate.opam`.
-- `dune build`: compile all libraries and executables from the repository root.
-- `dune exec bin/main.exe`: run the CLI manually while iterating.
-- `dune test`: execute suites defined under `test/` and report Alcotest output.
-- `dune fmt`: format all OCaml sources with the repo’s ocamlformat profile.
+## Core Commands
+- `opam install . --deps-only --with-test`
+- `dune build`
+- `dune test` (use `--no-buffer` to stream PGN/FEN logs)
+- `dune exec chessmate -- ingest …`, `dune exec chessmate -- query …` (tracked for milestone 4; currently under active development)
+- `dune exec pgn_to_fen -- <game.pgn>` for quick FEN verification.
 
-## Coding Style & Naming Conventions
-Stick to two-space indentation, no tabs, and wrap lines at roughly 100 characters. Modules and files use `UpperCamelCase` (`BoardState.ml`), functions and values use `lower_snake_case`, and variant constructors stay in `PascalCase`. Keep pure rules in `lib/`; quarantine IO or CLI parsing in `bin/`. Always run `dune fmt` before staging changes.
+## Coding Style & Etiquette
+- Two-space indentation, `open! Base` at the top of `.ml` files, and explicit `.mli` signatures.
+- Keep pure chess logic in `lib/chess/`; isolate side effects in CLI/services.
+- Run `dune fmt` before staging changes; include `dune build && dune test` output in PR descriptions.
 
-## Testing Guidelines
-Author Alcotest suites in `test/`, mirroring module names (`board_state.ml` → `test_board_state.ml`). Group cases with `Alcotest.test_case` and aggregate them in a central `run` invocation. Update `test/dune` with new libraries whenever a suite gains dependencies. Aim to cover move generation, validation, and CLI interactions; run `dune test` before every push.
+## Testing Discipline
+- Mirror library modules with Alcotest suites under `test/` and register them via `Alcotest.run`.
+- Update `test/dune` when new fixtures or libraries are required.
+- Prefer deterministic fixtures (see `test/fixtures/`) and print diagnostics only behind `--no-buffer` recommendations.
 
-## Commit & Pull Request Guidelines
-Write imperative commit subjects with an optional scope (`feat: add move parser`). When a change impacts behavior, include brief body lines about rationale and validation commands. Pull requests should link related issues, call out breaking changes, and attach CLI output or screenshots if user-facing behavior shifts. Document follow-up work in the PR description rather than burying it in comments.
+## Commit & PR Guidelines
+- Imperative branch/commit subjects (e.g., `feat: add pgn fen helper`).
+- Link related issues in PRs, summarize behavior changes, list validation commands, and highlight user-visible output when relevant.
+- Document follow-up work in the PR description rather than ad-hoc comments.

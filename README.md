@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/badge/Version-0.3.0-blue.svg)](RELEASE_NOTES.md)
 [![Status](https://img.shields.io/badge/Status-Proof%20of%20Concept-yellow.svg)](docs/IMPLEMENTATION_PLAN.md)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/HendrikReh/chessmate/ci.yml?branch=main)](https://github.com/HendrikReh/chessmate/actions)
-[![License](https://img.shields.io/github/license/HendrikReh/chessmate)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](docs/GUIDELINES.md)
 [![Collaboration](https://img.shields.io/badge/Collaboration-Guidelines-blue.svg)](docs/GUIDELINES.md)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-active-green.svg)](https://github.com/HendrikReh/chessmate/graphs/commit-activity)
@@ -15,12 +15,12 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 - PostgreSQL client (`psql`) available on the `PATH` for running migrations and database writes.
 - `curl` (used by the embedding worker to call the OpenAI API).
 
-## Features
-- **Hybrid search:** combine OpenAI FEN embeddings with keyword filters for precise tactics or opening questions.
-- **Structured metadata:** Postgres schema stores games, players, positions, and annotations with ECO tags and ratings.
-- **CLI-first UX:** `chessmate ingest` for PGN ingestion, `chessmate query` to explore positions via natural language.
-- **Extensible architecture:** modular OCaml library (core/storage/embedding/query) plus an embedding worker scaffold for background vector sync.
-- **PGN → FEN tooling:** `dune exec pgn_to_fen -- <game.pgn>` prints the FEN after every half-move for quick analysis.
+## Feature Highlights
+- **PGN ingestion pipeline:** parse headers/SAN, derive per-ply FEN snapshots, and persist metadata for downstream services.
+- **Embedding worker skeleton:** polls `embedding_jobs`, calls OpenAI embeddings, and records vector identifiers ready for Qdrant sync.
+- **Structured module layout:** chess logic under `lib/chess`, persistence in `lib/storage`, embeddings in `lib/embedding`, query planning under `lib/query`, and CLI glue in `lib/cli`.
+- **PGN → FEN tooling:** `dune exec pgn_to_fen -- <game.pgn>` prints the FEN after each half-move for quick analysis.
+- **Road to hybrid search:** milestone 4 will wire intent parsing, hybrid planning, and the HTTP query API (`docs/IMPLEMENTATION_PLAN.md`).
 
 ## Getting Started
 1. Clone and enter the repository.
@@ -31,24 +31,23 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    ```
 3. Launch backing services (Postgres, Qdrant) via Docker:
    ```sh
-   docker-compose up -d postgres qdrant
+   docker compose up -d postgres qdrant
    ```
 4. Build and run tests:
    ```sh
    dune build
    dune test
    ```
-5. Try the CLI stubs and worker loop:
+5. Explore the available tooling:
    ```sh
-   dune exec chessmate -- ingest fixtures/sample.pgn
-   dune exec chessmate -- query "Find games with a queenside majority attack"
-   OPENAI_API_KEY=dummy DATABASE_URL=postgres://... dune exec embedding_worker
+   OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec embedding_worker
    dune exec pgn_to_fen -- test/fixtures/sample_game.pgn
    ```
+   The `chessmate` CLI entrypoint is a work in progress; ingestion and query commands will land with milestone 4.
 
 ## Repository Structure
 ```
-lib/            # Core OCaml libraries (core, storage, embedding, query, cli)
+lib/            # OCaml libraries (chess, storage, embedding, query, cli)
 bin/            # CLI entry points
 scripts/        # Database migrations (`migrate.sh`, `migrations/`, seeds)
 services/       # Long-running services (e.g., embedding_worker)
@@ -68,4 +67,4 @@ data/           # Bind-mounted volumes for Postgres and Qdrant
 PRs welcome! See [Collaboration Guidelines](docs/GUIDELINES.md) for coding standards, testing expectations, and PR checklist. Please open an issue before large changes and include `dune build && dune test` output in your PR template.
 
 ## License
-Distributed under the [MIT License](LICENSE).
+Distributed under the [GNU General Public License v3.0](LICENSE).

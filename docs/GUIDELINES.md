@@ -14,7 +14,7 @@
 
 ## Coding Standards
 - OCaml: `open! Base`, explicit interfaces (`.mli`), no `Stdlib` unless necessary; prefer `Or_error.t` for recoverable failures.
-- CLI/services: centralize side effects in `storage` modules, keep `core` pure.
+- CLI/services: centralize side effects in `lib/storage` modules, keep `lib/chess` pure.
 - Use pattern matching, avoid partial functions, add concise comments for non-obvious logic.
 - Apply `dune fmt` before commits; ensure `dune build` and `dune test` pass locally.
 

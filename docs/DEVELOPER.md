@@ -1,44 +1,43 @@
 # Developer Handbook
 
 ## Onboarding Checklist
-- Install OCaml 5.x, `opam`, and run `opam switch create .` inside the repo (local switch lives under `_opam/`).
+- Install OCaml 5.x, `opam`, and run `opam switch create .` inside the repo (local switch lives under `_opam/`); load it in each shell with `eval $(opam env --set-switch)`.
 - Pull build deps: `opam install . --deps-only --with-test`.
 - Confirm Dune works: `dune build`, `dune test`, `dune fmt --check`.
-- Start services via `docker-compose up postgres qdrant` when developing ingestion or query code.
+- Start backing services with `docker compose up -d postgres qdrant` when developing ingestion or query code.
 - Tooling prerequisites: PostgreSQL client (`psql`) and `curl` must be available for persistence and OpenAI embeddings.
 
-## Repository Layout
-- `lib/`: OCaml libraries split into `core/`, `storage/`, `embedding/`, `query/`, `cli/`.
-- `bin/`: CLI entry points (e.g., `chessmate ingest`, `chessmate query`).
-- `test/`: Alcotest suites mirroring module names.
-- `docs/`: Architecture, ops, and planning references.
-- `data/`: Host-mounted volumes for Postgres (`data/postgres`) and Qdrant (`data/qdrant`).
-- `scripts/`: Database migrations, developer utilities.
+## Repository Layout (Top Level)
+- `lib/chess/`: PGN parsing, metadata helpers, and PGN→FEN engine (chess-specific logic).
+- `lib/storage/`, `lib/embedding/`, `lib/query/`, `lib/cli/`: persistence, embeddings, planning, and shared CLI utilities.
+- `bin/`: CLI entry points (`chessmate`, `pgn_to_fen`, …).
+- `services/`: long-running executables such as the embedding worker.
+- `test/`: Alcotest suites and fixtures (`test/fixtures/` holds canonical PGNs).
+- `docs/`, `scripts/`, `data/`: documentation, migrations, and Docker-mounted volumes.
 
 ## Database Setup
-- Export `DATABASE_URL` (e.g., `postgres://chessmate:password@localhost:5432/chessmate`).
+- Export `DATABASE_URL` (e.g., `postgres://chess:chess@localhost:5433/chessmate`).
 - Run migrations: `./scripts/migrate.sh` (executes files in `scripts/migrations/`).
 - Optionally seed sample data for smoke tests: `psql "$DATABASE_URL" -f scripts/seed_sample_games.sql`.
 
 ## Build & Test Workflow
 - Format before commits: `dune fmt`.
 - Compile and run tests locally: `dune build && dune test`.
-- Integration tests (requires Docker): `docker-compose up -d` then `dune test --force`. Shut down with `docker-compose down`.
+- Integration tests (requires Docker): `docker compose up -d postgres qdrant` then `dune test --force`. Shut down with `docker compose down`.
 - Use `WATCH=1 dune runtest` for rapid iteration on a specific suite.
 - Test output tips: Dune captures stdout by default; to stream logs live (e.g., parsed PGN dumps) run `dune test --no-buffer`. Add `--force` if the test target is already built.
-- `chessmate ingest` currently parses PGNs and prepares SQL-ready metadata; the PostgreSQL write path is stubbed until the driver is integrated (Milestone 3 follow-up).
-- Embedding worker: run `OPENAI_API_KEY=<key> DATABASE_URL=<postgres-uri> dune exec embedding_worker` to poll the queue. The worker currently exercises the control loop and job state transitions; database operations still return stub responses until the driver is added.
+- `chessmate` CLI subcommands are still being wired; ingestion/query commands will ship alongside milestone 4. Use the lower-level modules directly in tests for now.
+- Embedding worker: run `OPENAI_API_KEY=<key> DATABASE_URL=<postgres-uri> dune exec embedding_worker` to poll the queue. The worker exercises the control loop and persistence hooks; configure Postgres/Qdrant locally to observe end-to-end writes as they land.
 - PGN → FEN utility: run `dune exec pgn_to_fen -- <input.pgn> [output.txt]` to emit the FEN after each half-move. Useful for verifying ingestion data and debugging SAN parsing.
 
 ## Development CLI Usage
-```
-dune exec chessmate -- ingest path/to/game.pgn   # parses PGNs -> Postgres queue
-DUNE_PROFILE=release dune exec chessmate -- query "describe queenside majority"  # hybrid search
-```
+- `dune exec pgn_to_fen -- test/fixtures/sample_game.pgn` – prints FEN strings after every half-move (handy for debugging ingestion states).
+- `dune exec embedding_worker` – polls `embedding_jobs` and records vector IDs once Postgres/Qdrant are running.
+- CLI wrappers for ingestion and query are tracked for milestone 4 (`docs/IMPLEMENTATION_PLAN.md`).
 
 ## Coding Standards
 - Every `.ml` file starts with `open! Base`; expose API via `.mli`.
-- Keep domain logic pure inside `lib/core`; side-effects in `storage/` or service-specific modules.
+- Keep domain logic pure inside `lib/chess`; route side-effects through `lib/storage` or service-specific modules.
 - Prefer pattern matching and immutable data; avoid partial functions.
 - Return `Or_error.t` for recoverable failures; bubble up via CLI error handling.
 - Use `[%log]` (once logging added) rather than `Printf.printf` in long-lived services.
@@ -50,6 +49,7 @@ DUNE_PROFILE=release dune exec chessmate -- query "describe queenside majority" 
 4. Open PR with summary, testing commands, rollout notes. Request review from another contributor.
 
 ## IDE & Tooling Tips
+- Set up the correct environment with `eval $(opam env --set-switch)`.
 - VS Code + OCaml Platform extension or Emacs + merlin for type-aware editing.
 - Use ocamlformat integration for on-save formatting.
 - Install `git hook` (optional script under `scripts/`) to enforce `dune fmt` and tests pre-push.
@@ -61,8 +61,7 @@ DUNE_PROFILE=release dune exec chessmate -- query "describe queenside majority" 
 
 ## Continuous Integration
 - Every push and pull request triggers GitHub Actions workflow [`ci.yml`](../.github/workflows/ci.yml).
-- Pipeline steps: checkout, OCaml 5.1 setup, dependency install, `dune build`, `dune test`.
+- Pipeline steps: checkout, OCaml toolchain setup, dependency install, `dune build`, `dune test`.
 - No remote caching configured; run times reflect full builds.
 - View results under the GitHub Actions tab. Always ensure your branch is green before requesting review.
 - Optional local dry-run: install [`act`](https://github.com/nektos/act) and execute `HOME=$PWD act -j build-and-test -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --container-architecture linux/amd64`. Some GitHub services (cache, secrets) are unavailable locally, so expect differences.
-- Test output tips: Dune captures stdout by default; to stream test logs live (e.g., parsed PGN dumps) run `dune test --no-buffer`. Use `--force` once when the target is already up to date.

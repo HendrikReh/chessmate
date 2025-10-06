@@ -5,7 +5,7 @@ description:
   "Hybrid chess tutor combining Postgres metadata with Qdrant vector search and OCaml-powered ingestion/query services."
 maintainer: ["Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>"]
 authors: ["Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>"]
-license: "LICENSE"
+license: "GPL-3.0-or-later"
 tags: ["chess" "ocaml" "vector-search" "postgres" "qdrant"]
 homepage: "https://github.com/HendrikReh/chessmate"
 doc: "https://github.com/HendrikReh/chessmate"

@@ -9,9 +9,9 @@
 - **Client CLI (`chessmate query`)** → HTTP → **Query API (Opium/Dream)** →
   - Qdrant hybrid search (vector + keyword)
   - PostgreSQL metadata lookups
-- **Ingestion CLI (`chessmate ingest`)** → **Ingestion Service** →
+- **Ingestion pipeline** (`lib/chess/pgn_parser`, `lib/storage/repo_postgres`) →
   - PostgreSQL (games, players, positions)
-  - Job queue → Embedding Worker → OpenAI embeddings → Qdrant upsert → Postgres vector_id sync
+  - Job queue → Embedding Worker → OpenAI embeddings → Qdrant upsert → Postgres `vector_id` sync
 
 ## Data Flow
 1. PGN file parsed into headers, SAN moves, per-ply FEN snapshots.
@@ -25,16 +25,16 @@
 - **Data volumes**: persisted under `data/postgres`, `data/qdrant` to survive container restarts.
 
 ## Module Boundaries (OCaml)
-- `lib/core`: PGN/FEN parsing, metadata models, derived features.
-- `lib/storage`: database + queue facades (Postgres, Qdrant, Redis/Postgres job queues).
+- `lib/chess`: PGN/FEN parsing, metadata models, derived features.
+- `lib/storage`: database + queue facades (Postgres, embedding job queues, future Qdrant adapter).
 - `lib/embedding`: OpenAI client, caching, payload builders.
-- `lib/query`: intent analysis, hybrid planner, result formatting.
-- `lib/cli`: shared CLI glue for ingestion and query commands.
+- `lib/query`: intent analysis, hybrid planner, result formatting (milestone 4 scope).
+- `lib/cli`: shared CLI glue for ingestion and query commands (currently being wired).
 
 ## Service Responsibilities
-- **Query API**: parse questions, orchestrate hybrid search, format answers, expose health/metrics endpoints.
+- **Query API** (planned): parse questions, orchestrate hybrid search, format answers, expose health/metrics endpoints.
 - **Embedding Worker**: resilient embedding pipeline with retry/backoff, batch size tuning, and queue management.
-- **Background Jobs**: re-embedding, snapshot validation, analytics refresh.
+- **Background Jobs** (planned): re-embedding, snapshot validation, analytics refresh.
 
 ## External Integrations
 - OpenAI embeddings (HTTP) with API key auth.

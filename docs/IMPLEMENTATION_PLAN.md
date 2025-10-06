@@ -20,7 +20,7 @@
 - Indices: B-tree for rating/ply filters, GIN/pg_trgm for text, unique `(game_id, ply)` constraint; mirrored payload keys in Qdrant for filtering.
 
 ## Library Structure (`lib/`)
-- `core/`: pure chess logic and domain types (`Pgn_parser`, `Fen`, `Game_metadata`, `Position_features`).
+- `chess/`: chess-specific logic (`pgn_parser`, `game_metadata`, `position_features`, `pgn_to_fen`).
 - `storage/`: persistence layers (`Repo_postgres`, `Repo_qdrant`, `Ingestion_queue`).
 - `embedding/`: OpenAI client, caching, and payload builders (`Embedding_client`, `Embeddings_cache`, `Vector_payload`).
 - `query/`: NL intent mapping, hybrid planner, result formatting (`Query_intent`, `Hybrid_planner`, `Result_formatter`).
@@ -50,23 +50,23 @@
 - Backups: Postgres dumps + WAL archiving; Qdrant snapshots stored encrypted.
 - Observability: structured logs (JSON), Prometheus metrics for OCaml services, health endpoints.
 
-### Directory Layout (initial scaffold)
+### Directory Layout (current)
 ```
 .
 ├── bin/
 ├── docs/
 ├── lib/
-│   ├── core/
+│   ├── chess/
 │   ├── storage/
 │   ├── embedding/
 │   ├── query/
 │   └── cli/
+├── services/
 ├── test/
+│   └── fixtures/
 ├── data/
-│   ├── postgres/
-│   └── qdrant/
-├── docker-compose.yml
-└── scripts/
+├── scripts/
+└── docker-compose.yml
 ```
 
 ### docker-compose.yml Sketch
@@ -155,7 +155,7 @@ services:
   - Create `embedding-worker` service (OCaml) consuming jobs from queue table/Redis.
   - Expose CLI command to enqueue FEN snapshots (`chessmate ingest --enqueue-only`).
 - Checkpoints:
-  - Local docker-compose brings up Postgres + Qdrant; worker inserts vectors successfully.
+  - Local Docker Compose stack brings up Postgres + Qdrant; worker inserts vectors successfully.
   - Postgres rows receive valid `vector_id` references after worker completes.
   - `curl` to Qdrant shows inserted points with payload filters (e.g., `player_white`).
 
@@ -169,7 +169,7 @@ services:
 - Checkpoints:
   - `dune exec chessmate query "find me five games..."` returns a ranked response referencing both vector similarity and metadata filters.
   - Unit tests cover intent parsing edge cases (opening names, rating constraints).
-  - Integration test validates combined Qdrant + Postgres filtering within docker-compose.
+  - Integration test validates combined Qdrant + Postgres filtering within Docker Compose.
 
 ### Milestone 5 – Evaluation & Observability
 **Objective:** Validate answer quality and production readiness.
@@ -177,7 +177,7 @@ services:
   - Build evaluation harness with curated NL questions and expected evidence sets.
   - Instrument services with metrics (request latency, embed throughput) and health probes.
   - Document runbooks for backups, re-embedding, and scaling.
-  - Add CI workflows for lint/test, integration tests against docker-compose, and deployment packaging.
+  - Add CI workflows for lint/test, integration tests against Docker Compose, and deployment packaging.
 - Checkpoints:
   - Evaluation harness produces pass/fail report; baseline accuracy threshold defined.
   - Prometheus metrics exposed at `/metrics`; dashboards/alerts configured.
