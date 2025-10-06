@@ -7,30 +7,33 @@
 
 ## Visual Overview
 ```mermaid
-graph TD
+flowchart TD
   subgraph Clients
-    CLI[CLI (chessmate)]
-  end
-  subgraph Services
-    API[Query API (Opium)]
-    Worker[Embedding Worker]
-  end
-  subgraph Storage
-    PG[(PostgreSQL)]
-    QD[(Qdrant)]
-  end
-  subgraph Integrations
-    OpenAI[(OpenAI Embeddings)]
+    CLI["CLI (chessmate)"]
   end
 
-  CLI -- "HTTP /query" --> API
-  CLI -- "Ingest PGN" --> PG
-  API -- "Metadata lookups" --> PG
-  API -- "Vector search" --> QD
-  Worker -- "Embedding jobs" --> PG
-  Worker -- "Vectors" --> QD
-  Worker -- "Embed FENs" --> OpenAI
-  PG <-- "Opening metadata" --> CLI
+  subgraph Services
+    API["Query API (Opium)"]
+    Worker["Embedding Worker"]
+  end
+
+  subgraph Storage
+    PG[("PostgreSQL")]
+    QD[("Qdrant")]
+  end
+
+  subgraph Integrations
+    OpenAI[("OpenAI Embeddings")]
+  end
+
+  CLI -->|"HTTP /query"| API
+  CLI -->|"Ingest PGN"| PG
+  API -->|"Metadata lookups"| PG
+  API -->|"Vector search"| QD
+  Worker -->|"Embedding jobs"| PG
+  Worker -->|"Vectors"| QD
+  Worker -->|"Embed FENs"| OpenAI
+  PG -->|"Opening metadata"| CLI
 ```
 
 ## Component Overview
