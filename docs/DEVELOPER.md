@@ -99,3 +99,12 @@ val raw : string = "..."
 - No remote caching: expect full builds; keep dependencies minimal.
 - Re-run CI from GitHub Actions tab after rebases/flaky failures; log flakes in an issue.
 - Local dry-run (optional): `HOME=$PWD act -j build-and-test -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --container-architecture linux/amd64` (some GitHub services unavailable locally).
+
+## Related Documentation
+
+- [Chessmate for Dummies](CHESSMATE_FOR_DUMMIES.md) - Complete ingestion and search flow explanation
+- [Architecture](ARCHITECTURE.md) - System design, components, and data flow diagrams
+- [Operations](OPERATIONS.md) - Deployment, monitoring, and backup procedures
+- [LLM Prompts](PROMPTS.md) - Useful prompts for chess analysis and data augmentation
+- [Troubleshooting](TROUBLESHOOTING.md) - Common issues and solutions
+- [Guidelines](GUIDELINES.md) - Collaboration standards and PR checklist
