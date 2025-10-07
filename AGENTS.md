@@ -2,6 +2,7 @@
 
 ## Prompt Execution Guideline
 Always restate the user task for yourself, outline the intended steps, then execute systematically. This keeps chronology clear and avoids missed requirements.
+You do not have to set OPENAI_API_KEY, as we use set -a and source .env
 
 ## Environment Setup & Tooling
 - Use the local opam switch stored in `_opam/`. Run `eval $(opam env --set-switch)` (or `opam switch create .`) in each shell so Dune and linters resolve dependencies consistently.

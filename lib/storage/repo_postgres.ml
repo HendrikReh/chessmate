@@ -80,9 +80,11 @@ let run_psql t sql =
   Exn.protect
     ~f:(fun () ->
         Out_channel.write_all script ~data:sql;
+        let field_separator = "\t" in
         let command =
           Printf.sprintf
-            "psql --no-psqlrc -X -q -t -A -F '\\t' --dbname=%s -v ON_ERROR_STOP=1 -f %s"
+            "psql --no-psqlrc -X -q -t -A -F \"%s\" --dbname=%s -v ON_ERROR_STOP=1 -f %s"
+            field_separator
             (Stdlib.Filename.quote t.conninfo)
             (Stdlib.Filename.quote script)
         in
@@ -305,13 +307,13 @@ let search_games repo ~filters ~rating ~limit =
   rows |> List.map ~f:parse_game_row |> Or_error.all
 
 let parse_job_row line =
-  let parts = String.split ~on:'\t' line in
-  match parts with
-  | [ id_str; fen; attempts_str; status_str; last_error_str ] ->
-      let parse_int field value =
-        Or_error.try_with (fun () -> Int.of_string value)
-        |> Or_error.tag ~tag:(Printf.sprintf "Invalid integer for %s" field)
-      in
+  let parse_int field value =
+    Or_error.try_with (fun () -> Int.of_string value)
+    |> Or_error.tag ~tag:(Printf.sprintf "Invalid integer for %s" field)
+  in
+  match String.split line ~on:'\t' with
+  | id_str :: fen :: attempts_str :: status_str :: rest ->
+      let last_error_str = String.concat ~sep:"\t" rest in
       let last_error = if String.is_empty last_error_str then None else Some last_error_str in
       let* id = parse_int "id" id_str in
       let* attempts = parse_int "attempts" attempts_str in
