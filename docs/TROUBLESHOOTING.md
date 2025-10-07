@@ -1,72 +1,115 @@
 # Troubleshooting
 
-This guide collects the most common hiccups we have seen while working on Chessmate, along with quick wins to keep you moving.
+Common symptoms, quick diagnostics, and proven fixes for keeping Chessmate healthy.
 
-## PGN Ingestion
-- **Symptom:** `psql ... invalid byte sequence for encoding "UTF8"` while running `chessmate ingest` on TWIC bulletins or other third‑party dumps.
-  - **Why it happens:** Many public PGNs (including TWIC) ship in Windows‑1252, so Postgres refuses to ingest them once we push the raw text into the database.
-  - **Fix:** Re-encode before ingesting:
-    ```sh
-    iconv -f WINDOWS-1252 -t UTF-8//TRANSLIT data/games/twic1611.pgn > /tmp/twic1611.utf8.pgn
-    cp /tmp/twic1611.utf8.pgn data/games/twic1611.pgn
-    ```
-    The transliteration keeps smart quotes/dashes readable. Once converted, rerun `chessmate ingest` and Postgres will accept the file.
-- **Symptom:** Ingestion aborts with `PGN game #315 "PGN contained no moves"` or similar.
-  - **Fix:** Run the preflight check to see all suspect entries:
-    ```sh
-    dune exec chessmate -- twic-precheck data/games/twic1611.pgn
-    ```
-    The report lists each problematic PGN block and an actionable fix (delete editorial fragments, add missing `[Result]` tags, etc.). Clean up the reported entries, then re-run ingestion. You can continue from the first failing index if earlier games already landed in Postgres.
-- **Symptom:** `Stored game 3 with 65 positions` when the source PGN holds many games.
-  - **Fix:** Upgrade to the multi-game ingest (already merged). Ensure you are running the latest binary; older builds only processed the first game.
+## Quick Smoke Test
+Run this loop whenever you reset dependencies or suspect ingest/embedding is wedged.
 
-## Environment Setup
-- **Symptom:** `opam: "open" failed on ... config.lock: Operation not permitted` inside the repo.
-  - **Fix:** Some shells block writes when sandboxed. Run `opam env --set-switch | source` instead of `opam switch set .`.
-- **Symptom:** `Program 'chessmate_api' not found!` when starting the API via Dune.
-  - **Fix:** Use the public name `dune exec -- chessmate-api --port 8080` or the full path `dune exec services/api/chessmate_api.exe -- --port 8080`.
-
-## Database & Vector Stores
-- **Symptom:** `/query` responses contain only warnings such as `Vector search unavailable (...).`
-  - **Fix:** Ensure `QDRANT_URL` points to a reachable instance. When Qdrant is down the API falls back to SQL results and adds warnings.
-- **Symptom:** Ingest jobs stall because embeddings never arrive.
-  - **Fix:** Confirm the embedding worker is running (`dune exec chessmate -- embedding-worker`). Check `OPENAI_API_KEY`/endpoint settings and review worker logs for rate-limit messages.
-- **Symptom:** Worker runs, but `/query` still shows warnings about missing vectors.
-  - **Fix:** Verify embeddings are flowing end to end:
-    1. Queue depth: `psql postgres://chess:chess@localhost:5433/chessmate -c "SELECT status, COUNT(*) FROM embedding_jobs GROUP BY status;"` — `pending` should drop while `completed` rises.
-    2. Postgres vector IDs: `psql postgres://chess:chess@localhost:5433/chessmate -c "SELECT COUNT(*) FROM positions WHERE vector_id IS NOT NULL;"` — reports how many positions have received vector identifiers. A zero result means the embedding worker has not written any vectors back yet.
-    3. Qdrant collection: `curl "$QDRANT_URL/collections/positions/points/count"` — expect a positive count.
-    If any of these stay at zero, the worker likely can’t reach Qdrant/OpenAI; inspect worker logs for the failing job IDs and underlying errors.
-
-## CLI Tips
-- Always export `DATABASE_URL` before running ingest/query commands.
-- Use `dune exec chessmate -- help` for a quick recap of available subcommands.
-
-## End-to-end Sanity Check
-Run this quick loop whenever you reset dependencies or suspect the ingest/embedding pipeline is wedged.
-1. Verify Postgres connectivity:
+1. **Check Postgres connectivity**
    ```sh
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-     psql postgres://chess:chess@localhost:5433/chessmate -c "SELECT 1"
+   psql postgres://chess:chess@localhost:5433/chessmate -c "SELECT 1"
    ```
-2. Ingest a known-good PGN (TWIC 1611 ships in the repo fixtures):
+2. **Ingest a known-good PGN** (TWIC 1611 ships with the repo fixtures)
    ```sh
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-     dune exec chessmate -- ingest data/games/twic1611.pgn
+   dune exec chessmate -- ingest data/games/twic1611.pgn
    ```
-3. Confirm positions are landing with vector stubs:
+3. **Confirm positions land with vector stubs**
    ```sh
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-     psql postgres://chess:chess@localhost:5433/chessmate \
-     -c "SELECT COUNT(*) FROM positions WHERE vector_id IS NOT NULL"
+   psql postgres://chess:chess@localhost:5433/chessmate \
+   -c "SELECT COUNT(*) FROM positions WHERE vector_id IS NOT NULL"
    ```
-4. Load worker env (the repo uses `set -a` to export everything in `.env`) and start the embedding worker:
+4. **Start the embedding worker with exported env**
    ```sh
    set -a
    source .env
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
    QDRANT_URL=http://localhost:6333 dune exec embedding_worker
    ```
-   Leave the worker running until the `pending` queue drains. If you see warnings about `Malformed job row`, pull the latest code—this is fixed by emitting real tab delimiters from the Postgres client.
+5. **Watch the queue drain**
+   ```sh
+   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+   psql postgres://chess:chess@localhost:5433/chessmate \
+   -c "SELECT status, COUNT(*) FROM embedding_jobs GROUP BY status ORDER BY status"
+   ```
+   `pending` should drop while `completed` rises. If logs still show `Malformed job row`, pull the latest code - psql now emits real tab delimiters so rows parse correctly.
 
-Feel free to extend this document as new issues turn up; keeping symptoms and fixes close at hand saves everyone time.
+## PGN Ingestion
+
+### Invalid UTF-8 while ingesting TWIC dumps
+- **Symptom** `psql ... invalid byte sequence for encoding "UTF8"` during `chessmate ingest`.
+- **Cause** Many public PGNs (including TWIC) ship as Windows-1252.
+- **Fix** Re-encode before ingestion:
+  ```sh
+  iconv -f WINDOWS-1252 -t UTF-8//TRANSLIT data/games/twic1611.pgn > /tmp/twic1611.utf8.pgn
+  cp /tmp/twic1611.utf8.pgn data/games/twic1611.pgn
+  ```
+  Transliteration keeps smart quotes/dashes readable. Re-run ingest afterwards.
+
+### Ingestion aborts with "PGN contained no moves"
+- **Symptom** Errors such as `PGN game #315 "PGN contained no moves"`.
+- **Fix** Run the preflight command to surface bad blocks:
+  ```sh
+  dune exec chessmate -- twic-precheck data/games/twic1611.pgn
+  ```
+  The report names each offender (missing `[Result]`, editorial fragments, etc.). Clean up the flagged entries, then re-run ingestion - completed games remain in Postgres.
+
+### Only the first game ingests
+- **Symptom** Log stops at `Stored game 3 with 65 positions` despite a large source file.
+- **Fix** Update to the multi-game ingest (already merged). Ensure you are running the latest binary; legacy builds processed a single game.
+
+## Environment Setup
+
+### opam cannot open `config.lock`
+- **Symptom** `opam: "open" failed on ... config.lock: Operation not permitted`.
+- **Fix** Some shells sandbox writes. Run `eval $(opam env --set-switch)` (or `opam env --set-switch | source`) instead of `opam switch set .`.
+
+### `chessmate_api` executable not found
+- **Symptom** `Program 'chessmate_api' not found!` when starting the API via Dune.
+- **Fix** Use the public name `dune exec -- chessmate-api --port 8080` or the full path `dune exec services/api/chessmate_api.exe -- --port 8080`.
+
+## Database & Vector Stores
+
+### `/query` responses show "Vector search unavailable"
+- **Symptom** API replies only contain SQL fallbacks with warnings.
+- **Fix** Ensure `QDRANT_URL` points to a reachable instance. The API degrades gracefully but warns until vector search returns.
+
+### Embedding jobs never leave `pending`
+- **Symptom** Queue size grows, worker logs stay quiet.
+- **Fix** Confirm the worker is running with valid env:
+  ```sh
+  dune exec chessmate -- embedding-worker
+  ```
+  Double-check `OPENAI_API_KEY` and endpoint settings. When the worker logs `Malformed job row`, update to the latest code (psql field separator fix).
+
+### Worker runs but positions miss vectors
+- **Symptom** `/query` keeps warning about missing vectors even though the worker is active.
+- **Fix** Validate the pipeline end-to-end:
+  1. **Queue depth**
+     ```sh
+     DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     psql postgres://chess:chess@localhost:5433/chessmate \
+     -c "SELECT status, COUNT(*) FROM embedding_jobs GROUP BY status"
+     ```
+     `pending` should fall while `completed` rises.
+  2. **Postgres vector IDs**
+     ```sh
+     DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     psql postgres://chess:chess@localhost:5433/chessmate \
+     -c "SELECT COUNT(*) FROM positions WHERE vector_id IS NOT NULL"
+     ```
+     Non-zero counts mean vectors are being attached.
+  3. **Qdrant collection**
+     ```sh
+     curl "$QDRANT_URL/collections/positions/points/count"
+     ```
+     Expect a positive count; zero implies vectors were not pushed.
+  If any checkpoint flatlines, inspect worker logs for rate limits or credential issues.
+
+## CLI Tips
+- Always export `DATABASE_URL` before running ingest/query commands.
+- `dune exec chessmate -- help` lists all subcommands and options.
+
+Keep extending this guide as new issues surface - sharable fixes save the whole team time.
