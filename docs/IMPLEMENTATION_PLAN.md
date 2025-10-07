@@ -22,6 +22,22 @@ Build a self-hosted chess tutor ("chessmate") that answers natural-language ques
 | 6 – Hybrid vector pre-filtering | 📋 planned | Qdrant narrows candidates, agent ranks final results (Phase 2). |
 | 7 – Theme pre-annotation | 📋 planned | Tactical themes extracted during ingestion (Phase 3). |
 
+## Documentation Alignment Highlights
+
+- `README.md` highlights today’s feature surface: PGN ingestion, the curated hybrid query prototype, and the embedding worker skeleton that still targets OpenAI.
+- `RELEASE_NOTES.md` (v0.4.0) confirms the `/query` path ships curated responses, signalling the gap Milestone 6 must close when wiring live Postgres + Qdrant.
+- `docs/ARCHITECTURE.md` and `docs/CHESSMATE_FOR_DUMMIES.md` walk through ingestion → embedding → query flows and explicitly flag the current planner’s reliance on curated data.
+- `docs/DEVELOPER.md`, `CLAUDE.md`, and `AGENTS.md` lock in environment, tooling, and style guardrails—milestones should assume opam switch usage, two-space indentation, and `open! Base` everywhere.
+- `docs/OPERATIONS.md` and `docs/TROUBLESHOOTING.md` capture the smoke tests, health checks, and reset procedures that every milestone must keep healthy (e.g., quick Postgres connectivity check, embedding queue draining).
+- `docs/PROMPTS.md` already curates prompt templates for theme detection, pawn structure work, and future disambiguation—reuse these instead of inventing new agent prompts.
+- `docs/GUIDELINES.md` reiterates the documentation-first culture; roadmap items should end with updates to the relevant handbook/runbook sections.
+
+**Implications for the roadmap**
+
+- Treat the curated `/query` responses as a documented limitation; Milestone 6 must close it by wiring the hybrid planner to live stores and updating docs to match.
+- Bake documentation/runbook edits into each milestone so README, developer, and operations guides stay in sync with behavior changes.
+- Reuse the shared prompt catalogue when implementing agent evaluation or theme extraction to preserve consistency across tooling and docs.
+
 ## Phased Architecture Evolution
 
 ### Phase 1: Simple + Agent-Friendly (Current Focus)
@@ -293,17 +309,18 @@ sequenceDiagram
 
 **Tasks**:
 1. Build `Agent_evaluator` module with LLM client wrapper
-2. Create prompt templates for tactical theme detection
+2. Create prompt templates for tactical theme detection, reusing and extending motifs from `docs/PROMPTS.md`
 3. Wire agent evaluation into query pipeline (PostgreSQL → overfetch → agent → results)
 4. Add configuration for agent model selection (GPT-4, GPT-5, Claude, etc.)
 5. Implement cost tracking and caching for agent calls
 6. Write unit tests for agent response parsing
+7. Update README, `docs/OPERATIONS.md`, and `docs/TROUBLESHOOTING.md` with the new agent workflow, smoke tests, and failure modes
 
 **Checkpoints**:
 - Query "Find queenside majority attacks in King's Indian" returns accurately ranked results
 - Agent provides explanations: "Game matched because: move 25-35 shows advancing a/b pawns..."
-- Query performance < 10 seconds for 50 candidates
-- Integration tests validate end-to-end flow
+- Query performance < 10 seconds for 50 candidates (validated via the troubleshooting quick smoke test loop)
+- Integration tests validate end-to-end flow and document new steps in the operations runbook
 
 **Architecture Note**: This milestone prioritizes **transparency over complexity**. Agents can reason about simple PostgreSQL filters better than opaque vector similarity scores.
 
@@ -319,10 +336,11 @@ sequenceDiagram
 4. Build evaluation harness comparing Phase 1 (agent-only) vs. Phase 2 (hybrid)
 5. Optimize Qdrant payload filters to mirror PostgreSQL capabilities
 6. Instrument with metrics: query latency, candidate counts per stage, agent evaluation cost
+7. Revise README, `docs/ARCHITECTURE.md`, and `docs/CHESSMATE_FOR_DUMMIES.md` to describe the live hybrid wiring and update troubleshooting guidance for Qdrant failures
 
 **Checkpoints**:
-- Query against 1M+ positions completes in < 5 seconds
-- Evaluation report shows recall/precision vs. Phase 1 baseline
+- Query against 1M+ positions completes in < 5 seconds (documented in `docs/OPERATIONS.md` as the new performance target)
+- Evaluation report shows recall/precision vs. Phase 1 baseline and is summarized in `RELEASE_NOTES.md`
 - Qdrant filters reduce candidates 100x before agent evaluation
 - Cost per query < $0.10 (OpenAI embeddings + agent evaluation)
 
@@ -336,17 +354,18 @@ sequenceDiagram
 **Tasks**:
 1. Design theme taxonomy (20-30 common tactical patterns)
 2. Build `Theme_extractor` service that processes games during ingestion
-3. Create LLM prompts for theme detection from move sequences
+3. Create LLM prompts for theme detection from move sequences, aligning with examples in `docs/PROMPTS.md`
 4. Add `themes` JSONB column to `games` table with GIN index
 5. Migrate embedding worker pattern to theme extraction worker
 6. Update query pipeline to filter on pre-computed themes (no agent evaluation needed)
 7. Optional: Keep agent evaluation for edge cases ("explain why this game matched")
+8. Refresh `docs/OPERATIONS.md`, `docs/TROUBLESHOOTING.md`, and `docs/GUIDELINES.md` with the new ingestion workflow, QA checklist, and documentation expectations
 
 **Checkpoints**:
-- 95% of games have at least one theme tag after processing
+- 95% of games have at least one theme tag after processing (summarized in `RELEASE_NOTES.md` with validation data)
 - Query with theme filter "queenside_majority" completes in < 100ms (PostgreSQL index scan)
 - Validation: Manual review of 100 games confirms theme accuracy > 85%
-- Cost: Theme extraction is one-time per game (vs. per-query agent evaluation)
+- Cost: Theme extraction is one-time per game (vs. per-query agent evaluation); document operational costs in the runbook
 
 **Architecture Note**: This is the **production-ready** version—fast, deterministic, offline-capable, agent-friendly for debugging.
 
