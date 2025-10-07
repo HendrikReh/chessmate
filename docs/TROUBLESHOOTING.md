@@ -42,4 +42,31 @@ This guide collects the most common hiccups we have seen while working on Chessm
 - Always export `DATABASE_URL` before running ingest/query commands.
 - Use `dune exec chessmate -- help` for a quick recap of available subcommands.
 
+## End-to-end Sanity Check
+Run this quick loop whenever you reset dependencies or suspect the ingest/embedding pipeline is wedged.
+1. Verify Postgres connectivity:
+   ```sh
+   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     psql postgres://chess:chess@localhost:5433/chessmate -c "SELECT 1"
+   ```
+2. Ingest a known-good PGN (TWIC 1611 ships in the repo fixtures):
+   ```sh
+   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     dune exec chessmate -- ingest data/games/twic1611.pgn
+   ```
+3. Confirm positions are landing with vector stubs:
+   ```sh
+   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     psql postgres://chess:chess@localhost:5433/chessmate \
+     -c "SELECT COUNT(*) FROM positions WHERE vector_id IS NOT NULL"
+   ```
+4. Load worker env (the repo uses `set -a` to export everything in `.env`) and start the embedding worker:
+   ```sh
+   set -a
+   source .env
+   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+   QDRANT_URL=http://localhost:6333 dune exec embedding_worker
+   ```
+   Leave the worker running until the `pending` queue drains. If you see warnings about `Malformed job row`, pull the latest code—this is fixed by emitting real tab delimiters from the Postgres client.
+
 Feel free to extend this document as new issues turn up; keeping symptoms and fixes close at hand saves everyone time.
