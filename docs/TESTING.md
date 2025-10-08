@@ -2,6 +2,8 @@
 
 This checklist validates the Milestone 5 checkpoints: agent-ranked search, telemetry, caching, and fallback behaviour.
 
+> For setup prerequisites reference the [Developer Handbook](DEVELOPER.md); for runtime commands consult the [Operations Playbook](OPERATIONS.md); for debugging steps see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
 ## 1. Environment Prep
 - Copy configuration: `cp .env.sample .env` (edit credentials as needed).
 - Export env vars in a new shell (`set -a && source .env` or manual exports).

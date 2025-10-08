@@ -2,6 +2,8 @@
 
 This document contains useful prompts for using large language models (GPT-4, GPT-5, Claude, etc.) to perform chess-related transformations and analysis tasks.
 
+> For broader system context see [ARCHITECTURE.md](ARCHITECTURE.md) and [CHESSMATE_FOR_DUMMIES.md](CHESSMATE_FOR_DUMMIES.md); operational guidance for running these prompts in production lives in [OPERATIONS.md](OPERATIONS.md).
+
 ---
 
 ## Pawn Structure Extraction

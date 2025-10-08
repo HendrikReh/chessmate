@@ -1,5 +1,7 @@
 # Collaboration & Quality Guidelines
 
+> Pair with the [Developer Handbook](DEVELOPER.md) for environment setup, the [Testing Plan](TESTING.md) for validation steps, and the [Operations Playbook](OPERATIONS.md) for runtime procedures.
+
 ## Communication
 - Use GitHub Issues for roadmap items and bug reports; link every PR to its parent issue.
 - Capture design decisions in `docs/ADR-<id>.md`; summarize outcome and trade-offs.

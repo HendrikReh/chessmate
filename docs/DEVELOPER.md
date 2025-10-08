@@ -1,5 +1,7 @@
 # Developer Handbook
 
+> Related guides: [Operations Playbook](OPERATIONS.md) for runtime procedures, [Testing Plan](TESTING.md) for manual validation, [Troubleshooting](TROUBLESHOOTING.md) for common issues, and [Collaboration Guidelines](GUIDELINES.md) for team norms.
+
 ## Onboarding Checklist
 1. Copy `.env.sample` to `.env` and update the connection strings/API keys you need locally.
 2. Install OCaml 5.1.x and `opam`; create the local switch inside the repo (lives under `_opam/`) and load it per shell with `eval $(opam env --set-switch)`.
@@ -29,6 +31,7 @@ CHESSMATE_API_URL=http://localhost:8080
 docker compose up -d postgres qdrant redis
 ./scripts/migrate.sh
 ```
+For day-to-day service operations, scaling, and cache management, refer to the [Operations Playbook](OPERATIONS.md).
 - Drop/reset by removing `data/postgres` and re-running migrations (the script is idempotent).
 - Inspect data with `psql "$DATABASE_URL" -c 'SELECT id, opening_slug FROM games;'`.
 
@@ -38,6 +41,7 @@ docker compose up -d postgres qdrant redis
 - Watch mode: `WATCH=1 dune runtest` (re-runs changed suites).
 - Stream test output: `dune runtest --no-buffer` (useful for verbose parsers).
 - Integration passes: ensure Docker services are running, then `dune runtest --force`.
+- For manual verification flows, follow the checklist in [TESTING.md](TESTING.md).
 - Before opening a PR: capture `dune build && dune runtest` output in the PR template.
 
 ### CLI Usage Cheatsheet

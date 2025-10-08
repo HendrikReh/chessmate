@@ -1,5 +1,7 @@
 # Operations Playbook
 
+> Pair this runbook with the [Developer Handbook](DEVELOPER.md), the manual suite in [TESTING.md](TESTING.md), and the failure guide in [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
 ## Service Topology
 - **postgres**: canonical PGN/metadata store, embedding job queue. Volume: `data/postgres`.
 - **qdrant**: vector store for FEN embeddings, exposed on 6333/6334. Volume: `data/qdrant`.
@@ -78,6 +80,12 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
   docker compose exec redis redis-cli --scan --pattern 'chessmate:agent:*'
   ```
   If no keys appear, generate agent traffic (e.g. run a `chessmate query ...` with `AGENT_API_KEY` set) and retry.
+  Spot-check PGN availability without re-ingesting:
+  ```sh
+  docker compose exec postgres psql "$DATABASE_URL" \
+    -c "SELECT id, LENGTH(pgn) FROM games ORDER BY id LIMIT 5;"
+  ```
+  Non-zero lengths confirm PGNs are intact for agent retrieval.
 - Force Redis snapshots when you expect `data/redis` to populate immediately (default policy `--save 60 1` waits for a write + 60 seconds):
   ```sh
   docker compose exec redis redis-cli SAVE    # synchronous

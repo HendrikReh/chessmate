@@ -319,16 +319,21 @@ let fetch_games_with_pgn repo ~ids =
         |> List.map ~f:Int.to_string
         |> String.concat ~sep:","
       in
-      let sql = Printf.sprintf "SELECT id, pgn FROM games WHERE id IN (%s);" id_list in
+      let sql =
+        Printf.sprintf
+          "SELECT json_build_object('id', id, 'pgn', pgn)::text FROM games WHERE id IN (%s);"
+          id_list
+      in
       let* rows = run_psql repo sql in
       rows
       |> List.map ~f:(fun line ->
-             match String.lsplit2 ~on:'\t' line with
-             | Some (id_str, pgn) -> (
-                 match Int.of_string_opt (String.strip id_str) with
-                 | Some id -> Or_error.return (id, pgn)
-                 | None -> Or_error.errorf "Invalid game id: %s" id_str)
-             | None -> Or_error.errorf "Malformed game pgn row: %s" line)
+             match Or_error.try_with (fun () -> Yojson.Safe.from_string line) with
+             | Error err -> Or_error.errorf "Malformed game pgn row (json): %s (%s)" line (Error.to_string_hum err)
+             | Ok json -> (
+                 let open Yojson.Safe.Util in
+                 match member "id" json |> to_int_option, member "pgn" json |> to_string_option with
+                 | Some id, Some pgn -> Or_error.return (id, pgn)
+                 | _ -> Or_error.errorf "Malformed game pgn row: %s" line))
       |> Or_error.all
 
 let parse_job_row line =

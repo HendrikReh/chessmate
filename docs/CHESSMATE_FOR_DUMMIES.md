@@ -2,6 +2,8 @@
 
 This document explains how Chessmate ingests chess games, stores information across PostgreSQL and Qdrant, and processes natural language queries to deliver relevant results.
 
+> Looking for a blueprint or operational details? See the [Architecture Overview](ARCHITECTURE.md) for component diagrams, [Operations Playbook](OPERATIONS.md) for runbooks, and [Developer Handbook](DEVELOPER.md) for setup instructions. Prompt engineering ideas live in [PROMPTS.md](PROMPTS.md).
+
 ## What is Semantic Search?
 
 Before diving in, let's understand the concept: Traditional search matches exact keywords (like Google in the 1990s). **Semantic search** understands *meaning*. For example, if you search for "King's Indian games," the system knows you're looking for games with ECO codes E60-E99, even though "E60-E99" never appears in your query.

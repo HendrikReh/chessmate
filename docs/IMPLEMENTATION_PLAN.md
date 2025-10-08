@@ -250,6 +250,8 @@ sequenceDiagram
 
 ---
 
+> For architectural context see [ARCHITECTURE.md](ARCHITECTURE.md); for current runbooks see [OPERATIONS.md](OPERATIONS.md). Progress for Phase 1 lives here, while manual verification steps are in [TESTING.md](TESTING.md).
+
 ## Deployment & Operations
 
 ### Local Development
