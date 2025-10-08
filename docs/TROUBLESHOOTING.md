@@ -118,9 +118,11 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
 ### Agent evaluation returns warnings
 - **Symptom** API/CLI responses include warnings such as `Agent evaluation failed` or lack `agent_score` even though the key is set.
 - **Fix**
-  - Confirm `AGENT_API_KEY` and internet access; GPT-5 errors surface in the warning message.
-  - Ensure `AGENT_REASONING_EFFORT` is valid (`minimal|low|medium|high`) and that the API key has access to the selected model.
-  - When the agent is temporarily disabled, results fall back to heuristic scoring—address the warning before relying on explanations.
+- Confirm `AGENT_API_KEY` and internet access; GPT-5 errors surface in the warning message.
+- Ensure `AGENT_REASONING_EFFORT` is valid (`minimal|low|medium|high`) and that the API key has access to the selected model.
+- Inspect `[agent-telemetry]` JSON lines for latency, token usage, and cost estimates—persistent spikes or missing usage often explain slowdowns and quota overruns.
+- If a cache is enabled (`AGENT_CACHE_CAPACITY`), stale responses can persist until the cache evicts entries—drop the capacity or restart the API to clear it after schema/prompt changes.
+- When the agent is temporarily disabled, results fall back to heuristic scoring—address the warning before relying on explanations.
 
 ## Queue Management
 - **Monitor continuously.** `scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log`

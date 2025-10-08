@@ -23,17 +23,18 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 - **Opening catalogue:** maps natural-language opening phrases to ECO ranges (`lib/chess/openings`), so queries like “King’s Indian games” become deterministic filters.
 - **Prototype hybrid search:** milestone 4 ships an Opium-based `/query` API (`dune exec chessmate_api`) plus `chessmate query` CLI surfacing intent analysis and curated sample results.
 - **Embedding pipeline & safeguards:** worker polls `embedding_jobs`, calls OpenAI embeddings, records vector identifiers for Qdrant, and now benefits from an ingest guard that halts new PGNs when the queue crosses a configurable threshold.
-- **Agent ranking (optional):** when `AGENT_API_KEY` is set, a GPT-5 agent re-scores results, surfaces explanations/themes, and honours the new `reasoning.effort`/verbosity controls.
+- **Agent ranking (optional):** when `AGENT_API_KEY` is set, a GPT-5 agent re-scores results, surfaces explanations/themes, honours the new `reasoning.effort`/verbosity controls, and now emits structured telemetry (latency, tokens, cost estimates).
 - **Diagnostics tooling:** `chessmate fen <game.pgn>` prints per-ply FENs; ingestion/worker CLIs emit structured logs for troubleshooting; `scripts/embedding_metrics.sh` surfaces queue depth, throughput, and ETA snapshots.
 
 ## Getting Started
 1. Clone and enter the repository.
-2. Create an opam switch and install dependencies:
+2. Copy `.env.sample` to `.env` and adjust the environment variables (see comments inside the file).
+3. Create an opam switch and install dependencies:
    ```sh
    opam switch create . 5.1.0
    opam install . --deps-only --with-test
    ```
-3. Launch backing services (Postgres, Qdrant) via Docker (first run may take a minute while images download):
+4. Launch backing services (Postgres, Qdrant) via Docker (first run may take a minute while images download):
    ```sh
    docker compose up -d postgres qdrant
    ```
@@ -65,7 +66,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
      dune exec embedding_worker -- --workers 2 --poll-sleep 1.5
 
    # Enable GPT-5 agent ranking (optional)
-   AGENT_API_KEY=dummy-agents-key AGENT_REASONING_EFFORT=high \
+   AGENT_API_KEY=dummy-agents-key AGENT_REASONING_EFFORT=high AGENT_CACHE_CAPACITY=1000 \
      DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec chessmate -- query "Find attacking King's Indian games"
 
    # Generate FENs from a PGN for quick inspection
@@ -143,8 +144,10 @@ data/           # Bind-mounted volumes for Postgres and Qdrant
 - `AGENT_REASONING_EFFORT`: one of `minimal|low|medium|high`; defaults to `medium`.
 - `AGENT_VERBOSITY`: `low|medium|high` (choose higher values for verbose reports).
 - `AGENT_ENDPOINT`: override the OpenAI Responses API endpoint (advanced setups).
+- `AGENT_CACHE_CAPACITY`: optional positive integer to enable an in-memory cache (e.g. 1000) so repeat queries reuse prior GPT-5 evaluations.
+- `AGENT_COST_INPUT_PER_1K`, `AGENT_COST_OUTPUT_PER_1K`, `AGENT_COST_REASONING_PER_1K`: optional USD rates that power telemetry cost estimates (set per 1K tokens; unset → costs omitted).
 
-When any of these variables change, restart API/CLI sessions so the lazy client picks up the new configuration.
+When any of these variables change, restart API/CLI sessions so the lazy client picks up the new configuration. The API/CLI prints telemetry lines prefixed with `[agent-telemetry]` containing the sanitized question, candidate counts, latency, token usage, and any cost estimates.
 
 ### CLI Usage
 Example CLI session (assuming Postgres is running locally):

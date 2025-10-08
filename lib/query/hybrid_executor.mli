@@ -48,6 +48,7 @@ val execute :
   ?fetch_game_pgns:(int list -> (int * string) list Or_error.t) ->
   ?agent_evaluator:(plan:Query_intent.plan -> candidates:(Repo_postgres.game_summary * string) list -> Agent_evaluator.evaluation list Or_error.t) ->
   ?agent_client:Agents_gpt5_client.t ->
+  ?agent_cache:Agent_cache.t ->
   Query_intent.plan ->
   execution Or_error.t
 (** Run a hybrid query using the supplied data providers. *)

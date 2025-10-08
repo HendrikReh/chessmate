@@ -8,6 +8,7 @@
 - **(optional) redis/others**: future queue/cache components once required.
 
 ## Bootstrapping Environment
+Copy `.env.sample` to `.env`, adjust the values, and then export or `source` them before running commands.
 ```sh
 # set connection strings for local dev
 export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
@@ -28,7 +29,7 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
 - Embedding worker: `OPENAI_API_KEY=... chessmate embedding-worker --workers N` (run multiple loops inside one process; increase `N` gradually when clearing backlogs).
 - CLI queries: `chessmate query "find king's indian games"` (ensure API is running).
 - Queue metrics: `scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log` keeps per-status counts, throughput, and ETA.
-- GPT-5 agent (optional): set `AGENT_API_KEY` (and optionally `AGENT_MODEL`, `AGENT_REASONING_EFFORT`, `AGENT_VERBOSITY`) before calling `chessmate query` or starting the API to enable ranking/explanations.
+- GPT-5 agent (optional): set `AGENT_API_KEY` (and optionally `AGENT_MODEL`, `AGENT_REASONING_EFFORT`, `AGENT_VERBOSITY`, `AGENT_CACHE_CAPACITY`) before calling `chessmate query` or starting the API to enable ranking/explanations.
 
 ## Runtime Management
 - **Health checks**:
@@ -71,6 +72,8 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
 - API and CLI calls automatically include agent insights when `AGENT_API_KEY` is present.
 - Monitor agent warnings returned by the API (e.g., "Agent evaluation failed..." or token usage summaries).
 - Tune `AGENT_REASONING_EFFORT` + `AGENT_VERBOSITY` jointly (high/high for deep audits, medium/medium for balanced responses).
+- Enable caching by setting `AGENT_CACHE_CAPACITY=<n>` (e.g. 1000) to reuse evaluations across identical queries; clear or lower the value if memory pressure appears.
+- Telemetry: each agent call logs a `[agent-telemetry]` JSON line with candidate counts, latency, token usage, and optional cost estimates. Configure per-1K token costs via `AGENT_COST_INPUT_PER_1K`, `AGENT_COST_OUTPUT_PER_1K`, and `AGENT_COST_REASONING_PER_1K` to surface USD totals.
 - If GPT-5 is unreachable, results fall back to heuristic scoring and a warning appears in the response; investigate network/API limits before re-enabling.
 
 ## Backups & Restore

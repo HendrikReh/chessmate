@@ -215,6 +215,7 @@ let execute
     ?fetch_game_pgns
     ?agent_evaluator
     ?agent_client
+    ?agent_cache
     plan
   =
   match fetch_games plan with
@@ -231,80 +232,109 @@ let execute
       let plan_themes = themes_from_plan plan in
       let hit_index = Hybrid_planner.index_hits_by_game vector_hits in
       let agent_map, agent_warnings =
-        match fetch_game_pgns with
-        | None -> Map.empty (module Int), []
-        | Some fetch_pgns ->
+        match fetch_game_pgns, (agent_evaluator, agent_client) with
+        | None, _ | _, (None, None) -> Map.empty (module Int), []
+        | Some fetch_pgns, evaluators ->
+            let cache = agent_cache in
             let candidate_count =
               Int.min agent_candidate_max
                 (Int.max plan.Query_intent.limit (plan.Query_intent.limit * agent_candidate_multiplier))
             in
             let candidate_summaries = List.take summaries candidate_count in
             if List.is_empty candidate_summaries then Map.empty (module Int), []
-            else
+            else (
               let ids = List.map candidate_summaries ~f:(fun summary -> summary.Repo_postgres.id) in
-              (match fetch_pgns ids with
+              match fetch_pgns ids with
               | Error err ->
                   Map.empty (module Int), [ Printf.sprintf "Agent disabled (PGN fetch failed): %s" (Error.to_string_hum err) ]
               | Ok id_pgns ->
                   let pgn_map =
                     List.fold id_pgns ~init:(Map.empty (module Int)) ~f:(fun acc (id, pgn) -> Map.set acc ~key:id ~data:pgn)
                   in
-                  let candidates =
+                  let candidates_with_keys =
                     candidate_summaries
                     |> List.filter_map ~f:(fun summary ->
                            match Map.find pgn_map summary.Repo_postgres.id with
-                           | Some pgn -> Some (summary, pgn)
+                           | Some pgn ->
+                               let key = Agent_cache.key_of_plan ~plan ~summary ~pgn in
+                               Some (summary, pgn, key)
                            | None -> None)
                   in
-                  if List.is_empty candidates then
-                    Map.empty (module Int), [ "Agent skipped: candidate PGNs unavailable" ]
+                  let cached_map, pending =
+                    match cache with
+                    | None -> Map.empty (module Int), candidates_with_keys
+                    | Some cache ->
+                        List.fold candidates_with_keys
+                          ~init:(Map.empty (module Int), [])
+                          ~f:(fun (cache_hits, missing) (summary, pgn, key) ->
+                            match Agent_cache.find cache key with
+                            | Some eval ->
+                                let cache_hits = Map.set cache_hits ~key:summary.Repo_postgres.id ~data:eval in
+                                (cache_hits, missing)
+                            | None -> (cache_hits, (summary, pgn, key) :: missing))
+                  in
+                  let cached_messages =
+                    match cache with
+                    | Some _ when not (Map.is_empty cached_map) ->
+                        [ Printf.sprintf "Agent cache hit for %d candidates" (Map.length cached_map) ]
+                    | _ -> []
+                  in
+                  let pending = List.rev pending in
+                  if List.is_empty pending then cached_map, cached_messages
                   else
-                    let run_evaluator evaluator =
-                      match evaluator ~plan ~candidates with
-                      | Ok evaluations ->
-                          let map =
-                            List.fold evaluations ~init:(Map.empty (module Int)) ~f:(fun acc eval ->
-                                Map.set acc ~key:eval.Agent_eval.game_id ~data:eval)
-                          in
-                          let usage_messages =
-                            match evaluations with
-                            | [] -> []
-                            | eval :: _ ->
-                                let effort = GPT.Effort.to_string eval.Agent_eval.reasoning_effort in
-                                let usage_details =
-                                  match eval.Agent_eval.usage with
-                                  | None -> []
-                                  | Some usage ->
-                                      let open GPT.Usage in
-                                      [ "input", usage.input_tokens
-                                      ; "output", usage.output_tokens
-                                      ; "reasoning", usage.reasoning_tokens ]
-                                      |> List.filter_map ~f:(fun (label, value) ->
-                                             Option.map value ~f:(fun v -> Printf.sprintf "%s=%d" label v))
-                                in
-                                let usage_suffix =
-                                  if List.is_empty usage_details then ""
-                                  else Printf.sprintf " (%s)" (String.concat ~sep:", " usage_details)
-                                in
-                                [ Printf.sprintf
-                                    "Agent evaluated %d candidates (effort=%s)%s"
-                                    (List.length evaluations)
-                                    effort
-                                    usage_suffix ]
-                          in
-                          map, usage_messages
-                      | Error err ->
-                          Map.empty (module Int),
-                          [ Printf.sprintf "Agent evaluation failed: %s" (Error.to_string_hum err) ]
+                    let unresolved = List.map pending ~f:(fun (summary, pgn, _) -> summary, pgn) in
+                    let evaluate candidates =
+                      match evaluators with
+                      | Some custom, _ -> custom ~plan ~candidates
+                      | None, Some client -> Agent_eval.evaluate ~client ~plan ~candidates
+                      | None, None -> Or_error.return []
                     in
-                    (match agent_evaluator with
-                    | Some evaluator -> run_evaluator evaluator
-                    | None ->
-                        (match agent_client with
-                        | Some client ->
-                            let evaluator ~plan ~candidates = Agent_eval.evaluate ~client ~plan ~candidates in
-                            run_evaluator evaluator
-                        | None -> Map.empty (module Int), [])))
+                    match evaluate unresolved with
+                    | Error err ->
+                        cached_map, cached_messages @ [ Printf.sprintf "Agent evaluation failed: %s" (Error.to_string_hum err) ]
+                    | Ok evaluations ->
+                        let eval_map =
+                          List.fold evaluations ~init:(Map.empty (module Int)) ~f:(fun acc eval ->
+                              Map.set acc ~key:eval.Agent_eval.game_id ~data:eval)
+                        in
+                        (match cache with
+                        | Some cache ->
+                            List.iter pending ~f:(fun (summary, _, key) ->
+                                match Map.find eval_map summary.Repo_postgres.id with
+                                | Some eval -> Agent_cache.store cache key eval
+                                | None -> ())
+                        | None -> ());
+                        let merged_map =
+                          Map.fold eval_map ~init:cached_map ~f:(fun ~key ~data acc -> Map.set acc ~key ~data)
+                        in
+                        let usage_messages =
+                          match evaluations with
+                          | [] -> []
+                          | eval :: _ ->
+                              let effort = GPT.Effort.to_string eval.Agent_eval.reasoning_effort in
+                              let usage_details =
+                                match eval.Agent_eval.usage with
+                                | None -> []
+                                | Some usage ->
+                                    let open GPT.Usage in
+                                    [ "input", usage.input_tokens
+                                    ; "output", usage.output_tokens
+                                    ; "reasoning", usage.reasoning_tokens ]
+                                    |> List.filter_map ~f:(fun (label, value) ->
+                                           Option.map value ~f:(fun v -> Printf.sprintf "%s=%d" label v))
+                              in
+                              let usage_suffix =
+                                if List.is_empty usage_details then ""
+                                else Printf.sprintf " (%s)" (String.concat ~sep:", " usage_details)
+                              in
+                              [ Printf.sprintf
+                                  "Agent evaluated %d candidates (effort=%s)%s"
+                                  (List.length evaluations)
+                                  effort
+                                  usage_suffix ]
+                        in
+                        merged_map, cached_messages @ usage_messages
+            )
       in
       let warnings = warnings @ agent_warnings in
       let scored_results =

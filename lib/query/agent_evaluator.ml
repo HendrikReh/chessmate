@@ -16,6 +16,8 @@ module Role = Agents_gpt5_client.Role
 module Response_format = Agents_gpt5_client.Response_format
 module Usage = Agents_gpt5_client.Usage
 module Response = Agents_gpt5_client.Response
+module Response_items = Agent_response
+module Telemetry = Agent_telemetry
 
 type evaluation = {
   game_id : int;
@@ -120,37 +122,14 @@ let response_schema =
       }|}
 
 
-let parse_evaluations content =
-  try
-    let json = Yojson.Safe.from_string content in
-    let open Yojson.Safe.Util in
-    let items = json |> member "evaluations" |> to_list in
-    let evaluations =
-      List.filter_map items ~f:(fun item ->
-          match member "game_id" item |> to_int_option, member "score" item |> to_float_option with
-          | Some game_id, Some score ->
-              let explanation = member "explanation" item |> to_string_option in
-              let themes =
-                match member "themes" item with
-                | `Null -> []
-                | json_themes ->
-                    json_themes
-                    |> to_list
-                    |> List.filter_map ~f:to_string_option
-              in
-              Some (game_id, score, explanation, themes)
-          | _ -> None)
-    in
-    Or_error.return evaluations
-  with
-  | Yojson.Json_error msg | Yojson.Safe.Util.Type_error (msg, _) -> Or_error.error_string msg
-
 let evaluate ~client ~plan ~candidates =
   let limited_candidates = List.take candidates max_candidates in
   if List.is_empty limited_candidates then Or_error.return []
   else
     let effort = effort_for_plan plan in
     let verbosity = verbosity_for_plan plan in
+    let candidate_count = List.length limited_candidates in
+    let started_at = Unix.gettimeofday () in
     let system_message =
       Message.
         { role = Role.System
@@ -171,14 +150,22 @@ let evaluate ~client ~plan ~candidates =
         ~response_format
         [ system_message; user_message ]
     in
-    let* parsed = parse_evaluations response.Response.content in
+    let latency_ms = (Unix.gettimeofday () -. started_at) *. 1000.0 in
+    let* parsed = Response_items.parse response.Response.content in
     let evaluations =
-      List.map parsed ~f:(fun (game_id, score, explanation, themes) ->
-          { game_id
-          ; score = Float.clamp_exn ~min:0.0 ~max:1.0 score
-          ; explanation
-          ; themes
+      List.map parsed ~f:(fun item ->
+          { game_id = item.Response_items.game_id
+          ; score = Float.clamp_exn ~min:0.0 ~max:1.0 item.Response_items.score
+          ; explanation = item.Response_items.explanation
+          ; themes = item.Response_items.themes
           ; reasoning_effort = effort
           ; usage = Some response.Response.usage })
     in
+    Telemetry.log
+      ~plan
+      ~candidate_count
+      ~evaluated:(List.length evaluations)
+      ~effort
+      ~latency_ms
+      ~usage:response.Response.usage;
     Or_error.return evaluations

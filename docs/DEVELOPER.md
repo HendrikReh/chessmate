@@ -1,13 +1,14 @@
 # Developer Handbook
 
 ## Onboarding Checklist
-1. Install OCaml 5.1.x and `opam`; create the local switch inside the repo (lives under `_opam/`) and load it per shell with `eval $(opam env --set-switch)`.
-2. Install dependencies: `opam install . --deps-only --with-test`.
-3. Build/test baseline: `dune build`, `dune runtest`, `dune fmt --check`.
-4. Start backing services when needed: `docker compose up -d postgres qdrant` (first run downloads images).
-5. Run migrations with a fresh database: `export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate && ./scripts/migrate.sh`.
-6. Launch the prototype query API in its own shell: `dune exec chessmate_api -- --port 8080`.
-7. Ensure `psql`, Docker (with Compose), and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker and `AGENT_API_KEY` if you plan to test GPT-5 agent ranking.
+1. Copy `.env.sample` to `.env` and update the connection strings/API keys you need locally.
+2. Install OCaml 5.1.x and `opam`; create the local switch inside the repo (lives under `_opam/`) and load it per shell with `eval $(opam env --set-switch)`.
+3. Install dependencies: `opam install . --deps-only --with-test`.
+4. Build/test baseline: `dune build`, `dune runtest`, `dune fmt --check`.
+5. Start backing services when needed: `docker compose up -d postgres qdrant` (first run downloads images).
+6. Run migrations with a fresh database: `export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate && ./scripts/migrate.sh`.
+7. Launch the prototype query API in its own shell: `dune exec chessmate_api -- --port 8080`.
+8. Ensure `psql`, Docker (with Compose), and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker and `AGENT_API_KEY` if you plan to test GPT-5 agent ranking.
 
 ## Repository Layout (Top Level)
 - `lib/chess/`: PGN/FEN parsing, metadata helpers, ECO catalogue, FEN tooling.
@@ -63,7 +64,7 @@ DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
 chessmate fen test/fixtures/sample_game.pgn | head -n 5
 
 # Enable GPT-5 agent ranking (optional)
-AGENT_API_KEY=test-key AGENT_REASONING_EFFORT=low \
+AGENT_API_KEY=test-key AGENT_REASONING_EFFORT=low AGENT_CACHE_CAPACITY=200 \
   chessmate query "Explain Najdorf exchange sacrifices"
 ```
 

@@ -132,6 +132,19 @@ let agent_client : Agents_gpt5_client.t option Lazy.t =
         Stdio.eprintf "[chessmate-api] agent disabled: %s\n%!" (Error.to_string_hum err);
         None)
 
+let agent_cache : Agent_cache.t option Lazy.t =
+  lazy
+    (match Stdlib.Sys.getenv_opt "AGENT_CACHE_CAPACITY" with
+    | Some raw -> (
+        match Int.of_string_opt (String.strip raw) with
+        | Some capacity when capacity > 0 ->
+            Stdio.eprintf "[chessmate-api] agent cache enabled (capacity=%d)\n%!" capacity;
+            Some (Agent_cache.create ~capacity)
+        | _ ->
+            Stdio.eprintf "[chessmate-api] ignoring AGENT_CACHE_CAPACITY=%s (expected positive int)\n%!" raw;
+            None)
+    | None -> None)
+
 let plan_to_json (plan : Query_intent.plan) =
   `Assoc
     [ "cleaned_text", `String plan.cleaned_text
@@ -203,13 +216,20 @@ let query_handler req =
   | Some question ->
       let plan = Query_intent.analyse { Query_intent.text = question } in
       let agent_client_opt = Lazy.force agent_client in
-      let fetch_game_pgns_opt = Option.map agent_client_opt ~f:(fun _ -> fetch_game_pgns_impl) in
+      let agent_cache_opt = Lazy.force agent_cache in
+      let fetch_game_pgns_opt =
+        match agent_client_opt, agent_cache_opt with
+        | None, None -> None
+        | Some _, _ -> Some fetch_game_pgns_impl
+        | None, Some _ -> Some fetch_game_pgns_impl
+      in
       (match
          Hybrid_executor.execute
            ~fetch_games
            ~fetch_vector_hits
            ?fetch_game_pgns:fetch_game_pgns_opt
            ?agent_client:agent_client_opt
+           ?agent_cache:agent_cache_opt
            plan
       with
       | Error err ->
