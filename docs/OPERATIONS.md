@@ -66,7 +66,7 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
 1. **Prep** – export `DATABASE_URL`, set/confirm `CHESSMATE_MAX_PENDING_EMBEDDINGS`, and start the metrics loop (`--interval 120` works well for 5–10 worker threads).
 2. **Dry-run diagnostics** – run `chessmate twic-precheck <pgn>` or spot-check the file for encoding with the troubleshooting commands below.
 3. **Ingest** – execute `chessmate ingest <file.pgn>`; if the guard trips, either pause to let the queue drain or raise the threshold intentionally.
-4. **Embed** – keep the worker running (`dune exec embedding_worker -- --workers N --poll-sleep 1.0`) and verify completions rise faster than pending.
+4. **Embed** – keep the worker running (`dune exec embedding_worker -- --workers N --poll-sleep 1.0`) and verify completions rise faster than pending. For one-off drains, add the new auto-shutdown flag—e.g. `dune exec -- services/embedding_worker/embedding_worker.exe -- --workers N --poll-sleep 1.0 --exit-after-empty 3` exits after three empty polls and prints the summary without needing Ctrl-C.
 5. **Prune duplicates** – after re-ingest cycles, call `scripts/prune_pending_jobs.sh <batch>` until it reports `0` to clear leftover vectorized positions.
 6. **Post-run checks** – capture the final metrics snapshot, confirm `pending` is near zero, and archive logs for observability.
 

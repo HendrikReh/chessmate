@@ -23,8 +23,9 @@ This checklist validates the Milestone 5 checkpoints: agent-ranked search, telem
 - Optionally start the embedding worker (not required for functional tests but useful for end-to-end validation):
   ```sh
   OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-    dune exec embedding_worker -- --workers 1 --poll-sleep 1.0
+    dune exec embedding_worker -- --workers 1 --poll-sleep 1.0 --exit-after-empty 3
   ```
+  The `--exit-after-empty 3` flag exercises the new auto-shutdown path—after three empty polls the worker exits cleanly and prints the run summary without needing Ctrl-C.
 
 ## 3. Agent Query Checkpoint
 - In a separate shell, run:

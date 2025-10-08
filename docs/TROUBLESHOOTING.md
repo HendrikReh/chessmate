@@ -29,9 +29,9 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
    set -a
    source .env
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-   QDRANT_URL=http://localhost:6333 dune exec embedding_worker -- --workers 3 --poll-sleep 1.0
+   QDRANT_URL=http://localhost:6333 dune exec embedding_worker -- --workers 3 --poll-sleep 1.0 --exit-after-empty 3
    ```
-   Adjust `--workers`/`--poll-sleep` based on throughput. (Value of 3 works well on a laptop.)
+   Adjust `--workers`/`--poll-sleep` based on throughput, and tweak `--exit-after-empty` to choose how many empty polls trigger the new auto-shutdown + summary (3 is a good starting point).
 5. **Watch the queue drain**
    ```sh
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
@@ -138,10 +138,10 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
   set -a
   source .env
   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-  QDRANT_URL=http://localhost:6333 dune exec embedding_worker -- --workers 3 --poll-sleep 1.0
+  QDRANT_URL=http://localhost:6333 dune exec embedding_worker -- --workers 3 --poll-sleep 1.0 --exit-after-empty 5
   ```
   Increase `--workers` gradually (or stagger extra processes if you must) and watch
-  `scripts/embedding_metrics.sh` for rising throughput or new failures (429s, connection drops).
+  `scripts/embedding_metrics.sh` for rising throughput or new failures (429s, connection drops). Use `--exit-after-empty` to let the worker wind down automatically once the queue is clear, avoiding manual interrupts during maintenance runs.
 - **Prune stale jobs.** When re-ingesting PGNs, run `scripts/prune_pending_jobs.sh 2000`
   to mark pending jobs whose positions already hold a `vector_id` as completed before
   queueing more work.
