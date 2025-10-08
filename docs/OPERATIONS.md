@@ -73,6 +73,17 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
 - Monitor agent warnings returned by the API (e.g., "Agent evaluation failed..." or token usage summaries).
 - Tune `AGENT_REASONING_EFFORT` + `AGENT_VERBOSITY` jointly (high/high for deep audits, medium/medium for balanced responses).
 - Enable caching by pointing `AGENT_CACHE_REDIS_URL` at the shared Redis instance (optionally tune `AGENT_CACHE_REDIS_NAMESPACE` / `AGENT_CACHE_TTL_SECONDS`). Without Redis, set `AGENT_CACHE_CAPACITY=<n>` (e.g. 1000) for the per-process fallback and clear or lower the value if memory pressure appears.
+- Inspect cache contents via the container (host machines may not have `redis-cli`):
+  ```sh
+  docker compose exec redis redis-cli --scan --pattern 'chessmate:agent:*'
+  ```
+  If no keys appear, generate agent traffic (e.g. run a `chessmate query ...` with `AGENT_API_KEY` set) and retry.
+- Force Redis snapshots when you expect `data/redis` to populate immediately (default policy `--save 60 1` waits for a write + 60 seconds):
+  ```sh
+  docker compose exec redis redis-cli SAVE    # synchronous
+  docker compose exec redis redis-cli BGSAVE  # background
+  docker compose exec redis ls -l /data       # inspect persisted files
+  ```
 - Flush stale agent entries after prompt/schema tweaks:
   - Single command (dev-sized datasets):
     ```sh

@@ -122,6 +122,10 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
 - Ensure `AGENT_REASONING_EFFORT` is valid (`minimal|low|medium|high`) and that the API key has access to the selected model.
 - Inspect `[agent-telemetry]` JSON lines for latency, token usage, and cost estimates—persistent spikes or missing usage often explain slowdowns and quota overruns.
 - If caching is enabled (`AGENT_CACHE_REDIS_URL` or `AGENT_CACHE_CAPACITY`), stale responses can persist until entries expire—flush the Redis namespace or drop the in-memory capacity/restart the API after schema/prompt changes.
+- Redis inspection tips:
+  - Host shells may lack `redis-cli`; run it inside the container: `docker compose exec redis redis-cli --scan --pattern 'chessmate:agent:*'`.
+  - If nothing appears, trigger an agent run (`dune exec -- chessmate -- query ...` with `AGENT_API_KEY` set) and retry; keys only exist after GPT-5 evaluations write to the cache.
+  - Force persistence when you expect `data/redis` to populate immediately: `docker compose exec redis redis-cli SAVE` (or `BGSAVE`), then `docker compose exec redis ls -l /data`.
 - When the agent is temporarily disabled, results fall back to heuristic scoring—address the warning before relying on explanations.
 
 ## Queue Management
