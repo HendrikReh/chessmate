@@ -25,7 +25,7 @@ Build a self-hosted chess tutor ("chessmate") that answers natural-language ques
 ## Documentation Alignment Highlights
 
 - `README.md` highlights today’s feature surface: PGN ingestion, the curated hybrid query prototype, and the embedding worker skeleton that still targets OpenAI.
-- `RELEASE_NOTES.md` (v0.4.1) captures the ingest guard and parallel worker improvements while confirming the `/query` path still ships curated responses—Milestone 6 must close that gap by wiring live Postgres + Qdrant.
+- `RELEASE_NOTES.md` (v0.5.0) captures the ingest guard and parallel worker improvements while confirming the `/query` path still ships curated responses—Milestone 6 must close that gap by wiring live Postgres + Qdrant.
 - `docs/ARCHITECTURE.md` and `docs/CHESSMATE_FOR_DUMMIES.md` walk through ingestion → embedding → query flows and explicitly flag the current planner’s reliance on curated data.
 - `docs/DEVELOPER.md`, `CLAUDE.md`, and `AGENTS.md` lock in environment, tooling, and style guardrails—milestones should assume opam switch usage, two-space indentation, and `open! Base` everywhere.
 - `docs/OPERATIONS.md` and `docs/TROUBLESHOOTING.md` capture the smoke tests, health checks, and reset procedures that every milestone must keep healthy (e.g., quick Postgres connectivity check, embedding queue draining).

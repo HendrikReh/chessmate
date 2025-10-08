@@ -1,3 +1,14 @@
+## 0.5.0 – Redis Agent Cache & ECO Coverage
+
+### Added
+- Redis-backed GPT-5 evaluation cache with env-driven configuration and Docker compose support.
+- Expanded agent telemetry (token/cost logging) and caching docs.
+- Imported full ECO ranges into `lib/chess/openings.ml` for richer intent recognition.
+
+### Changed
+- `.env.sample` reorganized with clearer sections and required `QDRANT_URL` note.
+- Architecture documentation refreshed to show Redis/GPT-5 flows.
+
 # Release Notes
 
 ## 0.4.1 – Ingestion Guard & Parallel Embedding
