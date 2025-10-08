@@ -176,6 +176,43 @@ for pgn in fixtures/*.pgn; do
 done
 ```
 
+### Example Query Session
+After loading a larger event (e.g. TWIC bulletin), the CLI can surface random games or specific openings. The transcript below comes from a live session:
+
+```sh
+$ dune exec chessmate -- query "Show me 5 random games"
+Summary: #3954 Smolik,Jachym vs Yurovskykh,Oleksandr (score 0.42)
+#3953 Prokofiev,Valentyn vs Prazak,Daniel (score 0.42)
+#3952 Velicka,P vs Haring,Filip (score 0.42)
+#3951 Rasik,V vs Akshat Sureka (score 0.42)
+#3950 Mayank,Chakraborty vs Cvek,R (score 0.42)
+Limit: 5
+Filters: No structured filters detected
+Ratings: none
+Results:
+1. #3954 Smolik,Jachym vs Yurovskykh,Oleksandr [English opening] score 0.42
+       Smolik,Jachym vs Yurovskykh,Oleksandr — 3rd Gambit GM Closed 2025 (1/2-1/2)
+2. #3953 Prokofiev,Valentyn vs Prazak,Daniel [QGD Slav] score 0.42
+       Prokofiev,Valentyn vs Prazak,Daniel — 3rd Gambit GM Closed 2025 (1-0)
+...
+
+$ dune exec chessmate -- query "Show me games in the English opening (5 max)"
+Summary: #3954 Smolik,Jachym vs Yurovskykh,Oleksandr (score 0.90)
+#420 Smolik,Jachym vs Yurovskykh,Oleksandr (score 0.90)
+#106 Smolik,Jachym vs Yurovskykh,Oleksandr (score 0.90)
+#8138 Sarno,S vs Montorsi,Matteo (score 0.90)
+#8132 Lumachi,Gabriele vs Fedorchuk,S (score 0.90)
+Limit: 5
+Filters: eco_range=A10-A39, opening=english_opening
+Ratings: none
+Results:
+1. #3954 Smolik,Jachym vs Yurovskykh,Oleksandr [English opening] score 0.90
+       Smolik,Jachym vs Yurovskykh,Oleksandr — 3rd Gambit GM Closed 2025 (1/2-1/2)
+...
+```
+
+These logs demonstrate how the planner surfaces structured filters (ECO ranges, openings) and how the result list shifts once the database contains relevant games.
+
 ```sh
 OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
   chessmate embedding-worker
