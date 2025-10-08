@@ -427,6 +427,7 @@ Based on principles from [Reasoning Agents Need Bad Search](https://softwaredoug
 ### Beyond Phase 3
 
 1. **Multi-agent collaboration**: Specialist agents for openings, tactics, endgames
+- Evaluate adding an inverted-index search tier (e.g., Elasticsearch) alongside Postgres/Qdrant to support fuzzy queries, aggregations, and query-time boosting.
 2. **Interactive refinement**: Agent asks clarifying questions before searching
 3. **Explanation generation**: "This game matched because moves 25-30 show..."
 4. **Query templates**: Pre-built searches for common patterns

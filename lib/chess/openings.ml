@@ -39,6 +39,11 @@ let sanitize_phrase phrase =
       else if Char.is_whitespace ch then Buffer.add_char buffer ' ');
   Buffer.contents buffer |> String.strip
 
+let normalize_synonym synonym =
+  synonym
+  |> sanitize_phrase
+  |> String.substr_replace_all ~pattern:"grünfeld" ~with_:("gruenfeld")
+
 let eco_compare a b = String.compare a b
 
 let eco_in_range ~eco ~start_code ~end_code =
@@ -63,17 +68,48 @@ let make_entry ~start_code ~end_code ~canonical ~synonyms =
   let slug = slugify canonical in
   let normalized_synonyms =
     synonyms
-    |> List.map ~f:sanitize_phrase
+    |> List.map ~f:normalize_synonym
     |> List.filter ~f:(fun s -> not (String.is_empty s))
   in
   { eco_start; eco_end; canonical; slug; synonyms = normalized_synonyms }
 
 let all : entry list =
-  [ make_entry
-      ~start_code:"E60"
-      ~end_code:"E99"
-      ~canonical:"King's Indian Defense"
-      ~synonyms:[ "king's indian"; "kings indian"; "kings indian defense"; "kings indian defence" ];
+  [
+    make_entry
+      ~start_code:"A00"
+      ~end_code:"A39"
+      ~canonical:"White first moves other than 1.e4, 1.d4"
+      ~synonyms:[ "White first moves other than 1.e4, 1.d4" ];
+    make_entry
+      ~start_code:"A40"
+      ~end_code:"A44"
+      ~canonical:"1.d4 without 1...d5, 1...Nf6 or 1...f5: Atypical replies to 1.d4"
+      ~synonyms:[ "1.d4 without 1...d5, 1...Nf6 or 1...f5: Atypical replies to 1.d4" ];
+    make_entry
+      ~start_code:"A45"
+      ~end_code:"A49"
+      ~canonical:"1.d4 Nf6 without 2.c4: Atypical replies to 1...Nf6"
+      ~synonyms:[ "1.d4 Nf6 without 2.c4: Atypical replies to 1...Nf6" ];
+    make_entry
+      ~start_code:"A50"
+      ~end_code:"A79"
+      ~canonical:"1.d4 Nf6 2.c4 without 2...e6 or 2...g6: Atypical Indian systems"
+      ~synonyms:[ "1.d4 Nf6 2.c4 without 2...e6 or 2...g6: Atypical Indian systems" ];
+    make_entry
+      ~start_code:"A80"
+      ~end_code:"A99"
+      ~canonical:"Dutch Defense"
+      ~synonyms:[ "dutch defense"; "dutch defence"; "dutch" ];
+    make_entry
+      ~start_code:"B00"
+      ~end_code:"B09"
+      ~canonical:"1.e4 without 1...c6, 1...c5, 1...e6, 1...e5"
+      ~synonyms:[ "1.e4 without 1...c6, 1...c5, 1...e6, 1...e5" ];
+    make_entry
+      ~start_code:"B10"
+      ~end_code:"B19"
+      ~canonical:"Caro-Kann Defense"
+      ~synonyms:[ "caro kann"; "caro-kann"; "carokann" ];
     make_entry
       ~start_code:"B20"
       ~end_code:"B99"
@@ -85,50 +121,30 @@ let all : entry list =
       ~canonical:"French Defense"
       ~synonyms:[ "french defense"; "french defence"; "french" ];
     make_entry
-      ~start_code:"B10"
-      ~end_code:"B19"
-      ~canonical:"Caro-Kann Defense"
-      ~synonyms:[ "caro kann"; "caro-kann"; "carokann" ];
-    make_entry
-      ~start_code:"D06"
-      ~end_code:"D69"
-      ~canonical:"Queen's Gambit"
-      ~synonyms:[ "queen's gambit"; "queens gambit"; "queens-gambit" ];
-    make_entry
-      ~start_code:"C60"
+      ~start_code:"C20"
       ~end_code:"C99"
-      ~canonical:"Ruy Lopez"
-      ~synonyms:[ "ruy lopez"; "spanish"; "spanish game" ];
+      ~canonical:"1.e4 e5: Double King Pawn games"
+      ~synonyms:[ "1.e4 e5: Double King Pawn games" ];
     make_entry
-      ~start_code:"E20"
-      ~end_code:"E59"
-      ~canonical:"Nimzo-Indian Defense"
-      ~synonyms:[ "nimzo indian"; "nimzo-indian"; "nimzo" ];
-    make_entry
-      ~start_code:"E12"
-      ~end_code:"E19"
-      ~canonical:"Queen's Indian Defense"
-      ~synonyms:[ "queen's indian"; "queens indian"; "queens-indian" ];
-    make_entry
-      ~start_code:"A10"
-      ~end_code:"A39"
-      ~canonical:"English Opening"
-      ~synonyms:[ "english opening"; "english" ];
-    make_entry
-      ~start_code:"A80"
-      ~end_code:"A99"
-      ~canonical:"Dutch Defense"
-      ~synonyms:[ "dutch defense"; "dutch defence"; "dutch" ];
-    make_entry
-      ~start_code:"B01"
-      ~end_code:"B02"
-      ~canonical:"Scandinavian Defense"
-      ~synonyms:[ "scandinavian"; "scandinavian defense"; "scandinavian defence"; "center counter"; "centre counter" ];
+      ~start_code:"D00"
+      ~end_code:"D69"
+      ~canonical:"1.d4 d5: Double Queen Pawn games"
+      ~synonyms:[ "1.d4 d5: Double Queen Pawn games" ];
     make_entry
       ~start_code:"D70"
       ~end_code:"D99"
       ~canonical:"Grunfeld Defense"
-      ~synonyms:[ "grunfeld"; "grünfeld"; "grunfeld defense"; "grunfeld defence" ];
+      ~synonyms:[ "grunfeld"; "gruenfeld defense"; "grunfeld defence" ];
+    make_entry
+      ~start_code:"E00"
+      ~end_code:"E59"
+      ~canonical:"1.d4 Nf6 2.c4 e6: Indian systems with ...e6"
+      ~synonyms:[ "1.d4 Nf6 2.c4 e6: Indian systems with ...e6" ];
+    make_entry
+      ~start_code:"E60"
+      ~end_code:"E99"
+      ~canonical:"King's Indian Defense"
+      ~synonyms:[ "king's indian"; "kings indian"; "kings indian defense"; "kings indian defence" ];
   ]
 
 let canonical_name_of_eco eco =
@@ -147,7 +163,7 @@ let filters_for_text cleaned_text =
     all
     |> List.filter ~f:(fun entry ->
            List.exists entry.synonyms ~f:(fun synonym ->
-               String.is_substring cleaned_text ~substring:synonym))
+               String.is_substring cleaned_text ~substring:(sanitize_phrase synonym)))
   in
   let filters =
     matches
@@ -159,4 +175,4 @@ let filters_for_text cleaned_text =
   |> List.dedup_and_sort ~compare:(fun (fa, va) (fb, vb) ->
          match String.compare fa fb with
          | 0 -> String.compare va vb
-         | cmp -> cmp)
+         | other -> other)
