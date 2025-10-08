@@ -115,6 +115,13 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
      Expect a positive count; zero implies vectors were not pushed.
   If any checkpoint flatlines, inspect worker logs for rate limits or credential issues.
 
+### Agent evaluation returns warnings
+- **Symptom** API/CLI responses include warnings such as `Agent evaluation failed` or lack `agent_score` even though the key is set.
+- **Fix**
+  - Confirm `AGENT_API_KEY` and internet access; GPT-5 errors surface in the warning message.
+  - Ensure `AGENT_REASONING_EFFORT` is valid (`minimal|low|medium|high`) and that the API key has access to the selected model.
+  - When the agent is temporarily disabled, results fall back to heuristic scoring—address the warning before relying on explanations.
+
 ## Queue Management
 - **Monitor continuously.** `scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log`
 - **Scale workers safely.** Prefer a single process with multiple loops:

@@ -25,6 +25,11 @@ type result = {
   total_score : float;
   vector_score : float;
   keyword_score : float;
+  agent_score : float option;
+  agent_explanation : string option;
+  agent_themes : string list;
+  agent_reasoning_effort : Agents_gpt5_client.Effort.t option;
+  agent_usage : Agents_gpt5_client.Usage.t option;
   phases : string list;
   themes : string list;
   keywords : string list;
@@ -40,6 +45,9 @@ type execution = {
 val execute :
   fetch_games:(Query_intent.plan -> Repo_postgres.game_summary list Or_error.t) ->
   fetch_vector_hits:(Query_intent.plan -> Hybrid_planner.vector_hit list Or_error.t) ->
+  ?fetch_game_pgns:(int list -> (int * string) list Or_error.t) ->
+  ?agent_evaluator:(plan:Query_intent.plan -> candidates:(Repo_postgres.game_summary * string) list -> Agent_evaluator.evaluation list Or_error.t) ->
+  ?agent_client:Agents_gpt5_client.t ->
   Query_intent.plan ->
   execution Or_error.t
 (** Run a hybrid query using the supplied data providers. *)

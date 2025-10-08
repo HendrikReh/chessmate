@@ -78,7 +78,7 @@ Detailed steps:
 - `services/`: standalone executables (embedding worker, API prototype).
 
 ## Service Responsibilities
-- **Query API (prototype)**: Opium HTTP service (`/query`) that parses intent, applies opening/rating filters, and returns curated responses. Future work: wire to live Postgres/Qdrant, expose metrics/health endpoints.
+- **Query API (prototype)**: Opium HTTP service (`/query`) that parses intent, applies opening/rating filters, and returns curated responses. When `AGENT_API_KEY` is present it also invokes GPT-5 to re-rank results, add explanations/themes, and reports token usage. Future work: wire to live Postgres/Qdrant, expose metrics/health endpoints.
 - **Embedding Worker**: long-running job consumer with retry/backoff, batching, and state transitions.
 - **Background Jobs** (planned): re-embedding runs, data validation, analytics refresh pipelines.
 

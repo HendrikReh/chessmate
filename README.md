@@ -23,6 +23,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 - **Opening catalogue:** maps natural-language opening phrases to ECO ranges (`lib/chess/openings`), so queries like “King’s Indian games” become deterministic filters.
 - **Prototype hybrid search:** milestone 4 ships an Opium-based `/query` API (`dune exec chessmate_api`) plus `chessmate query` CLI surfacing intent analysis and curated sample results.
 - **Embedding pipeline & safeguards:** worker polls `embedding_jobs`, calls OpenAI embeddings, records vector identifiers for Qdrant, and now benefits from an ingest guard that halts new PGNs when the queue crosses a configurable threshold.
+- **Agent ranking (optional):** when `AGENT_API_KEY` is set, a GPT-5 agent re-scores results, surfaces explanations/themes, and honours the new `reasoning.effort`/verbosity controls.
 - **Diagnostics tooling:** `chessmate fen <game.pgn>` prints per-ply FENs; ingestion/worker CLIs emit structured logs for troubleshooting; `scripts/embedding_metrics.sh` surfaces queue depth, throughput, and ETA snapshots.
 
 ## Getting Started
@@ -62,6 +63,10 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    # Run the embedding worker loop (requires OPENAI_API_KEY for real embeddings)
    OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
      dune exec embedding_worker -- --workers 2 --poll-sleep 1.5
+
+   # Enable GPT-5 agent ranking (optional)
+   AGENT_API_KEY=dummy-agents-key AGENT_REASONING_EFFORT=high \
+     DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec chessmate -- query "Find attacking King's Indian games"
 
    # Generate FENs from a PGN for quick inspection
    chessmate fen test/fixtures/sample_game.pgn
@@ -119,11 +124,27 @@ data/           # Bind-mounted volumes for Postgres and Qdrant
      dune exec embedding_worker -- --workers 4 --poll-sleep 1.0
    ```
    Increase or reduce `--workers` based on the metrics output; look for falling `pending` and steady throughput.
-5. If the guard triggers or throughput drops unexpectedly, prune stale work before resuming:
+5. Keep the GPT-5 agent (if enabled) supplied with fresh vectors:
+   ```sh
+   AGENT_API_KEY=real-key AGENT_REASONING_EFFORT=medium \
+     DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     CHESSMATE_API_URL=http://localhost:8080 dune exec chessmate -- query "Explain thematic rook sacrifices"
+   ```
+   Agent responses include explanations, detected themes, and token usage in the API/CLI output.
+6. If the guard triggers or throughput drops unexpectedly, prune stale work before resuming:
    ```sh
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
      scripts/prune_pending_jobs.sh 2000
    ```
+
+### Agent Configuration
+- `AGENT_API_KEY`: required to enable GPT-5 ranking (absent → agent disabled).
+- `AGENT_MODEL`: optional, defaults to `gpt-5` (also supports `gpt-5-mini`, `gpt-5-nano`).
+- `AGENT_REASONING_EFFORT`: one of `minimal|low|medium|high`; defaults to `medium`.
+- `AGENT_VERBOSITY`: `low|medium|high` (choose higher values for verbose reports).
+- `AGENT_ENDPOINT`: override the OpenAI Responses API endpoint (advanced setups).
+
+When any of these variables change, restart API/CLI sessions so the lazy client picks up the new configuration.
 
 ### CLI Usage
 Example CLI session (assuming Postgres is running locally):
@@ -155,7 +176,6 @@ for pgn in fixtures/*.pgn; do
 done
 ```
 
-Worker loop with log snippets (using a dummy API key in dry-run mode):
 ```sh
 OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
   chessmate embedding-worker

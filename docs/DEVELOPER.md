@@ -7,7 +7,7 @@
 4. Start backing services when needed: `docker compose up -d postgres qdrant` (first run downloads images).
 5. Run migrations with a fresh database: `export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate && ./scripts/migrate.sh`.
 6. Launch the prototype query API in its own shell: `dune exec chessmate_api -- --port 8080`.
-7. Ensure `psql`, Docker (with Compose), and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker.
+7. Ensure `psql`, Docker (with Compose), and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker and `AGENT_API_KEY` if you plan to test GPT-5 agent ranking.
 
 ## Repository Layout (Top Level)
 - `lib/chess/`: PGN/FEN parsing, metadata helpers, ECO catalogue, FEN tooling.
@@ -61,9 +61,19 @@ DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
 
 # FEN diagnostics
 chessmate fen test/fixtures/sample_game.pgn | head -n 5
+
+# Enable GPT-5 agent ranking (optional)
+AGENT_API_KEY=test-key AGENT_REASONING_EFFORT=low \
+  chessmate query "Explain Najdorf exchange sacrifices"
 ```
 
 ### Bulk Ingestion Tips
+- Keep `CHESSMATE_MAX_PENDING_EMBEDDINGS` conservative in development (≤ 400k) so runaway queues fail fast.
+- Metrics script cadence: 60–120 seconds works well for 5–10 worker loops; shorten to 30 seconds while tuning.
+- When throughput plateaus, lower `--workers` or increase `--poll-sleep` before OpenAI throttling kicks in.
+- Always prune pending jobs with populated `vector_id`s before re-ingesting the same PGN to avoid duplicates.
+- Agent evaluations are optional; unset `AGENT_API_KEY` when running tests offline or use `AGENT_REASONING_EFFORT=low` to reduce cost/latency during development.
+
 - Keep `CHESSMATE_MAX_PENDING_EMBEDDINGS` conservative in development (≤ 400k) so runaway queues fail fast.
 - Metrics script cadence: 60–120 seconds works well for 5–10 worker loops; shorten to 30 seconds while tuning.
 - When throughput plateaus, lower `--workers` or increase `--poll-sleep` before OpenAI throttling kicks in.

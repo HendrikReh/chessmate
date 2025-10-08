@@ -18,6 +18,9 @@
 
 open! Base
 
+module Agent_eval = Agent_evaluator
+module GPT = Agents_gpt5_client
+
 let phases_from_plan plan =
   plan.Query_intent.filters
   |> List.filter_map ~f:(fun filter ->
@@ -154,6 +157,11 @@ type result = {
   total_score : float;
   vector_score : float;
   keyword_score : float;
+  agent_score : float option;
+  agent_explanation : string option;
+  agent_themes : string list;
+  agent_reasoning_effort : GPT.Effort.t option;
+  agent_usage : GPT.Usage.t option;
   phases : string list;
   themes : string list;
   keywords : string list;
@@ -165,19 +173,50 @@ type execution = {
   warnings : string list;
 }
 
-let build_result plan summary plan_phases plan_themes vector_hit =
-  let total_score, vector_score, keyword_score = score_result plan summary vector_hit in
+let agent_candidate_multiplier = 5
+let agent_candidate_max = 25
+
+let build_result plan summary plan_phases plan_themes vector_hit agent_eval =
+  let base_total, vector_score, keyword_score = score_result plan summary vector_hit in
   let phases = combined_phases plan_phases vector_hit in
   let themes = combined_themes plan_themes vector_hit in
+  let agent_score, agent_explanation, agent_themes, agent_effort, agent_usage =
+    match agent_eval with
+    | None -> None, None, [], None, None
+    | Some eval ->
+        ( Some (Float.clamp_exn ~min:0.0 ~max:1.0 eval.Agent_eval.score)
+        , eval.Agent_eval.explanation
+        , eval.Agent_eval.themes
+        , Some eval.Agent_eval.reasoning_effort
+        , eval.Agent_eval.usage )
+  in
+  let combined_themes = Hybrid_planner.merge_themes themes agent_themes in
+  let combined_total =
+    match agent_score with
+    | None -> base_total
+    | Some score -> Float.min 1.0 ((0.6 *. base_total) +. (0.4 *. score))
+  in
   { summary
-  ; total_score
+  ; total_score = combined_total
   ; vector_score
   ; keyword_score
+  ; agent_score
+  ; agent_explanation
+  ; agent_themes
+  ; agent_reasoning_effort = agent_effort
+  ; agent_usage
   ; phases
-  ; themes
+  ; themes = combined_themes
   ; keywords = combined_keywords plan summary vector_hit }
 
-let execute ~fetch_games ~fetch_vector_hits plan =
+let execute
+    ~fetch_games
+    ~fetch_vector_hits
+    ?fetch_game_pgns
+    ?agent_evaluator
+    ?agent_client
+    plan
+  =
   match fetch_games plan with
   | Error err -> Error err
   | Ok summaries ->
@@ -191,11 +230,89 @@ let execute ~fetch_games ~fetch_vector_hits plan =
       let plan_phases = phases_from_plan plan in
       let plan_themes = themes_from_plan plan in
       let hit_index = Hybrid_planner.index_hits_by_game vector_hits in
+      let agent_map, agent_warnings =
+        match fetch_game_pgns with
+        | None -> Map.empty (module Int), []
+        | Some fetch_pgns ->
+            let candidate_count =
+              Int.min agent_candidate_max
+                (Int.max plan.Query_intent.limit (plan.Query_intent.limit * agent_candidate_multiplier))
+            in
+            let candidate_summaries = List.take summaries candidate_count in
+            if List.is_empty candidate_summaries then Map.empty (module Int), []
+            else
+              let ids = List.map candidate_summaries ~f:(fun summary -> summary.Repo_postgres.id) in
+              (match fetch_pgns ids with
+              | Error err ->
+                  Map.empty (module Int), [ Printf.sprintf "Agent disabled (PGN fetch failed): %s" (Error.to_string_hum err) ]
+              | Ok id_pgns ->
+                  let pgn_map =
+                    List.fold id_pgns ~init:(Map.empty (module Int)) ~f:(fun acc (id, pgn) -> Map.set acc ~key:id ~data:pgn)
+                  in
+                  let candidates =
+                    candidate_summaries
+                    |> List.filter_map ~f:(fun summary ->
+                           match Map.find pgn_map summary.Repo_postgres.id with
+                           | Some pgn -> Some (summary, pgn)
+                           | None -> None)
+                  in
+                  if List.is_empty candidates then
+                    Map.empty (module Int), [ "Agent skipped: candidate PGNs unavailable" ]
+                  else
+                    let run_evaluator evaluator =
+                      match evaluator ~plan ~candidates with
+                      | Ok evaluations ->
+                          let map =
+                            List.fold evaluations ~init:(Map.empty (module Int)) ~f:(fun acc eval ->
+                                Map.set acc ~key:eval.Agent_eval.game_id ~data:eval)
+                          in
+                          let usage_messages =
+                            match evaluations with
+                            | [] -> []
+                            | eval :: _ ->
+                                let effort = GPT.Effort.to_string eval.Agent_eval.reasoning_effort in
+                                let usage_details =
+                                  match eval.Agent_eval.usage with
+                                  | None -> []
+                                  | Some usage ->
+                                      let open GPT.Usage in
+                                      [ "input", usage.input_tokens
+                                      ; "output", usage.output_tokens
+                                      ; "reasoning", usage.reasoning_tokens ]
+                                      |> List.filter_map ~f:(fun (label, value) ->
+                                             Option.map value ~f:(fun v -> Printf.sprintf "%s=%d" label v))
+                                in
+                                let usage_suffix =
+                                  if List.is_empty usage_details then ""
+                                  else Printf.sprintf " (%s)" (String.concat ~sep:", " usage_details)
+                                in
+                                [ Printf.sprintf
+                                    "Agent evaluated %d candidates (effort=%s)%s"
+                                    (List.length evaluations)
+                                    effort
+                                    usage_suffix ]
+                          in
+                          map, usage_messages
+                      | Error err ->
+                          Map.empty (module Int),
+                          [ Printf.sprintf "Agent evaluation failed: %s" (Error.to_string_hum err) ]
+                    in
+                    (match agent_evaluator with
+                    | Some evaluator -> run_evaluator evaluator
+                    | None ->
+                        (match agent_client with
+                        | Some client ->
+                            let evaluator ~plan ~candidates = Agent_eval.evaluate ~client ~plan ~candidates in
+                            run_evaluator evaluator
+                        | None -> Map.empty (module Int), [])))
+      in
+      let warnings = warnings @ agent_warnings in
       let scored_results =
         summaries
         |> List.map ~f:(fun summary ->
                let vector_hit = Map.find hit_index summary.Repo_postgres.id in
-               build_result plan summary plan_phases plan_themes vector_hit)
+               let agent_eval = Map.find agent_map summary.Repo_postgres.id in
+               build_result plan summary plan_phases plan_themes vector_hit agent_eval)
         |> List.sort ~compare:(fun a b -> Float.compare b.total_score a.total_score)
       in
       let limited = List.take scored_results plan.Query_intent.limit in

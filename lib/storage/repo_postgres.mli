@@ -55,6 +55,7 @@ val search_games :
   game_summary list Or_error.t
 
 val pending_embedding_job_count : t -> int Or_error.t
+val fetch_games_with_pgn : t -> ids:int list -> (int * string) list Or_error.t
 val claim_pending_jobs : t -> limit:int -> Embedding_job.t list Or_error.t
 val mark_job_completed : t -> job_id:int -> vector_id:string -> unit Or_error.t
 val mark_job_failed : t -> job_id:int -> error:string -> unit Or_error.t

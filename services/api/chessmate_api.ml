@@ -23,6 +23,9 @@ open Opium.Std
 module Result = struct
   type t = Hybrid_executor.result
 
+  module Effort = Agents_gpt5_client.Effort
+  module Usage = Agents_gpt5_client.Usage
+
   let summary (result : t) =
     let { Hybrid_executor.summary; _ } = result in
     summary
@@ -58,6 +61,32 @@ module Result = struct
         |> String.concat ~sep:" "
     | None, None -> "Unknown opening"
 
+  let usage_to_json usage =
+    let token_field label value =
+      match value with
+      | None -> label, `Null
+      | Some v -> label, `Int v
+    in
+    match usage with
+    | None -> `Null
+    | Some usage ->
+        `Assoc
+          [ token_field "input_tokens" usage.Usage.input_tokens
+          ; token_field "output_tokens" usage.Usage.output_tokens
+          ; token_field "reasoning_tokens" usage.Usage.reasoning_tokens ]
+
+  let agent_score_json = function
+    | None -> `Null
+    | Some score -> `Float score
+
+  let agent_effort_json = function
+    | None -> `Null
+    | Some effort -> `String (Effort.to_string effort)
+
+  let agent_explanation_json = function
+    | None -> `Null
+    | Some text -> `String text
+
   let to_json t =
     let summary = summary t in
     `Assoc
@@ -81,7 +110,12 @@ module Result = struct
       ; "synopsis", `String (synopsis t)
       ; "score", `Float t.total_score
       ; "vector_score", `Float t.vector_score
-      ; "keyword_score", `Float t.keyword_score ]
+      ; "keyword_score", `Float t.keyword_score
+      ; "agent_score", agent_score_json t.agent_score
+      ; "agent_explanation", agent_explanation_json t.agent_explanation
+      ; "agent_themes", `List (List.map t.agent_themes ~f:(fun theme -> `String theme))
+      ; "agent_reasoning_effort", agent_effort_json t.agent_reasoning_effort
+      ; "agent_usage", usage_to_json t.agent_usage ]
 end
 
 let postgres_repo : Repo_postgres.t Or_error.t Lazy.t =
@@ -89,6 +123,14 @@ let postgres_repo : Repo_postgres.t Or_error.t Lazy.t =
     (match Stdlib.Sys.getenv_opt "DATABASE_URL" with
     | Some url when not (String.is_empty (String.strip url)) -> Repo_postgres.create url
     | _ -> Or_error.error_string "DATABASE_URL environment variable is required for chessmate-api")
+
+let agent_client : Agents_gpt5_client.t option Lazy.t =
+  lazy
+    (match Agents_gpt5_client.create_from_env () with
+    | Ok client -> Some client
+    | Error err ->
+        Stdio.eprintf "[chessmate-api] agent disabled: %s\n%!" (Error.to_string_hum err);
+        None)
 
 let plan_to_json (plan : Query_intent.plan) =
   `Assoc
@@ -114,6 +156,11 @@ let fetch_games_impl plan =
   match Lazy.force postgres_repo with
   | Error err -> Error err
   | Ok repo -> Repo_postgres.search_games repo ~filters:plan.Query_intent.filters ~rating:plan.rating ~limit:plan.limit
+
+let fetch_game_pgns_impl ids =
+  match Lazy.force postgres_repo with
+  | Error err -> Error err
+  | Ok repo -> Repo_postgres.fetch_games_with_pgn repo ~ids
 
 let fetch_vector_hits_impl plan =
   let vector = Hybrid_planner.query_vector plan in
@@ -155,7 +202,16 @@ let query_handler req =
   | None -> respond_json ~status:`Bad_request (`Assoc [ "error", `String "question parameter missing" ])
   | Some question ->
       let plan = Query_intent.analyse { Query_intent.text = question } in
-      (match Hybrid_executor.execute ~fetch_games ~fetch_vector_hits plan with
+      let agent_client_opt = Lazy.force agent_client in
+      let fetch_game_pgns_opt = Option.map agent_client_opt ~f:(fun _ -> fetch_game_pgns_impl) in
+      (match
+         Hybrid_executor.execute
+           ~fetch_games
+           ~fetch_vector_hits
+           ?fetch_game_pgns:fetch_game_pgns_opt
+           ?agent_client:agent_client_opt
+           plan
+      with
       | Error err ->
           respond_json ~status:`Internal_server_error
             (`Assoc [ "error", `String (Error.to_string_hum err) ])

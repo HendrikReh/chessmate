@@ -306,6 +306,31 @@ let search_games repo ~filters ~rating ~limit =
   let* rows = run_psql repo sql in
   rows |> List.map ~f:parse_game_row |> Or_error.all
 
+let fetch_games_with_pgn repo ~ids =
+  let unique_ids =
+    ids
+    |> List.dedup_and_sort ~compare:Int.compare
+  in
+  match unique_ids with
+  | [] -> Or_error.return []
+  | _ ->
+      let id_list =
+        unique_ids
+        |> List.map ~f:Int.to_string
+        |> String.concat ~sep:","
+      in
+      let sql = Printf.sprintf "SELECT id, pgn FROM games WHERE id IN (%s);" id_list in
+      let* rows = run_psql repo sql in
+      rows
+      |> List.map ~f:(fun line ->
+             match String.lsplit2 ~on:'\t' line with
+             | Some (id_str, pgn) -> (
+                 match Int.of_string_opt (String.strip id_str) with
+                 | Some id -> Or_error.return (id, pgn)
+                 | None -> Or_error.errorf "Invalid game id: %s" id_str)
+             | None -> Or_error.errorf "Malformed game pgn row: %s" line)
+      |> Or_error.all
+
 let parse_job_row line =
   let parse_int field value =
     Or_error.try_with (fun () -> Int.of_string value)

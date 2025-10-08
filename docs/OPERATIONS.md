@@ -28,6 +28,7 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
 - Embedding worker: `OPENAI_API_KEY=... chessmate embedding-worker --workers N` (run multiple loops inside one process; increase `N` gradually when clearing backlogs).
 - CLI queries: `chessmate query "find king's indian games"` (ensure API is running).
 - Queue metrics: `scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log` keeps per-status counts, throughput, and ETA.
+- GPT-5 agent (optional): set `AGENT_API_KEY` (and optionally `AGENT_MODEL`, `AGENT_REASONING_EFFORT`, `AGENT_VERBOSITY`) before calling `chessmate query` or starting the API to enable ranking/explanations.
 
 ## Runtime Management
 - **Health checks**:
@@ -65,6 +66,12 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
 4. **Embed** – keep the worker running (`dune exec embedding_worker -- --workers N --poll-sleep 1.0`) and verify completions rise faster than pending.
 5. **Prune duplicates** – after re-ingest cycles, call `scripts/prune_pending_jobs.sh <batch>` until it reports `0` to clear leftover vectorized positions.
 6. **Post-run checks** – capture the final metrics snapshot, confirm `pending` is near zero, and archive logs for observability.
+
+### Agent Operations
+- API and CLI calls automatically include agent insights when `AGENT_API_KEY` is present.
+- Monitor agent warnings returned by the API (e.g., "Agent evaluation failed..." or token usage summaries).
+- Tune `AGENT_REASONING_EFFORT` + `AGENT_VERBOSITY` jointly (high/high for deep audits, medium/medium for balanced responses).
+- If GPT-5 is unreachable, results fall back to heuristic scoring and a warning appears in the response; investigate network/API limits before re-enabling.
 
 ## Backups & Restore
 - **Postgres**: schedule `pg_dump` + WAL archiving; store artifacts in secure object storage.
