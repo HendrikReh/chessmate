@@ -12,11 +12,11 @@
 Self-hosted chess tutor that blends relational data (PostgreSQL) with vector search (Qdrant) to answer natural-language questions about annotated chess games. OCaml powers ingestion, hybrid retrieval, and CLI tooling.
 
 ## Requirements
-- OCaml 5.1.0 (managed via opam) and Dune ≥ 3.20.
-- Docker & Docker Compose (local Postgres + Qdrant stack).
-- PostgreSQL client (`psql`) on your `PATH`.
-- `curl` (embedding worker diagnostics).
-- Optional: `OPENAI_API_KEY` if you want to run the embedding worker against OpenAI.
+- OCaml ≥ 5.1 (opam-managed switch) and Dune ≥ 3.20.
+- Docker & Docker Compose (brings up Postgres, Qdrant, Redis).
+- `psql` CLI (migrations/ingest) and `curl` for health checks.
+- `.env` derived from `.env.sample` — set `DATABASE_URL`, `QDRANT_URL`, and optionally `AGENT_*` / `OPENAI_API_KEY`.
+- Redis (local Docker service) when GPT-5 agent caching is enabled.
 
 ## Feature Highlights
 - **PGN ingestion pipeline:** parses headers/SAN, derives per-ply FEN snapshots, extracts ECO codes, and persists metadata (players, openings, results) to Postgres.
