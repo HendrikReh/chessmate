@@ -3,7 +3,8 @@
 Common symptoms, quick diagnostics, and proven fixes for keeping Chessmate healthy.
 
 ## Quick Smoke Test
-Run this loop whenever you reset dependencies or suspect ingest/embedding is wedged.
+Run this loop whenever you reset dependencies or suspect ingest/embedding is wedged. Use
+`scripts/embedding_metrics.sh` between steps to verify queue health and estimated finish times.
 
 1. **Check Postgres connectivity**
    ```sh
@@ -26,8 +27,9 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
    set -a
    source .env
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-   QDRANT_URL=http://localhost:6333 dune exec embedding_worker
+   QDRANT_URL=http://localhost:6333 dune exec embedding_worker -- --workers 3 --poll-sleep 1.0
    ```
+   Adjust `--workers`/`--poll-sleep` based on throughput. (Value of 3 works well on a laptop.)
 5. **Watch the queue drain**
    ```sh
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
@@ -82,7 +84,12 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
   ```sh
   dune exec chessmate -- embedding-worker
   ```
-  Double-check `OPENAI_API_KEY` and endpoint settings. When the worker logs `Malformed job row`, update to the latest code (psql field separator fix).
+  Double-check `OPENAI_API_KEY` and endpoint settings. When the worker logs `Malformed job row`, update to the latest code (psql field separator fix). While triaging, run
+  ```sh
+  DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+    scripts/embedding_metrics.sh --interval 120
+  ```
+  to ensure new completions are flowing; a flat `throughput/min` indicates the worker is stuck before reaching OpenAI.
 
 ### Worker runs but positions miss vectors
 - **Symptom** `/query` keeps warning about missing vectors even though the worker is active.
@@ -107,6 +114,24 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
      ```
      Expect a positive count; zero implies vectors were not pushed.
   If any checkpoint flatlines, inspect worker logs for rate limits or credential issues.
+
+## Queue Management
+- **Monitor continuously.** `scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log`
+- **Scale workers safely.** Prefer a single process with multiple loops:
+  ```sh
+  set -a
+  source .env
+  DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+  QDRANT_URL=http://localhost:6333 dune exec embedding_worker -- --workers 3 --poll-sleep 1.0
+  ```
+  Increase `--workers` gradually (or stagger extra processes if you must) and watch
+  `scripts/embedding_metrics.sh` for rising throughput or new failures (429s, connection drops).
+- **Prune stale jobs.** When re-ingesting PGNs, run `scripts/prune_pending_jobs.sh 2000`
+  to mark pending jobs whose positions already hold a `vector_id` as completed before
+  queueing more work.
+- **Throttle ingest automatically.** The ingest CLI now enforces a guard based on
+  `CHESSMATE_MAX_PENDING_EMBEDDINGS` (default 250000). Set it to a higher value to push
+  more load, or `0`/negative to disable the guard entirely.
 
 ## CLI Tips
 - Always export `DATABASE_URL` before running ingest/query commands.

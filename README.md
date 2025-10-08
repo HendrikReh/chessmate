@@ -22,8 +22,8 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 - **PGN ingestion pipeline:** parses headers/SAN, derives per-ply FEN snapshots, extracts ECO codes, and persists metadata (players, openings, results) to Postgres.
 - **Opening catalogue:** maps natural-language opening phrases to ECO ranges (`lib/chess/openings`), so queries like “King’s Indian games” become deterministic filters.
 - **Prototype hybrid search:** milestone 4 ships an Opium-based `/query` API (`dune exec chessmate_api`) plus `chessmate query` CLI surfacing intent analysis and curated sample results.
-- **Embedding worker skeleton:** polls `embedding_jobs`, calls OpenAI embeddings, and records vector identifiers ready for Qdrant sync.
-- **Diagnostics tooling:** `chessmate fen <game.pgn>` prints per-ply FENs; ingestion/worker CLIs emit structured logs for troubleshooting.
+- **Embedding pipeline & safeguards:** worker polls `embedding_jobs`, calls OpenAI embeddings, records vector identifiers for Qdrant, and now benefits from an ingest guard that halts new PGNs when the queue crosses a configurable threshold.
+- **Diagnostics tooling:** `chessmate fen <game.pgn>` prints per-ply FENs; ingestion/worker CLIs emit structured logs for troubleshooting; `scripts/embedding_metrics.sh` surfaces queue depth, throughput, and ETA snapshots.
 
 ## Getting Started
 1. Clone and enter the repository.
@@ -55,11 +55,13 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    # In another shell, call the API via the CLI (set CHESSMATE_API_URL if you changed the port)
    CHESSMATE_API_URL=http://localhost:8080 dune exec chessmate -- query "Find King's Indian games where White is 2500 and Black 100 points lower"
 
-   # Ingest a PGN (persists players/games/positions/openings)
+   # Ingest a PGN (persists players/games/positions/openings). The CLI aborts if the
+   # embedding queue already exceeds CHESSMATE_MAX_PENDING_EMBEDDINGS (default 250k).
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec chessmate -- ingest test/fixtures/extended_sample_game.pgn
 
    # Run the embedding worker loop (requires OPENAI_API_KEY for real embeddings)
-   OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec embedding_worker
+   OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     dune exec embedding_worker -- --workers 2 --poll-sleep 1.5
 
    # Generate FENs from a PGN for quick inspection
    chessmate fen test/fixtures/sample_game.pgn
@@ -82,7 +84,46 @@ data/           # Bind-mounted volumes for Postgres and Qdrant
 - `chessmate twic-precheck <pgn>`: scans TWIC PGNs for malformed entries before ingestion.
 - `chessmate query "…"`: sends questions to the running query API (`CHESSMATE_API_URL` defaults to `http://localhost:8080`).
 - `chessmate fen <pgn> [output]`: prints FEN after each half-move (optional output file).
-- `OPENAI_API_KEY=… chessmate embedding-worker`: polls `embedding_jobs`, calls OpenAI, updates vector IDs.
+- `OPENAI_API_KEY=… chessmate embedding-worker [--workers N] [--poll-sleep SECONDS]`: polls `embedding_jobs`, calls OpenAI, updates vector IDs. Use `--workers` to run multiple concurrent loops safely.
+
+### Operational Scripts
+- `scripts/embedding_metrics.sh [--interval N] [--log path]`: report queue depth, recent throughput, and ETA for draining pending jobs.
+- `scripts/prune_pending_jobs.sh [batch_size]`: mark pending jobs whose positions already have vectors as completed (useful after re-ingest).
+
+### Ingestion & Queue Monitoring
+1. Set an appropriate guard before heavy ingest runs:
+   ```sh
+   # Limit pending jobs to 400k before the CLI aborts (0 disables the guard)
+   export CHESSMATE_MAX_PENDING_EMBEDDINGS=400000
+   ```
+2. Kick off ingest as usual; the command aborts early once the guard threshold is reached.
+3. In a separate shell, stream queue metrics every couple of minutes and log them for later analysis:
+   ```sh
+   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log
+   ```
+   Sample output:
+   ```
+   [2025-10-08T06:41:09Z] embedding jobs snapshot
+     total        : 756744
+     pending      : 607083
+     in_progress  : 2
+     completed    : 149601
+     failed       : 58
+     throughput/min (5m | 15m | 60m): 0 | 60.40 | 88.88
+     pending ETA  : 10051 minutes (~167.5 hours) based on 15m rate
+   ```
+4. Keep the embedding worker ahead of the queue:
+   ```sh
+   OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     dune exec embedding_worker -- --workers 4 --poll-sleep 1.0
+   ```
+   Increase or reduce `--workers` based on the metrics output; look for falling `pending` and steady throughput.
+5. If the guard triggers or throughput drops unexpectedly, prune stale work before resuming:
+   ```sh
+   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     scripts/prune_pending_jobs.sh 2000
+   ```
 
 ### CLI Usage
 Example CLI session (assuming Postgres is running locally):
@@ -90,9 +131,11 @@ Example CLI session (assuming Postgres is running locally):
 export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
 CHESSMATE_API_URL=http://localhost:8080
 
-# Ingest a PGN
+# Ingest a PGN (guarded by CHESSMATE_MAX_PENDING_EMBEDDINGS)
 chessmate ingest test/fixtures/extended_sample_game.pgn
 # => Stored game 1 with 77 positions
+# If the embedding queue already exceeds the guard, the command aborts early.
+# Set CHESSMATE_MAX_PENDING_EMBEDDINGS=0 (or a higher integer) to adjust the limit.
 
 # Ask a question (make sure the API is running in another shell)
 chessmate query "Show French Defense draws with queenside majority endings"
@@ -118,6 +161,10 @@ OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmat
   chessmate embedding-worker
 # [worker] starting polling loop
 # [worker] job 42 completed
+
+# In another shell, watch queue depth and ETA every 10 minutes
+DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+  scripts/embedding_metrics.sh --interval 600
 ```
 
 FEN tooling for sanity checks:

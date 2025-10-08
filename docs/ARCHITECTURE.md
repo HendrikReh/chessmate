@@ -38,8 +38,8 @@ flowchart TD
 
 ## Component Overview
 - **CLI & API Layer**: `chessmate ingest` / `chessmate query` commands and the Opium-based `/query` service route user intent into the platform.
-- **Ingestion pipeline** (`lib/chess/pgn_parser`, `lib/storage/repo_postgres`): parses PGNs, derives FEN snapshots, extracts ECO/opening metadata, and persists games/positions/embedding jobs in Postgres.
-- **Embedding pipeline** (`services/embedding_worker`): polls `embedding_jobs`, batches FEN strings, calls OpenAI embeddings, writes vectors to Qdrant, and records `vector_id` back in Postgres.
+- **Ingestion pipeline** (`lib/chess/pgn_parser`, `lib/storage/repo_postgres`): parses PGNs, derives FEN snapshots, extracts ECO/opening metadata, persists games/positions/embedding jobs in Postgres, and now enforces a configurable guard to pause ingestion when the embedding queue is saturated.
+- **Embedding pipeline** (`services/embedding_worker`): polls `embedding_jobs`, batches FEN strings, calls OpenAI embeddings, writes vectors to Qdrant, and records `vector_id` back in Postgres. Operators track throughput with `scripts/embedding_metrics.sh` while scaling workers via the `--workers` flag and rely on `CHESSMATE_MAX_PENDING_EMBEDDINGS` to keep ingest pressure in check.
 - **Hybrid query pipeline** (`lib/query`, `lib/chess/openings`): converts natural-language questions into structured filters (openings/ratings/phases), plans hybrid metadata/vector lookups, and assembles responses.
 
 ## Data Flow
@@ -60,7 +60,7 @@ graph LR
 ```
 
 Detailed steps:
-1. **Ingest**: PGN file → parse headers/SAN/FEN → extract player, result, ECO/opening slug → persist to Postgres (`games`, `players`, `positions`) → enqueue `embedding_jobs` for each FEN.
+1. **Ingest**: PGN file → parse headers/SAN/FEN → extract player, result, ECO/opening slug → persist to Postgres (`games`, `players`, `positions`) → enqueue `embedding_jobs` for each FEN, with a guard on queue depth (`CHESSMATE_MAX_PENDING_EMBEDDINGS`) to keep backlog manageable.
 2. **Embed**: Worker polls pending jobs → batches FENs → calls OpenAI embeddings → upserts into Qdrant (vector + payload) → updates Postgres `positions.vector_id` and job status.
 3. **Query**: CLI/API receives question → `Query_intent.analyse` normalizes text, maps openings via ECO catalogue, infers rating/phase filters → prototype planner scores curated vector/keyword results (future: live Postgres + Qdrant queries) → aggregates response via `Result_formatter`.
 

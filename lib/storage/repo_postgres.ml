@@ -321,24 +321,25 @@ let parse_job_row line =
       Or_error.return { Job.id; fen; attempts; status; last_error }
   | _ -> Or_error.errorf "Malformed job row: %s" line
 
-let fetch_pending_jobs repo ~limit =
-  let sql =
-    Printf.sprintf
-      "SELECT id, fen, attempts, status, COALESCE(last_error, '')\n       FROM embedding_jobs\n       WHERE status = 'pending'\n       ORDER BY enqueued_at ASC\n       LIMIT %d;"
-      limit
-  in
-  let* rows = run_psql repo sql in
-  rows
-  |> List.map ~f:parse_job_row
-  |> Or_error.all
+let pending_embedding_job_count repo =
+  let sql = "SELECT COUNT(*) FROM embedding_jobs WHERE status = 'pending';" in
+  let* count = query_single_int repo sql in
+  match count with
+  | Some value -> Or_error.return value
+  | None -> Or_error.return 0
 
-let mark_job_started repo ~job_id =
-  let sql =
-    Printf.sprintf
-      "UPDATE embedding_jobs\n       SET status = 'in_progress', attempts = attempts + 1, started_at = NOW(), last_error = NULL\n       WHERE id = %d;"
-      job_id
-  in
-  exec repo sql
+let claim_pending_jobs repo ~limit =
+  if Int.(limit <= 0) then Or_error.return []
+  else
+    let sql =
+      Printf.sprintf
+        "WITH candidate AS (\n         SELECT id\n         FROM embedding_jobs\n         WHERE status = 'pending'\n         ORDER BY enqueued_at ASC\n         FOR UPDATE SKIP LOCKED\n         LIMIT %d\n       )\n       UPDATE embedding_jobs AS ej\n       SET status = 'in_progress', attempts = ej.attempts + 1, started_at = NOW(), last_error = NULL\n       WHERE ej.id IN (SELECT id FROM candidate)\n       RETURNING ej.id, ej.fen, ej.attempts, ej.status, COALESCE(ej.last_error, '');"
+        limit
+    in
+    let* rows = run_psql repo sql in
+    rows
+    |> List.map ~f:parse_job_row
+    |> Or_error.all
 
 let mark_job_completed repo ~job_id ~vector_id =
   let vector_literal =

@@ -41,18 +41,33 @@ docker compose up -d postgres qdrant
 
 ### CLI Usage Cheatsheet
 ```sh
-# Ingest a PGN (requires DATABASE_URL)
+# Ingest a PGN (requires DATABASE_URL). Adjust or disable the queue guard via
+# CHESSMATE_MAX_PENDING_EMBEDDINGS before bulk imports.
 chessmate ingest test/fixtures/extended_sample_game.pgn
 
 # Query prototype API (ensure server runs on localhost:8080)
 chessmate query "Show French Defense draws with queenside majority"
 
 # Embedding worker loop (replace OPENAI_API_KEY for real runs)
-OPENAI_API_KEY=dummy chessmate embedding-worker
+OPENAI_API_KEY=dummy chessmate embedding-worker --workers 4 --poll-sleep 1.0
+
+# Watch queue depth & throughput every two minutes
+DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+  scripts/embedding_metrics.sh --interval 120
+
+# Prune stale pending jobs after re-ingest
+DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+  scripts/prune_pending_jobs.sh 2000
 
 # FEN diagnostics
 chessmate fen test/fixtures/sample_game.pgn | head -n 5
 ```
+
+### Bulk Ingestion Tips
+- Keep `CHESSMATE_MAX_PENDING_EMBEDDINGS` conservative in development (≤ 400k) so runaway queues fail fast.
+- Metrics script cadence: 60–120 seconds works well for 5–10 worker loops; shorten to 30 seconds while tuning.
+- When throughput plateaus, lower `--workers` or increase `--poll-sleep` before OpenAI throttling kicks in.
+- Always prune pending jobs with populated `vector_id`s before re-ingesting the same PGN to avoid duplicates.
 
 ### Parsing PGNs Programmatically
 ```ocaml
