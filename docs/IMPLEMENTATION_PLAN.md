@@ -305,24 +305,37 @@ sequenceDiagram
 ---
 
 ### Milestone 5 – Simple Agent-Friendly Search (🚧 In Progress)
-**Objective**: Implement Phase 1 MVP with transparent PostgreSQL filters + LLM agent evaluation.
+**Objective**: Implement Phase 1 MVP with transparent PostgreSQL filters plus an OpenAI GPT‑5 agent that ranks and explains results. All agent calls will use GPT‑5 (Responses API) and the new `reasoning.effort` control.
 
 **Tasks**:
-1. Build `Agent_evaluator` module with LLM client wrapper
-2. Create prompt templates for tactical theme detection, reusing and extending motifs from `docs/PROMPTS.md`
-3. Wire agent evaluation into query pipeline (PostgreSQL → overfetch → agent → results)
-4. Add configuration for agent model selection (GPT-4, GPT-5, Claude, etc.)
-5. Implement cost tracking and caching for agent calls
-6. Write unit tests for agent response parsing
-7. Update README, `docs/OPERATIONS.md`, and `docs/TROUBLESHOOTING.md` with the new agent workflow, smoke tests, and failure modes
+1. **LLM Client & Config**
+   - Add `lib/agents/gpt5_client.ml/.mli` wrapping OpenAI GPT‑5 with env-driven settings: `AGENT_API_KEY`, `AGENT_MODEL` (default `gpt-5`), `reasoning_effort` (`minimal|low|medium|high` default `medium`), `verbosity`, concurrency limit, retry/backoff.
+   - Remove temperature handling; expose knobs for `reasoning.effort` and verbosity as recommended in the GPT‑5 docs.
+2. **Prompt & Response Schema**
+   - Reuse/extend motifs in `docs/PROMPTS.md` to craft prompts that summarise filters, send truncated PGNs, and request JSON output containing `score`, `themes`, and `explanation`.
+   - Implement robust response parsing with fallback when GPT‑5 returns malformed JSON.
+3. **Data Fetching**
+   - Add `Repo_postgres.fetch_games_with_pgn ~ids` and, if needed, `Repo_postgres.fetch_positions ~ids` to supply the agent with sufficient context (limit to 50 candidates per query).
+4. **Pipeline Integration**
+   - Extend `Hybrid_executor` (or introduce `Agent_executor`) to: fetch metadata → fetch PGNs → evaluate with GPT‑5 → combine heuristic score and agent score (configurable weights) → include agent explanation/effort metadata in results.
+   - Run agent evaluations concurrently with a bounded worker pool to respect rate limits.
+5. **Cost & Telemetry**
+   - Track tokens and latency per call; log structured telemetry (JSON) including `reasoning_effort`, tokens, cost estimates.
+   - Add optional caching (e.g., SQLite file or Redis key) keyed by plan+game to avoid re-billing identical prompts.
+6. **Testing**
+   - Unit tests for prompt generation and JSON response parsing (using canned GPT‑5 outputs).
+   - Integration tests with a stubbed GPT‑5 client to validate the full Postgres → agent → response loop.
+   - Update troubleshooting smoke test to cover agent-enabled queries and fallback behaviour.
+7. **Documentation & Runbooks**
+   - Update README, Operations, Troubleshooting with agent setup, `reasoning.effort` guidance, cost monitoring, and recovery steps when GPT‑5 is unavailable.
 
 **Checkpoints**:
-- Query "Find queenside majority attacks in King's Indian" returns accurately ranked results
-- Agent provides explanations: "Game matched because: move 25-35 shows advancing a/b pawns..."
-- Query performance < 10 seconds for 50 candidates (validated via the troubleshooting quick smoke test loop)
-- Integration tests validate end-to-end flow and document new steps in the operations runbook
+- Query "Find queenside majority attacks in King's Indian" returns agent-ranked results with explanations (`reasoning.effort` tuned to `high`).
+- End-to-end latency < 10 seconds for 50 candidates with `reasoning.effort=medium`; document trade-offs for `low`/`high`.
+- Structured logs show tokens, effort level, and per-query cost; metrics captured in Ops runbook.
+- Integration tests cover agent path; documentation reflects new workflow and failure modes.
 
-**Architecture Note**: This milestone prioritizes **transparency over complexity**. Agents can reason about simple PostgreSQL filters better than opaque vector similarity scores.
+**Architecture Note**: This milestone keeps reasoning transparent—PostgreSQL filters remain deterministic while GPT‑5 provides ranked insights with controllable depth via `reasoning.effort`.
 
 ---
 
