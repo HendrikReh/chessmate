@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(* Lightweight in-memory cache for embeddings used in tests and diagnostics. *)
+
 open! Base
 
 type t = (string, float array, String.comparator_witness) Map.t ref

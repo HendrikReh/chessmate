@@ -1,3 +1,7 @@
+(* Emits structured telemetry for GPT-5 agent calls (latency, tokens, cost). *)
+
+(** Emits structured telemetry for GPT-5 agent calls. *)
+
 open! Base
 
 val log :

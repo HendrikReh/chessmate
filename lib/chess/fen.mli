@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Utilities for parsing, validating, and manipulating FEN strings. *)
+
 open! Base
 
 (** FEN (Forsyth-Edwards Notation) helpers. *)

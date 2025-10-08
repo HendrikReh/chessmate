@@ -1,6 +1,9 @@
 open! Base
 
 (** Reasoning effort levels supported by GPT-5. *)
+
+(** Client wrapper around the OpenAI GPT-5 Responses API with configurable effort and verbosity. *)
+
 module Effort : sig
   type t = Minimal | Low | Medium | High
 
@@ -69,6 +72,8 @@ val create :
 (** [create ~api_key ?endpoint ?model ?default_effort ?default_verbosity ()] instantiates a
     GPT-5 client. Defaults: endpoint = "https://api.openai.com/v1/responses",
     model = "gpt-5", effort = [Effort.Medium]. *)
+
+(* Client wrapper around the OpenAI GPT-5 Responses API with configurable effort and verbosity. *)
 
 val create_from_env : unit -> t Or_error.t
 (** [create_from_env ()] reads [AGENT_API_KEY], [AGENT_ENDPOINT], [AGENT_MODEL],

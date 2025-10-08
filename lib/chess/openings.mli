@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Maps ECO codes to canonical openings and synonyms for intent detection. *)
+
 open! Base
 
 (** Canonical opening metadata backed by ECO ranges. *)

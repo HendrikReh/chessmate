@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(* Entry point for the `chessmate` CLI, wiring subcommands and environment bootstrapping. *)
+
 open! Base
 open Stdio
 open Chessmate

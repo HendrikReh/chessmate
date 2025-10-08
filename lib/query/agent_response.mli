@@ -1,3 +1,7 @@
+(* Parses structured JSON responses returned by GPT-5 agent prompts. *)
+
+(** Parses JSON responses returned by GPT-5 agent prompts. *)
+
 open! Base
 
 (** Structured evaluation item returned by the GPT-5 agent. *)

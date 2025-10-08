@@ -1,3 +1,7 @@
+(* Caches agent evaluation results using in-memory or Redis backends. *)
+
+(** Caches agent evaluation results using in-memory or Redis backends. *)
+
 open! Base
 
 (** Unique key for caching GPT-5 evaluations. *)

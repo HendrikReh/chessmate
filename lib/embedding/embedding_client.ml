@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(* Wraps the OpenAI embeddings API for batch FEN requests. *)
+
 open! Base
 open Stdio
 

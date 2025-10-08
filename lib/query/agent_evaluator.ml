@@ -5,6 +5,8 @@
     GPL v3
 *)
 
+(* Prepares candidate context, invokes GPT-5, and normalises scores. *)
+
 open! Base
 
 let ( let* ) t f = Or_error.bind t ~f

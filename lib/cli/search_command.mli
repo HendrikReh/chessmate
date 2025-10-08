@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Implements the `chessmate query` CLI command. *)
+
 open! Base
 
 (** CLI entry point for querying the `/query` HTTP API (backed by the prototype planning pipeline). *)

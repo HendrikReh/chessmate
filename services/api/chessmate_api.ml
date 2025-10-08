@@ -16,6 +16,8 @@ Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(* Opium HTTP API handling `/query` requests. *)
+
 open! Base
 open Chessmate
 open Opium.Std

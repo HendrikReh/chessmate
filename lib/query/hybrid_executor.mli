@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Coordinates fetching candidates, running agent evaluations, and scoring results. *)
+
 open! Base
 
 (** Execute hybrid search by combining Postgres metadata with Qdrant vector hits. *)

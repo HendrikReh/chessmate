@@ -1,3 +1,7 @@
+(* Prepares candidate context, invokes GPT-5, and normalises scores/explanations. *)
+
+(** Prepares candidate context, invokes GPT-5, and normalises scores. *)
+
 open! Base
 
 (** Evaluation returned by the GPT-5 agent. *)

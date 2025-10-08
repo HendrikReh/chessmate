@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(* Derives high-level features (phase, pawn structure, etc.) from board states. *)
+
 open! Base
 
 type theme =

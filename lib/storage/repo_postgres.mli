@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Postgres repository for ingesting games, managing jobs, and fetching query data. *)
+
 open! Base
 
 (** Storage facade for PostgreSQL interactions. *)
