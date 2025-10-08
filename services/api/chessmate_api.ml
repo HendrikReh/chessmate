@@ -133,17 +133,57 @@ let agent_client : Agents_gpt5_client.t option Lazy.t =
         None)
 
 let agent_cache : Agent_cache.t option Lazy.t =
+  let non_empty_env name =
+    Stdlib.Sys.getenv_opt name
+    |> Option.map ~f:String.strip
+    |> Option.bind ~f:(fun value -> if String.is_empty value then None else Some value)
+  in
+  let parse_positive_int name raw =
+    match Int.of_string_opt raw with
+    | Some value when value > 0 -> Some value
+    | _ ->
+        Stdio.eprintf "[chessmate-api] ignoring %s=%s (expected positive int)\n%!" name raw;
+        None
+  in
   lazy
-    (match Stdlib.Sys.getenv_opt "AGENT_CACHE_CAPACITY" with
-    | Some raw -> (
-        match Int.of_string_opt (String.strip raw) with
-        | Some capacity when capacity > 0 ->
-            Stdio.eprintf "[chessmate-api] agent cache enabled (capacity=%d)\n%!" capacity;
-            Some (Agent_cache.create ~capacity)
-        | _ ->
-            Stdio.eprintf "[chessmate-api] ignoring AGENT_CACHE_CAPACITY=%s (expected positive int)\n%!" raw;
-            None)
-    | None -> None)
+    (match non_empty_env "AGENT_CACHE_REDIS_URL" with
+    | Some url -> (
+        let namespace = non_empty_env "AGENT_CACHE_REDIS_NAMESPACE" in
+        let ttl_seconds =
+          match non_empty_env "AGENT_CACHE_TTL_SECONDS" with
+          | None -> None
+          | Some raw -> parse_positive_int "AGENT_CACHE_TTL_SECONDS" raw
+        in
+        (match Agent_cache.create_redis ?namespace ?ttl_seconds url with
+        | Ok cache ->
+            let namespace_log = Option.value namespace ~default:"<default>" in
+            let ttl_log = Option.value_map ttl_seconds ~default:"<none>" ~f:Int.to_string in
+            Stdio.eprintf
+              "[chessmate-api] agent cache enabled via redis (namespace=%s ttl=%s)\n%!"
+              namespace_log ttl_log;
+            Some cache
+        | Error err ->
+            Stdio.eprintf "[chessmate-api] redis agent cache disabled: %s\n%!"
+              (Error.to_string_hum err);
+            (match non_empty_env "AGENT_CACHE_CAPACITY" with
+            | Some raw -> (
+                match parse_positive_int "AGENT_CACHE_CAPACITY" raw with
+                | Some capacity ->
+                    Stdio.eprintf
+                      "[chessmate-api] falling back to in-memory cache (capacity=%d)\n%!"
+                      capacity;
+                    Some (Agent_cache.create ~capacity)
+                | None -> None)
+            | None -> None)))
+    | None -> (
+        match non_empty_env "AGENT_CACHE_CAPACITY" with
+        | Some raw -> (
+            match parse_positive_int "AGENT_CACHE_CAPACITY" raw with
+            | Some capacity ->
+                Stdio.eprintf "[chessmate-api] agent cache enabled (capacity=%d)\n%!" capacity;
+                Some (Agent_cache.create ~capacity)
+            | None -> None)
+        | None -> None))
 
 let plan_to_json (plan : Query_intent.plan) =
   `Assoc

@@ -36,7 +36,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    ```
 4. Launch backing services (Postgres, Qdrant) via Docker (first run may take a minute while images download):
    ```sh
-   docker compose up -d postgres qdrant
+    docker compose up -d postgres qdrant redis
    ```
 4. Initialize the database (migrations expect `DATABASE_URL` to be set):
    ```sh
@@ -66,7 +66,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
      dune exec embedding_worker -- --workers 2 --poll-sleep 1.5
 
    # Enable GPT-5 agent ranking (optional)
-   AGENT_API_KEY=dummy-agents-key AGENT_REASONING_EFFORT=high AGENT_CACHE_CAPACITY=1000 \
+   AGENT_API_KEY=dummy-agents-key AGENT_REASONING_EFFORT=high AGENT_CACHE_REDIS_URL=redis://localhost:6379/0 \
      DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec chessmate -- query "Find attacking King's Indian games"
 
    # Generate FENs from a PGN for quick inspection
@@ -81,7 +81,7 @@ scripts/        # Database migrations (`migrate.sh`, `migrations/`, seeds)
 services/       # Long-running services (e.g., embedding_worker)
 docs/           # Architecture, developer, ops, and planning docs
 test/           # Alcotest suites
-data/           # Bind-mounted volumes for Postgres and Qdrant
+data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
 ```
 
 ## Services & CLIs
@@ -144,7 +144,10 @@ data/           # Bind-mounted volumes for Postgres and Qdrant
 - `AGENT_REASONING_EFFORT`: one of `minimal|low|medium|high`; defaults to `medium`.
 - `AGENT_VERBOSITY`: `low|medium|high` (choose higher values for verbose reports).
 - `AGENT_ENDPOINT`: override the OpenAI Responses API endpoint (advanced setups).
-- `AGENT_CACHE_CAPACITY`: optional positive integer to enable an in-memory cache (e.g. 1000) so repeat queries reuse prior GPT-5 evaluations.
+- `AGENT_CACHE_REDIS_URL`: optional `redis://` URL to persist GPT-5 evaluations (requires the Redis service in `docker-compose`).
+- `AGENT_CACHE_REDIS_NAMESPACE`: optional key namespace (defaults to `chessmate:agent:` when unset).
+- `AGENT_CACHE_TTL_SECONDS`: optional positive integer TTL for Redis entries (omit to keep cached values indefinitely).
+- `AGENT_CACHE_CAPACITY`: fallback in-memory cache size (positive integer) when Redis is unavailable or intentionally disabled.
 - `AGENT_COST_INPUT_PER_1K`, `AGENT_COST_OUTPUT_PER_1K`, `AGENT_COST_REASONING_PER_1K`: optional USD rates that power telemetry cost estimates (set per 1K tokens; unset → costs omitted).
 
 When any of these variables change, restart API/CLI sessions so the lazy client picks up the new configuration. The API/CLI prints telemetry lines prefixed with `[agent-telemetry]` containing the sanitized question, candidate counts, latency, token usage, and any cost estimates.
@@ -291,7 +294,7 @@ scripts/        # Database migrations (`migrate.sh`, `migrations/`, seeds)
 services/       # Long-running services (e.g., embedding_worker, API prototype)
 docs/           # Architecture, developer, ops, and planning docs
 test/           # Alcotest suites
-data/           # Bind-mounted volumes for Postgres and Qdrant
+data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
 ```
 
 ## Resetting the Stack

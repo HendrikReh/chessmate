@@ -8,12 +8,11 @@ val key_of_plan : plan:Query_intent.plan -> summary:Repo_postgres.game_summary -
 (** Cached evaluation payload. *)
 type entry = Agent_evaluator.evaluation
 
-(** Simple bounded in-memory cache. *)
+(** Cache handle supporting in-memory or Redis backends. *)
 type t
 
 val create : capacity:int -> t
-val capacity : t -> int
-val size : t -> int
+val create_redis : ?namespace:string -> ?ttl_seconds:int -> string -> t Or_error.t
 
 val find : t -> key -> entry option
 val store : t -> key -> entry -> unit

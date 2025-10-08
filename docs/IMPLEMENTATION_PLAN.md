@@ -304,7 +304,7 @@ sequenceDiagram
 
 ---
 
-### Milestone 5 – Simple Agent-Friendly Search (🚧 In Progress)
+### Milestone 5 – Simple Agent-Friendly Search (✅ Complete)
 **Objective**: Implement Phase 1 MVP with transparent PostgreSQL filters plus an OpenAI GPT‑5 agent that ranks and explains results. All agent calls will use GPT‑5 (Responses API) and the new `reasoning.effort` control.
 
 **Tasks**:
@@ -390,7 +390,7 @@ sequenceDiagram
 - **Milestone 2**: PGN parser, migrations/seed scripts, `chessmate ingest` populates Postgres.
 - **Milestone 3**: Embedding jobs persisted, worker loops embedding FENs via OpenAI, vector IDs stored; `chessmate fen` diagnostic command added.
 - **Milestone 4**: Heuristic query planner, `/query` API prototype, CLI integration, ECO catalogue (`lib/chess/openings`), opening metadata persisted.
-- **Current (Milestone 5)**: Building agent-friendly search architecture—PostgreSQL filters + LLM evaluation for transparent, iterative query refinement.
+- **Milestone 5**: Delivered agent-friendly search with GPT-5 ranking, Redis-backed caching, telemetry, and documentation updates.
 
 ---
 

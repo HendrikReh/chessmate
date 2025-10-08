@@ -121,7 +121,7 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
 - Confirm `AGENT_API_KEY` and internet access; GPT-5 errors surface in the warning message.
 - Ensure `AGENT_REASONING_EFFORT` is valid (`minimal|low|medium|high`) and that the API key has access to the selected model.
 - Inspect `[agent-telemetry]` JSON lines for latency, token usage, and cost estimates—persistent spikes or missing usage often explain slowdowns and quota overruns.
-- If a cache is enabled (`AGENT_CACHE_CAPACITY`), stale responses can persist until the cache evicts entries—drop the capacity or restart the API to clear it after schema/prompt changes.
+- If caching is enabled (`AGENT_CACHE_REDIS_URL` or `AGENT_CACHE_CAPACITY`), stale responses can persist until entries expire—flush the Redis namespace or drop the in-memory capacity/restart the API after schema/prompt changes.
 - When the agent is temporarily disabled, results fall back to heuristic scoring—address the warning before relying on explanations.
 
 ## Queue Management

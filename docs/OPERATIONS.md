@@ -5,7 +5,7 @@
 - **qdrant**: vector store for FEN embeddings, exposed on 6333/6334. Volume: `data/qdrant`.
 - **chessmate-api**: Opium HTTP service (prototype) for `/query`.
 - **embedding-worker**: OCaml worker polling `embedding_jobs`, calling OpenAI, updating Qdrant/Postgres.
-- **(optional) redis/others**: future queue/cache components once required.
+- **redis**: shared cache for agent evaluations (persisted under `data/redis`).
 
 ## Bootstrapping Environment
 Copy `.env.sample` to `.env`, adjust the values, and then export or `source` them before running commands.
@@ -15,7 +15,7 @@ export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
 export CHESSMATE_API_URL=http://localhost:8080
 
 # start core services (first run pulls images)
-docker compose up -d postgres qdrant
+docker compose up -d postgres qdrant redis
 
 # apply migrations (idempotent)
 ./scripts/migrate.sh
@@ -29,7 +29,7 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
 - Embedding worker: `OPENAI_API_KEY=... chessmate embedding-worker --workers N` (run multiple loops inside one process; increase `N` gradually when clearing backlogs).
 - CLI queries: `chessmate query "find king's indian games"` (ensure API is running).
 - Queue metrics: `scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log` keeps per-status counts, throughput, and ETA.
-- GPT-5 agent (optional): set `AGENT_API_KEY` (and optionally `AGENT_MODEL`, `AGENT_REASONING_EFFORT`, `AGENT_VERBOSITY`, `AGENT_CACHE_CAPACITY`) before calling `chessmate query` or starting the API to enable ranking/explanations.
+- GPT-5 agent (optional): set `AGENT_API_KEY` (and optionally `AGENT_MODEL`, `AGENT_REASONING_EFFORT`, `AGENT_VERBOSITY`, `AGENT_CACHE_REDIS_URL`) before calling `chessmate query` or starting the API to enable ranking/explanations. If Redis is unavailable, fall back to `AGENT_CACHE_CAPACITY` for the in-process cache.
 
 ## Runtime Management
 - **Health checks**:
@@ -72,7 +72,20 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
 - API and CLI calls automatically include agent insights when `AGENT_API_KEY` is present.
 - Monitor agent warnings returned by the API (e.g., "Agent evaluation failed..." or token usage summaries).
 - Tune `AGENT_REASONING_EFFORT` + `AGENT_VERBOSITY` jointly (high/high for deep audits, medium/medium for balanced responses).
-- Enable caching by setting `AGENT_CACHE_CAPACITY=<n>` (e.g. 1000) to reuse evaluations across identical queries; clear or lower the value if memory pressure appears.
+- Enable caching by pointing `AGENT_CACHE_REDIS_URL` at the shared Redis instance (optionally tune `AGENT_CACHE_REDIS_NAMESPACE` / `AGENT_CACHE_TTL_SECONDS`). Without Redis, set `AGENT_CACHE_CAPACITY=<n>` (e.g. 1000) for the per-process fallback and clear or lower the value if memory pressure appears.
+- Flush stale agent entries after prompt/schema tweaks:
+  - Single command (dev-sized datasets):
+    ```sh
+    redis-cli --scan --pattern 'chessmate:agent:*' | xargs -r redis-cli del
+    ```
+    Streams matching keys via `SCAN` and deletes them with `DEL`; adjust the pattern when you override `AGENT_CACHE_REDIS_NAMESPACE`.
+  - Large keysets: avoid long `xargs` invocations by looping:
+    ```sh
+    redis-cli --scan --pattern 'chessmate:agent:*' \
+      | while read -r key; do redis-cli del "$key" >/dev/null; done
+    ```
+  - Quick reset: temporarily change `AGENT_CACHE_REDIS_NAMESPACE` (e.g. append a timestamp), restart the API, and continue working with a fresh namespace.
+  - Full wipe: `redis-cli FLUSHDB` removes the entire database—only use it when no other services share the Redis instance.
 - Telemetry: each agent call logs a `[agent-telemetry]` JSON line with candidate counts, latency, token usage, and optional cost estimates. Configure per-1K token costs via `AGENT_COST_INPUT_PER_1K`, `AGENT_COST_OUTPUT_PER_1K`, and `AGENT_COST_REASONING_PER_1K` to surface USD totals.
 - If GPT-5 is unreachable, results fall back to heuristic scoring and a warning appears in the response; investigate network/API limits before re-enabling.
 
