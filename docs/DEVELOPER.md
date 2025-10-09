@@ -1,6 +1,6 @@
 # Developer Handbook
 
-> Related guides: [Operations Playbook](OPERATIONS.md) for runtime procedures, [Testing Plan](TESTING.md) for manual validation, [Troubleshooting](TROUBLESHOOTING.md) for common issues, and [Collaboration Guidelines](GUIDELINES.md) for team norms.
+> Related guides: [Operations Playbook](OPERATIONS.md) for runtime procedures, [Testing Plan](TESTING.md) for manual validation, [Troubleshooting](TROUBLESHOOTING.md) for common issues, [Cookbook](COOKBOOK.md) for quick workflows, and [Collaboration Guidelines](GUIDELINES.md) for team norms.
 
 ## Onboarding Checklist
 1. Copy `.env.sample` to `.env` and update the connection strings/API keys you need locally.
