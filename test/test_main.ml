@@ -13,5 +13,6 @@ let () =
       "query", Test_query.suite;
       "integration", Test_integration.suite;
       "sql-filters", Test_sql_filters.suite;
+      "sanitizer", Test_sanitizer.suite;
       "qdrant", Test_qdrant.suite
     ]

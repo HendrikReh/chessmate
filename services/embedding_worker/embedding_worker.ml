@@ -142,7 +142,7 @@ let mark_announced exit_condition =
 let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
   match Embedding_client.embed_fens embedding_client [ job.fen ] with
   | Error err ->
-      let message = Error.to_string_hum err in
+      let message = Sanitizer.sanitize_error err in
       let _ = Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:message in
       error ?label (Printf.sprintf "job %d failed: %s" job.id message);
       record_result stats ~failed:true
@@ -158,7 +158,7 @@ let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
       let vector_values = Array.to_list vector in
       match Repo_postgres.vector_payload_for_job repo ~job_id:job.id with
       | Error err ->
-          let message = Error.to_string_hum err in
+      let message = Sanitizer.sanitize_error err in
           let _ = Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:message in
           error ?label (Printf.sprintf "job %d failed: %s" job.id message);
           record_result stats ~failed:true
@@ -196,7 +196,7 @@ let rec work_loop repo embedding_client ~poll_sleep ~label stats exit_condition 
   else
     match Repo_postgres.claim_pending_jobs repo ~limit:16 with
     | Error err ->
-        warn ?label (Printf.sprintf "failed to fetch jobs: %s" (Error.to_string_hum err));
+        warn ?label (Printf.sprintf "failed to fetch jobs: %s" (Sanitizer.sanitize_error err));
         Unix.sleepf poll_sleep;
         work_loop repo embedding_client ~poll_sleep ~label stats exit_condition
     | Ok [] ->
@@ -226,7 +226,7 @@ let worker_config : Config.Worker.t =
   match Config.Worker.load () with
   | Ok config -> config
   | Error err ->
-      eprintf "[worker][fatal] %s\n%!" (Error.to_string_hum err);
+      eprintf "[worker][fatal] %s\n%!" (Sanitizer.sanitize_error err);
       Stdlib.exit 1
 
 let () =
@@ -265,7 +265,7 @@ let () =
   in
   match env_result with
   | Error err ->
-      eprintf "[worker][fatal] %s\n%!" (Error.to_string_hum err);
+      eprintf "[worker][fatal] %s\n%!" (Sanitizer.sanitize_error err);
       Stdlib.exit 1
   | Ok (repo, embedding_client) ->
       let start_time = Unix.gettimeofday () in

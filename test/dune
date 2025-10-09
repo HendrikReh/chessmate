@@ -13,6 +13,7 @@
   test_integration
   test_sql_filters
   test_qdrant
+  test_sanitizer
   test_main)
  (libraries chessmate alcotest stdio)
  (deps

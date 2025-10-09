@@ -313,7 +313,7 @@ let query_handler req =
       with
       | Error err ->
           respond_json ~status:`Internal_server_error
-            (`Assoc [ "error", `String (Error.to_string_hum err) ])
+            (`Assoc [ "error", `String (Sanitizer.sanitize_error err) ])
       | Ok execution ->
           List.iter execution.Hybrid_executor.warnings ~f:(fun warning ->
               Stdio.eprintf "[chessmate-api] warning: %s\n%!" warning);

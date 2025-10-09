@@ -82,7 +82,9 @@ let exec_raw t query params =
           t.conn#exec ~params:param_array query
     in
     match try_pg perform with
-    | Error err -> Error err
+    | Error err ->
+        let message = Sanitizer.sanitize_string (Error.to_string_hum err) in
+        Error (Error.of_string message)
     | Ok res -> (
         match res#status with
         | Pg.Command_ok
