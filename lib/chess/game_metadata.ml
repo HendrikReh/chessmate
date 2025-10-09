@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Structures and normalizes PGN header information. *)
-
 open! Base
 
 type player = {

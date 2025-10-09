@@ -20,8 +20,6 @@
 
 open! Base
 
-(** Interface to OpenAI embeddings. *)
-
 type t
 
 val create : api_key:string -> endpoint:string -> t Or_error.t

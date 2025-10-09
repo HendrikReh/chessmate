@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Streaming PGN parser that extracts headers, moves, and metadata. *)
-
 open! Base
 
 type move = {

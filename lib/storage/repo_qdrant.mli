@@ -20,8 +20,6 @@
 
 open! Base
 
-(** Wrapper around Qdrant HTTP API. *)
-
 type point = {
   id : string;
   vector : float list;

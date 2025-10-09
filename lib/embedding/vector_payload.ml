@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Builds the metadata payload stored alongside each embedding vector in Qdrant. *)
-
 open! Base
 
 let from_metadata metadata ~extra =

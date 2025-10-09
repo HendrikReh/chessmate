@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Minimal Qdrant client for upserting and searching chess position vectors. *)
-
 open! Base
 
 module Config = struct

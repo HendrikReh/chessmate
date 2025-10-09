@@ -20,8 +20,6 @@
 
 open! Base
 
-(** FEN (Forsyth-Edwards Notation) helpers. *)
-
 type t = string
 
 val normalize : t -> t Or_error.t

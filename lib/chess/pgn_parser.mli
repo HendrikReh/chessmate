@@ -20,8 +20,6 @@
 
 open! Base
 
-(** PGN parsing and normalization utilities. *)
-
 val default_valid_results : string list
 (** Valid tokens permitted in the [Result] tag. *)
 

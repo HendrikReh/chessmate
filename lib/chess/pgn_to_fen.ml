@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Translates parsed PGNs into per-ply FEN snapshots and move annotations. *)
-
 open! Base
 
 module Color = struct

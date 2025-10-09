@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Implements the `chessmate query` CLI command. *)
-
 open! Base
 
 let build_uri () =

@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* CLI command that converts PGNs into streams of FEN positions. *)
-
 open! Base
 open Stdio
 

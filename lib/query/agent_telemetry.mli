@@ -1,6 +1,4 @@
-(* Emits structured telemetry for GPT-5 agent calls (latency, tokens, cost). *)
-
-(** Emits structured telemetry for GPT-5 agent calls. *)
+(** Emits structured telemetry for GPT-5 agent calls (latency, tokens, cost). *)
 
 open! Base
 

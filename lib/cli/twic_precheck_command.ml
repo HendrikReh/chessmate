@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* CLI command that validates TWIC PGN archives before ingestion. *)
-
 open! Base
 open Stdio
 

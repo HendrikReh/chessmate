@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Helpers for reading and updating the embedding job queue in Postgres. *)
-
 open! Base
 
 type job = {

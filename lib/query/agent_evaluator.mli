@@ -1,6 +1,4 @@
-(* Prepares candidate context, invokes GPT-5, and normalises scores/explanations. *)
-
-(** Prepares candidate context, invokes GPT-5, and normalises scores. *)
+(** Prepares candidate context, invokes GPT-5, and normalises scores/explanations. *)
 
 open! Base
 

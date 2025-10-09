@@ -20,8 +20,6 @@
 
 open! Base
 
-(** Simple interface for managing ingestion jobs. *)
-
 type job = {
   fen : string;
   metadata : (string * string) list;

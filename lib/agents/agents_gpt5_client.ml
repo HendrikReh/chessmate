@@ -17,8 +17,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Client wrapper around the OpenAI GPT-5 Responses API with configurable effort and verbosity. *)
-
 open! Base
 open Stdio
 

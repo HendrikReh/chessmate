@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Analyses natural-language questions into openings, filters, and keywords. *)
-
 open! Base
 
 type rating_filter = {

@@ -20,8 +20,6 @@
 
 open! Base
 
-(** Storage facade for PostgreSQL interactions. *)
-
 type t
 
 val create : string -> t Or_error.t
