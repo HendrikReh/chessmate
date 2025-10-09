@@ -24,6 +24,55 @@ module Common = Openai_common
 
 module Util = Yojson.Safe.Util
 
+let default_max_batch_size = 2048
+let default_max_chars = 120_000
+
+let max_batch_size () =
+  match Stdlib.Sys.getenv_opt "OPENAI_EMBEDDING_CHUNK_SIZE" with
+  | None -> default_max_batch_size
+  | Some raw -> (
+      match Int.of_string_opt (String.strip raw) with
+      | Some value when value > 0 -> value
+      | _ -> default_max_batch_size)
+
+let max_chunk_chars () =
+  match Stdlib.Sys.getenv_opt "OPENAI_EMBEDDING_MAX_CHARS" with
+  | None -> default_max_chars
+  | Some raw -> (
+      match Int.of_string_opt (String.strip raw) with
+      | Some value when value > 0 -> value
+      | _ -> default_max_chars)
+
+let chunk_list list ~chunk_size =
+  let rec loop acc remaining =
+    match remaining with
+    | [] -> List.rev acc
+    | _ ->
+        let chunk, rest = List.split_n remaining chunk_size in
+        loop (chunk :: acc) rest
+  in
+  loop [] list
+
+let total_chars chunk = List.fold_left chunk ~init:0 ~f:(fun acc fen -> acc + String.length fen)
+
+let rec enforce_char_limit chunk ~max_chars =
+  if total_chars chunk <= max_chars then [ chunk ]
+  else (
+    match chunk with
+    | [] -> []
+    | [ _ ] -> [ chunk ]
+    | _ ->
+        let len = List.length chunk in
+        let left_len = Int.max 1 (len / 2) in
+        let left, right = List.split_n chunk left_len in
+        enforce_char_limit left ~max_chars @ enforce_char_limit right ~max_chars)
+
+module Private = struct
+  let chunk_list = chunk_list
+  let enforce_char_limit = enforce_char_limit
+  let total_chars = total_chars
+end
+
 type http_response = {
   status : int;
   body : string;
@@ -90,18 +139,16 @@ let parse_embeddings json =
     |> Or_error.return
   with exn -> Or_error.of_exn exn
 
-let embed_fens t fens =
-  if List.is_empty fens then Or_error.return []
-  else
-    let payload =
-      `Assoc
-        [ "model", `String t.model
-        ; "input", `List (List.map fens ~f:(fun fen -> `String fen))
-        ]
-      |> Yojson.Safe.to_string
-    in
-    let attempt ~attempt:_ =
-      match call_curl ~endpoint:t.endpoint ~api_key:t.api_key ~body:payload with
+let embed_chunk t chunk ~chunk_index ~total_chunks =
+  let payload =
+    `Assoc
+      [ "model", `String t.model
+      ; "input", `List (List.map chunk ~f:(fun fen -> `String fen))
+      ]
+    |> Yojson.Safe.to_string
+  in
+  let attempt ~attempt:_ =
+    match call_curl ~endpoint:t.endpoint ~api_key:t.api_key ~body:payload with
       | Error err ->
           Backoff.Retry (Error.tag err ~tag:"embedding request failed")
       | Ok { status; _ } when Common.should_retry_status status ->
@@ -127,18 +174,42 @@ let embed_fens t fens =
                   in
                   if Common.should_retry_error_json err_json then Backoff.Retry err
                   else Backoff.Resolved (Error err)))
+  in
+  Backoff.with_backoff
+    ~max_attempts:t.retry.max_attempts
+    ~initial_delay:t.retry.initial_delay
+    ~multiplier:t.retry.multiplier
+    ~jitter:t.retry.jitter
+    ~on_retry:(fun ~attempt ~delay err ->
+      Common.log_retry
+        ~label:(Printf.sprintf "openai-embedding chunk=%d/%d" (chunk_index + 1) total_chunks)
+        ~attempt
+        ~max_attempts:t.retry.max_attempts
+      ~delay
+      err)
+    ~f:attempt
+    ()
+
+let embed_fens t fens =
+  if List.is_empty fens then Or_error.return []
+  else
+    let chunk_size = max_batch_size () in
+    let raw_chunks = chunk_list fens ~chunk_size in
+    let max_chars = max_chunk_chars () in
+    let chunks = raw_chunks |> List.concat_map ~f:(fun chunk -> enforce_char_limit chunk ~max_chars) in
+    let total_chunks = List.length chunks in
+    let rec loop acc index = function
+      | [] -> Or_error.return (List.concat (List.rev acc))
+      | chunk :: rest -> (
+          match embed_chunk t chunk ~chunk_index:index ~total_chunks with
+          | Error err -> Error err
+          | Ok embeddings ->
+              Stdio.eprintf
+                "[openai-embedding] processed chunk %d/%d (%d fens, %d chars)\n%!"
+                (index + 1)
+                total_chunks
+                (List.length chunk)
+                (total_chars chunk);
+              loop (embeddings :: acc) (index + 1) rest)
     in
-    Backoff.with_backoff
-      ~max_attempts:t.retry.max_attempts
-      ~initial_delay:t.retry.initial_delay
-      ~multiplier:t.retry.multiplier
-      ~jitter:t.retry.jitter
-      ~on_retry:(fun ~attempt ~delay err ->
-        Common.log_retry
-          ~label:"openai-embedding"
-          ~attempt
-          ~max_attempts:t.retry.max_attempts
-          ~delay
-          err)
-      ~f:attempt
-      ()
+    loop [] 0 chunks

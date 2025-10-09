@@ -29,4 +29,12 @@ val embed_fens : t -> string list -> float array list Or_error.t
     Requests automatically retry on transient HTTP failures (429, 5xx, etc.)
     using exponential backoff. Configure retry behaviour via the optional
     environment variables [OPENAI_RETRY_MAX_ATTEMPTS] and
-    [OPENAI_RETRY_BASE_DELAY_MS]. *)
+    [OPENAI_RETRY_BASE_DELAY_MS]. Requests are chunked (defaults: 2048 inputs,
+    ~120k characters) to respect provider limits; override via
+    [OPENAI_EMBEDDING_CHUNK_SIZE] / [OPENAI_EMBEDDING_MAX_CHARS]. *)
+
+module Private : sig
+  val chunk_list : 'a list -> chunk_size:int -> 'a list list
+  val enforce_char_limit : string list -> max_chars:int -> string list list
+  val total_chars : string list -> int
+end
