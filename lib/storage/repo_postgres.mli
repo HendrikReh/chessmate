@@ -68,3 +68,10 @@ type vector_payload = {
 
 val vector_payload_for_job : t -> job_id:int -> vector_payload Or_error.t
 (** Retrieve contextual information for an embedding job used when building the Qdrant payload. *)
+
+module Private : sig
+  val build_conditions :
+    filters:Query_intent.metadata_filter list ->
+    rating:Query_intent.rating_filter ->
+    string list * string option list * int
+end

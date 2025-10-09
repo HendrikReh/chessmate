@@ -12,5 +12,6 @@ let () =
       "chess-parsing", Test_chess_parsing.suite;
       "query", Test_query.suite;
       "integration", Test_integration.suite;
+      "sql-filters", Test_sql_filters.suite;
       "qdrant", Test_qdrant.suite
     ]

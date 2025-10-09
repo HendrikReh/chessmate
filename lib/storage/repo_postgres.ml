@@ -260,50 +260,61 @@ let build_conditions ~filters ~rating =
   let params_rev = ref [] in
   let next_param = ref 1 in
   let add_param value =
-    let placeholder = Printf.sprintf "$%d" !next_param in
+    let placeholder = "$" ^ Int.to_string !next_param in
     Int.incr next_param;
     params_rev := value :: !params_rev;
     placeholder
   in
   let add_string value = add_param (Some value) in
   let add_int value = add_param (Some (Int.to_string value)) in
+  let sanitize value = String.strip value in
+  let sanitize_lower value = String.lowercase (sanitize value) in
+  let column_of_field = function
+    | "opening" | "opening_slug" -> Some (`Case_insensitive "g.opening_slug")
+    | "event" -> Some (`Case_insensitive "g.event")
+    | "result" -> Some (`Case_sensitive "g.result")
+    | "white" | "white_player" -> Some (`Case_insensitive "w.name")
+    | "black" | "black_player" -> Some (`Case_insensitive "b.name")
+    | _ -> None
+  in
   List.iter filters ~f:(fun (filter : Query_intent.metadata_filter) ->
-      match String.lowercase filter.field with
-      | "opening" ->
-          let placeholder = add_string (String.lowercase (String.strip filter.value)) in
-          conditions := Printf.sprintf "g.opening_slug = %s" placeholder :: !conditions
-      | "result" ->
-          let placeholder = add_string (String.strip filter.value) in
-          conditions := Printf.sprintf "g.result = %s" placeholder :: !conditions
+      match String.lowercase (String.strip filter.field) with
       | "eco_range" -> (
           match eco_filter filter.value with
           | `Range (start_code, end_code) ->
               let start_placeholder = add_string start_code in
               let end_placeholder = add_string end_code in
               conditions :=
-                Printf.sprintf "g.eco_code BETWEEN %s AND %s" start_placeholder end_placeholder
+                ("g.eco_code BETWEEN " ^ start_placeholder ^ " AND " ^ end_placeholder)
                 :: !conditions
           | `Exact single ->
               let placeholder = add_string single in
-              conditions := Printf.sprintf "g.eco_code = %s" placeholder :: !conditions)
-      | _ -> ());
+              conditions := ("g.eco_code = " ^ placeholder) :: !conditions)
+      | field -> (
+          match column_of_field field with
+          | Some (`Case_insensitive column) ->
+              let placeholder = add_string (sanitize_lower filter.value) in
+              conditions := ("LOWER(" ^ column ^ ") = " ^ placeholder) :: !conditions
+          | Some (`Case_sensitive column) ->
+              let placeholder = add_string (sanitize filter.value) in
+              conditions := (column ^ " = " ^ placeholder) :: !conditions
+          | None -> ()));
   (match rating.Query_intent.white_min with
   | Some min ->
       let placeholder = add_int min in
-      conditions := Printf.sprintf "g.white_rating >= %s" placeholder :: !conditions
+      conditions := ("g.white_rating >= " ^ placeholder) :: !conditions
   | None -> ());
   (match rating.Query_intent.black_min with
   | Some min ->
       let placeholder = add_int min in
-      conditions := Printf.sprintf "g.black_rating >= %s" placeholder :: !conditions
+      conditions := ("g.black_rating >= " ^ placeholder) :: !conditions
   | None -> ());
   (match rating.Query_intent.max_rating_delta with
   | Some delta ->
       let placeholder = add_int delta in
       conditions :=
-        Printf.sprintf
-          "g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL AND ABS(g.white_rating - g.black_rating) <= %s"
-          placeholder
+        ( "g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL AND ABS(g.white_rating - g.black_rating) <= "
+        ^ placeholder )
         :: !conditions
   | None -> ());
   let params = List.rev !params_rev in
@@ -317,7 +328,7 @@ let search_games repo ~filters ~rating ~limit =
     if List.is_empty conditions then ""
     else "WHERE " ^ String.concat ~sep:" AND " conditions
   in
-  let limit_placeholder = Printf.sprintf "$%d" next_index in
+  let limit_placeholder = "$" ^ Int.to_string next_index in
   let sql =
     Printf.sprintf
       "SELECT g.id,\n              COALESCE(w.name, ''),\n              COALESCE(b.name, ''),\n              g.result,\n              g.event,\n              g.opening_slug,\n              g.opening_name,\n              g.eco_code,\n              g.white_rating,\n              g.black_rating,\n              TO_CHAR(g.played_on, 'YYYY-MM-DD')\n       FROM games g\n       LEFT JOIN players w ON g.white_player_id = w.id\n       LEFT JOIN players b ON g.black_player_id = b.id\n       %s\n       ORDER BY g.played_on DESC NULLS LAST, g.id DESC\n       LIMIT %s"
@@ -564,3 +575,7 @@ let vector_payload_for_job repo ~job_id =
         @ fields )
     in
     Or_error.return { position_id; game_id; json })
+
+module Private = struct
+  let build_conditions = build_conditions
+end
