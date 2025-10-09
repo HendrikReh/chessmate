@@ -1,7 +1,7 @@
 
 # Release Notes
 
-## 0.5.3 – Parallel PGN Ingest & Embedding chunk tuning
+## 0.5.4 – Parallel PGN Ingest & Embedding chunk tuning
 
 ### Added
 - Parallel PGN ingestion using Lwt streams and a bounded worker pool (`CHESSMATE_INGEST_CONCURRENCY`), dramatically speeding up large TWIC imports.
