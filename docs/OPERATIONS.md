@@ -44,6 +44,13 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
   - Ingests now enforce `CHESSMATE_MAX_PENDING_EMBEDDINGS` (default 250k). Set a higher limit or `0`/negative to bypass if you intentionally backfill.
   - Use `scripts/prune_pending_jobs.sh <batch>` to mark pending jobs with existing vectors as completed before re-ingesting.
 
+#### OpenAI Retry Tuning
+- Both the embedding worker and GPT-5 agent client retry transient OpenAI failures with exponential backoff (default: 5 attempts, 200 ms base delay, multiplier 2.0, jitter 20%).
+- Override the defaults via environment:
+  - `OPENAI_RETRY_MAX_ATTEMPTS` — positive integer (shared across worker/API).
+  - `OPENAI_RETRY_BASE_DELAY_MS` — base backoff delay in milliseconds.
+- Each retry emits a log line on stderr prefixed with `[openai-embedding]` or `[openai-agent]`, describing the attempt count, error, and next delay; scrape these in production to monitor rate limiting or outages.
+
 ### Embedding Queue Monitoring & Performance
 - **Continuous telemetry:**
   ```sh

@@ -20,12 +20,20 @@
 open! Base
 open Stdio
 
+module Backoff = Retry
+module Common = Openai_common
+
 let ( let* ) t f = Or_error.bind t ~f
 
 module Util = Yojson.Safe.Util
 
 let default_endpoint = "https://api.openai.com/v1/responses"
 let default_model = "gpt-5"
+
+type http_response = {
+  status : int;
+  body : string;
+}
 
 module Effort = struct
   type t =
@@ -154,6 +162,7 @@ type t = {
   model : string;
   default_effort : Effort.t;
   default_verbosity : Verbosity.t option;
+  retry : Common.retry_config;
 }
 
 let non_empty_env name =
@@ -163,28 +172,37 @@ let non_empty_env name =
 
 let call_api ~endpoint ~api_key ~body =
   let payload_file = Stdlib.Filename.temp_file "chessmate_gpt5_payload" ".json" in
+  let response_file = Stdlib.Filename.temp_file "chessmate_gpt5_response" ".json" in
   Exn.protect
     ~f:(fun () ->
         Out_channel.write_all payload_file ~data:body;
         let command =
           Printf.sprintf
-            "curl -sS -X POST %s -H %s -H %s --data-binary @%s"
+            "curl -sS -X POST %s -H %s -H %s --data-binary @%s -o %s -w '%%{http_code}'"
             (Stdlib.Filename.quote endpoint)
             (Stdlib.Filename.quote ("Authorization: Bearer " ^ api_key))
             (Stdlib.Filename.quote "Content-Type: application/json")
             (Stdlib.Filename.quote payload_file)
+            (Stdlib.Filename.quote response_file)
         in
         let ic, oc, ec = Unix.open_process_full command (Unix.environment ()) in
         Out_channel.close oc;
-        let stdout = In_channel.input_all ic in
-        let stderr = In_channel.input_all ec in
+        let status_text = In_channel.input_all ic |> String.strip in
+        let stderr = In_channel.input_all ec |> String.strip in
         match Unix.close_process_full (ic, oc, ec) with
-        | Unix.WEXITED 0 -> Or_error.return stdout
+        | Unix.WEXITED 0 -> (
+            match Int.of_string_opt status_text with
+            | None -> Or_error.errorf "curl returned invalid status code: %s" status_text
+            | Some status ->
+                let body = In_channel.read_all response_file in
+                Or_error.return { status; body })
         | Unix.WEXITED code ->
-            Or_error.errorf "curl exited with code %d: %s" code (String.strip stderr)
+            Or_error.errorf "curl exited with code %d: %s" code stderr
         | Unix.WSIGNALED signal -> Or_error.errorf "curl terminated by signal %d" signal
         | Unix.WSTOPPED signal -> Or_error.errorf "curl stopped by signal %d" signal)
-    ~finally:(fun () -> try Stdlib.Sys.remove payload_file with _ -> ())
+    ~finally:(fun () ->
+      (try Stdlib.Sys.remove payload_file with _ -> ());
+      (try Stdlib.Sys.remove response_file with _ -> ()))
 
 let ensure_non_empty name value =
   if String.is_empty (String.strip value) then
@@ -203,7 +221,8 @@ let create
   let* api_key = ensure_non_empty "api_key" api_key in
   let* endpoint = ensure_non_empty "endpoint" endpoint in
   let* model = ensure_non_empty "model" model in
-  Or_error.return { api_key; endpoint; model; default_effort; default_verbosity }
+  let retry = Common.load_retry_config () in
+  Or_error.return { api_key; endpoint; model; default_effort; default_verbosity; retry }
 
 let create_from_env () =
   let* api_key =
@@ -323,24 +342,57 @@ let generate
         ~max_output_tokens
         ~response_format
     in
-    let* raw_response = call_api ~endpoint:t.endpoint ~api_key:t.api_key ~body in
-    let* json =
-      try Or_error.return (Yojson.Safe.from_string raw_response) with
-      | exn -> Or_error.errorf "Failed to parse GPT-5 response JSON: %s" (Exn.to_string exn)
+    let attempt ~attempt:_ =
+      match call_api ~endpoint:t.endpoint ~api_key:t.api_key ~body with
+      | Error err -> Backoff.Retry (Error.tag err ~tag:"agent request failed")
+      | Ok { status; _ } when Common.should_retry_status status ->
+          let err = Error.of_string (Printf.sprintf "GPT-5 transient status %d" status) in
+          Backoff.Retry err
+      | Ok { status; body } when status < 200 || status >= 300 ->
+          let message =
+            Printf.sprintf "GPT-5 request failed with status %d: %s" status (Common.truncate_body body)
+          in
+          Backoff.Resolved (Or_error.error_string message)
+      | Ok { status = _; body } -> (
+          match Yojson.Safe.from_string body with
+          | exception exn ->
+              Backoff.Retry (Error.of_exn exn)
+          | json -> (
+              match Util.member "error" json with
+              | `Null ->
+                  let content_result =
+                    match extract_text json with
+                    | Some text -> Or_error.return text
+                    | None -> Or_error.error_string "GPT-5 response did not contain any text output"
+                  in
+                  (match content_result with
+                  | Error err -> Backoff.Resolved (Error err)
+                  | Ok content ->
+                      let usage =
+                        match response_field "usage" json with
+                        | Some usage_json -> Usage.of_json usage_json
+                        | None -> Usage.empty
+                      in
+                      Backoff.Resolved (Or_error.return Response.{ content; usage; raw_json = json }))
+              | error_json ->
+                  let message =
+                    Util.member "message" error_json |> Util.to_string_option |> Option.value ~default:"unknown error"
+                  in
+                  let err = Error.of_string (Printf.sprintf "GPT-5 error: %s" message) in
+                  if Common.should_retry_error_json error_json then Backoff.Retry err
+                  else Backoff.Resolved (Error err)))
     in
-    (match Util.member "error" json with
-    | `Null ->
-        let* content =
-          match extract_text json with
-          | Some text -> Or_error.return text
-          | None -> Or_error.error_string "GPT-5 response did not contain any text output"
-        in
-        let usage =
-          match response_field "usage" json with
-          | Some usage_json -> Usage.of_json usage_json
-          | None -> Usage.empty
-        in
-        Or_error.return Response.{ content; usage; raw_json = json }
-    | error_json ->
-        let message = Util.member "message" error_json |> Util.to_string_option |> Option.value ~default:"unknown error" in
-        Or_error.errorf "GPT-5 error: %s" message)
+    Backoff.with_backoff
+      ~max_attempts:t.retry.max_attempts
+      ~initial_delay:t.retry.initial_delay
+      ~multiplier:t.retry.multiplier
+      ~jitter:t.retry.jitter
+      ~on_retry:(fun ~attempt ~delay err ->
+        Common.log_retry
+          ~label:"openai-agent"
+          ~attempt
+          ~max_attempts:t.retry.max_attempts
+          ~delay
+          err)
+      ~f:attempt
+      ()

@@ -24,4 +24,9 @@ type t
 
 val create : api_key:string -> endpoint:string -> t Or_error.t
 val embed_fens : t -> string list -> float array list Or_error.t
-(** Batch request embeddings for FEN strings using the OpenAI embeddings REST API. *)
+(** Batch request embeddings for FEN strings using the OpenAI embeddings REST API.
+
+    Requests automatically retry on transient HTTP failures (429, 5xx, etc.)
+    using exponential backoff. Configure retry behaviour via the optional
+    environment variables [OPENAI_RETRY_MAX_ATTEMPTS] and
+    [OPENAI_RETRY_BASE_DELAY_MS]. *)

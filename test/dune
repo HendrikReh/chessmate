@@ -1,6 +1,13 @@
 (test
  (name test_main)
- (modules test_support test_chess_parsing test_query test_fen test_main)
+ (modules
+  test_support
+  test_chess_parsing
+  test_query
+  test_fen
+  test_retry
+  test_openai_common
+  test_main)
  (libraries chessmate alcotest stdio)
  (deps
   (file fixtures/extended_sample_game.pgn)

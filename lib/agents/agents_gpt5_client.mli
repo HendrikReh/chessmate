@@ -74,7 +74,9 @@ val create :
 
 val create_from_env : unit -> t Or_error.t
 (** [create_from_env ()] reads [AGENT_API_KEY], [AGENT_ENDPOINT], [AGENT_MODEL],
-    [AGENT_REASONING_EFFORT], and [AGENT_VERBOSITY] to construct a client. *)
+    [AGENT_REASONING_EFFORT], and [AGENT_VERBOSITY] to construct a client. Retry
+    behaviour can be tuned globally via [OPENAI_RETRY_MAX_ATTEMPTS] and
+    [OPENAI_RETRY_BASE_DELAY_MS]. *)
 
 val generate :
   t ->
@@ -85,4 +87,7 @@ val generate :
   Message.t list ->
   Response.t Or_error.t
 (** Execute a GPT-5 call with the supplied messages. Optional parameters override the
-    client's defaults for reasoning effort, verbosity, response format, and token limit. *)
+    client's defaults for reasoning effort, verbosity, response format, and token limit.
+    Transient failures (HTTP 429/5xx, server errors) are retried automatically using
+    exponential backoff obeying [OPENAI_RETRY_MAX_ATTEMPTS] and
+    [OPENAI_RETRY_BASE_DELAY_MS] when set. *)
