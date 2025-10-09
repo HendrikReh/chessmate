@@ -1,6 +1,6 @@
 **Question:** Which embedding model would you recommend for the embdding of chess baord positions represented as FEN. I want to store these board positions in a RAG system snd execute a similarity search on them
 
-which embedding model would you recommend for the embdding of chess baord positions represented as FEN. I want to store these board positions in a RAG system snd execute a similarity search on them don’t use a general text embedding model on raw FEN. You’ll get token-level artifacts that don’t reflect chess similarity. Use a purpose-built board encoder and (optionally) learn a small embedding head.
+**Short answer:** don’t use a general text embedding model on raw FEN. You’ll get token-level artifacts that don’t reflect chess similarity. Use a purpose-built board encoder and (optionally) learn a small embedding head.
 
 Here’s a practical, RAG-friendly stack that works well for chess positions:
 
