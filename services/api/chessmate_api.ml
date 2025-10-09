@@ -355,5 +355,36 @@ let routes =
   |> App.get "/query" query_handler
   |> App.post "/query" query_handler
 
+let run_with_shutdown app =
+  match App.run_command' app with
+  | `Error -> Stdlib.exit 1
+  | `Not_running -> ()
+  | `Ok server ->
+      let open Lwt.Syntax in
+      let shutdown_signal, notify = Lwt.wait () in
+      let register_signal name signal =
+        Stdlib.Sys.set_signal signal
+          (Stdlib.Sys.Signal_handle (fun _ ->
+               Stdio.eprintf "[chessmate-api][shutdown] %s received, terminating\n%!" name;
+               if Lwt.is_sleeping shutdown_signal then Lwt.wakeup_later notify name))
+      in
+      register_signal "SIGINT" Stdlib.Sys.sigint;
+      register_signal "SIGTERM" Stdlib.Sys.sigterm;
+      let shutdown reason =
+        Stdio.eprintf "[chessmate-api][shutdown] stopping server (%s)\n%!" reason;
+        Lwt.cancel server;
+        let* () =
+          Lwt.catch
+            (fun () -> server)
+            (function
+              | Lwt.Canceled -> Lwt.return_unit
+              | exn ->
+                  Stdio.eprintf "[chessmate-api][shutdown] exception: %s\n%!" (Exn.to_string exn);
+                  Lwt.return_unit)
+        in
+        Lwt.return_unit
+      in
+      Lwt_main.run (Lwt.pick [ server; let* reason = shutdown_signal in shutdown reason ])
+
 let () =
-  App.run_command (routes |> App.port api_config.Config.Api.port)
+  run_with_shutdown (routes |> App.port api_config.Config.Api.port)

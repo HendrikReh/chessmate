@@ -90,6 +90,16 @@ let force_stop exit_condition =
   exit_condition.triggered <- true;
   Stdlib.Mutex.unlock exit_condition.mutex
 
+let install_signal_handlers exit_condition =
+  let handler_for signal_name =
+    Stdlib.Sys.Signal_handle
+      (fun _ ->
+        log (Printf.sprintf "%s received, requesting shutdown" signal_name);
+        force_stop exit_condition)
+  in
+  Stdlib.Sys.set_signal Stdlib.Sys.sigint (handler_for "SIGINT");
+  Stdlib.Sys.set_signal Stdlib.Sys.sigterm (handler_for "SIGTERM")
+
 let mark_announced exit_condition =
   Stdlib.Mutex.lock exit_condition.mutex;
   let first = not exit_condition.announced in
@@ -194,6 +204,7 @@ let () =
       let start_time = Unix.gettimeofday () in
       let stats = { processed = 0; failed = 0 } in
       let exit_condition = make_exit_condition !exit_after_empty in
+      install_signal_handlers exit_condition;
       let worker_count = Int.max 1 !concurrency in
       let exit_after_summary =
         match !exit_after_empty with
@@ -207,7 +218,7 @@ let () =
              exit_after_summary);
       if Int.equal worker_count 1 then (
         log "starting polling loop";
-        Stdlib.Sys.catch_break true;
+        Stdlib.Sys.catch_break false;
         let run () = work_loop repo embedding_client ~poll_sleep:sleep_interval ~label:None stats exit_condition in
         (try run () with
         | Stdlib.Sys.Break ->
@@ -222,7 +233,7 @@ let () =
                stats.processed stats.failed elapsed))
       else (
         log (Printf.sprintf "starting %d worker loops (poll_sleep=%.2fs)" worker_count sleep_interval);
-        Stdlib.Sys.catch_break true;
+        Stdlib.Sys.catch_break false;
         let labels = List.init worker_count ~f:(fun idx -> Some (Int.to_string (idx + 1))) in
         let threads =
           List.map labels ~f:(fun label ->

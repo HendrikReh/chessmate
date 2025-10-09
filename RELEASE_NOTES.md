@@ -1,4 +1,7 @@
-## 0.5.2 – Parallel PGN Ingest & Embedding chunk tuning
+
+# Release Notes
+
+## 0.5.3 – Parallel PGN Ingest & Embedding chunk tuning
 
 ### Added
 - Parallel PGN ingestion using Lwt streams and a bounded worker pool (`CHESSMATE_INGEST_CONCURRENCY`), dramatically speeding up large TWIC imports.
@@ -31,8 +34,6 @@
 ### Changed
 - `.env.sample` reorganized with clearer sections and required `QDRANT_URL` note.
 - Architecture documentation refreshed to show Redis/GPT-5 flows.
-
-# Release Notes
 
 ## 0.4.1 – Ingestion Guard & Parallel Embedding
 - Added a configurable `CHESSMATE_MAX_PENDING_EMBEDDINGS` guard to the ingest CLI so bulk imports pause when the embedding queue is saturated.

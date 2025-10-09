@@ -65,6 +65,7 @@ The tests stub Qdrant/OpenAI access, so the suite passes without those services.
   - Postgres: `docker compose exec postgres pg_isready -U chess`.
   - Qdrant: `curl http://localhost:6333/healthz`.
 - **Degraded mode**: when Qdrant is unavailable or `QDRANT_URL` is unset, the API logs `Vector search unavailable (...)` warnings and falls back to metadata-only ranking. This keeps queries responsive while you restore vector infrastructure.
+- **Graceful shutdown**: send `SIGTERM`/`SIGINT` to the API (`pkill -TERM -f chessmate_api.exe`) or worker (`pkill -TERM -f embedding_worker.exe`). Both listeners stop accepting new work, finish in-flight jobs, and log a shutdown summary before exiting.
 - **Logs**: `docker compose logs -f <service>`; ship to Loki/ELK once observability stack is wired.
 - **Scaling**: increase `--workers` (or run additional processes) to clear job backlogs; bump concurrency one loop at a time and watch `scripts/embedding_metrics.sh` for throughput and error spikes. Postgres/Qdrant remain single-instance until HA work lands.
 - **Queue hygiene**:
