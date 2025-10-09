@@ -54,4 +54,4 @@ venv/
 # Logs & temp files
 *.log
 *.tmp
-/data/games/TWIC_2000_2025.pgn
+/data/games/twic_*.pgn
