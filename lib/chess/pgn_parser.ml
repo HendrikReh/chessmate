@@ -17,6 +17,7 @@
 *)
 
 open! Base
+open! Lwt.Infix
 
 type move = {
   san : string;
@@ -256,3 +257,45 @@ let parse_file_games path =
   Or_error.bind
     (Or_error.try_with (fun () -> Stdio.In_channel.read_all path))
     ~f:parse_games
+
+let stream_games ?on_error raw ~f =
+  let handler =
+    match on_error with
+    | Some on_error -> on_error
+    | None -> fun ~index ~raw:_ err ->
+        Lwt.fail (Failure (Printf.sprintf "PGN game #%d: %s" index (Error.to_string_hum err)))
+  in
+  let lines = String.split_lines raw in
+  let empty : partial_game = { lines = []; have_moves = false } in
+  let finalise collector index =
+    match collector.lines with
+    | [] -> Lwt.return index
+    | lines ->
+        let raw_game = lines |> List.rev |> String.concat ~sep:"\n" |> String.strip in
+        if String.is_empty raw_game then Lwt.return index
+        else (
+          let next_index = index + 1 in
+          match parse raw_game with
+          | Ok parsed -> f ~index:next_index ~raw:raw_game parsed >|= fun () -> next_index
+          | Error err -> handler ~index:next_index ~raw:raw_game err >|= fun () -> next_index)
+  in
+  let rec step remaining collector index =
+    match remaining with
+    | [] -> finalise collector index >|= fun _ -> ()
+    | line :: rest ->
+        let trimmed = String.strip line in
+        let is_header = String.is_prefix trimmed ~prefix:"[" in
+        let is_event = String.is_prefix trimmed ~prefix:"[Event" in
+        let has_move_token = not is_header && not (String.is_empty trimmed) in
+        let should_start_new_game = is_event && collector.have_moves && not (List.is_empty collector.lines) in
+        if should_start_new_game then
+          finalise collector index >>= fun next_index ->
+          let next_collector : partial_game = { lines = [ line ]; have_moves = false } in
+          step rest next_collector next_index
+        else
+          let next_collector : partial_game =
+            { lines = line :: collector.lines; have_moves = collector.have_moves || has_move_token }
+          in
+          step rest next_collector index
+  in
+  step lines empty 0

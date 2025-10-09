@@ -86,3 +86,16 @@ This checklist validates the Milestone 5 checkpoints: agent-ranked search, telem
 - `docker compose down` to stop services.
 - Remove `data/postgres`, `data/qdrant`, `data/redis` if a reset is desired.
 - Clear environment variables or close terminals.
+
+## 10. Benchmark Large PGN Ingest (Optional)
+- Assemble a sizeable corpus (several TWIC issues or another bulk PGN set). For example:
+  ```sh
+  cat data/games/twic*.pgn > /tmp/combined_twic.pgn
+  ```
+- Run a sequential baseline to capture wall-clock time:
+  ```sh
+  CHESSMATE_INGEST_CONCURRENCY=1 \
+    time chessmate ingest /tmp/combined_twic.pgn
+  ```
+- Repeat with higher concurrency (default 4, try 8/16) and record timings. Monitor Postgres load (e.g. `pg_stat_activity`) to ensure the database keeps up.
+- Compare results to validate throughput gains. Pick a concurrency level that balances CPU usage and database throughput for your environment.

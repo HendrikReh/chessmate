@@ -53,6 +53,15 @@ val fold_games :
     [on_error] is supplied, parsing failures are reported to the handler and
     iteration continues; otherwise parsing failures abort the fold. *)
 
+val stream_games :
+  ?on_error:(index:int -> raw:string -> Error.t -> unit Lwt.t) ->
+  string ->
+  f:(index:int -> raw:string -> t -> unit Lwt.t) ->
+  unit Lwt.t
+(** Iterate asynchronously over PGN games, invoking [f] for each successfully
+    parsed game. Errors are routed through [on_error] (default: raise). Parsing
+    happens sequentially; consumer functions decide how to schedule work. *)
+
 val parse_games : string -> t list Or_error.t
 (** [parse_games raw_pgn] parses all games contained in [raw_pgn]. *)
 

@@ -27,6 +27,7 @@ The executables validate their environment on startup and exit with a clear erro
 | `OPENAI_EMBEDDING_ENDPOINT` | ⛏️ | `https://api.openai.com/v1/embeddings` | Embedding worker | Override when proxying OpenAI. |
 | `OPENAI_EMBEDDING_CHUNK_SIZE` | ⛏️ | `2048` | Embedding worker | Max FENs per request; smaller values reduce latency, larger risk hitting API limits. |
 | `OPENAI_EMBEDDING_MAX_CHARS` | ⛏️ | `120000` | Embedding worker | Char guard per chunk to approximate token limits. |
+| `CHESSMATE_INGEST_CONCURRENCY` | ⛏️ | `4` | CLI ingest | Max parallel parses when streaming PGNs. |
 | `AGENT_API_KEY` | ⛏️ | — | API | Enable GPT-5 agent re-ranking when present. |
 | `AGENT_ENDPOINT` | ⛏️ | `https://api.openai.com/v1/responses` | API | Endpoint for GPT-5 responses. |
 | `AGENT_MODEL` | ⛏️ | provider default | API | Override GPT-5 model (e.g., `gpt-5`). |

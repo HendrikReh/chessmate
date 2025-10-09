@@ -33,6 +33,7 @@ Cross-check the environment against the [Configuration Reference](DEVELOPER.md#c
 - CLI queries: `chessmate query "find king's indian games"` (ensure API is running).
 - Queue metrics: `scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log` keeps per-status counts, throughput, and ETA.
 - Startup sanity check: both processes emit a `[...][config]` line summarising detected env vars (port, database URL presence, agent/Redis caches). If a variable shows as `missing`, correct it before continuing.
+- High-volume ingest: adjust `CHESSMATE_INGEST_CONCURRENCY` (default 4) to balance CPU throughput vs. Postgres load when parsing large PGN dumps.
 - GPT-5 agent (optional): set `AGENT_API_KEY` (and optionally `AGENT_MODEL`, `AGENT_REASONING_EFFORT`, `AGENT_VERBOSITY`, `AGENT_CACHE_REDIS_URL`) before calling `chessmate query` or starting the API to enable ranking/explanations. If Redis is unavailable, fall back to `AGENT_CACHE_CAPACITY` for the in-process cache.
 
 ## Runtime Management

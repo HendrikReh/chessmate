@@ -1,3 +1,14 @@
+## 0.5.2 – Parallel PGN Ingest & Embedding chunk tuning
+
+### Added
+- Parallel PGN ingestion using Lwt streams and a bounded worker pool (`CHESSMATE_INGEST_CONCURRENCY`), dramatically speeding up large TWIC imports.
+- Configurable embedding chunk size (`OPENAI_EMBEDDING_CHUNK_SIZE` / `OPENAI_EMBEDDING_MAX_CHARS`) with per-chunk logging to stay within OpenAI limits.
+- Test coverage for chunking helpers (`test/test_embedding_client.ml`).
+
+### Notes
+- Tune ingest concurrency based on PGN size and Postgres capacity; the default (4) balances CPU and DB load.
+- Monitor worker logs for `[openai-embedding] processed chunk` messages when adjusting embedding chunk limits.
+
 ## 0.5.1 – Config Validation & libpq-backed persistence
 
 ### Added

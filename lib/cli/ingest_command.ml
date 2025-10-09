@@ -27,6 +27,7 @@ type stats = {
 let empty_stats = { inserted = 0; skipped = 0 }
 
 let default_pending_limit = 250_000
+let default_worker_count = 4
 
 let ( let* ) t f = Or_error.bind t ~f
 
@@ -60,32 +61,41 @@ let run path =
     Or_error.errorf "PGN file %s does not exist" path
   else
     let contents = In_channel.read_all path in
+    let concurrency =
+      match Stdlib.Sys.getenv_opt "CHESSMATE_INGEST_CONCURRENCY" with
+      | Some raw -> (match Int.of_string_opt (String.strip raw) with Some n when n > 0 -> n | _ -> default_worker_count)
+      | None -> default_worker_count
+    in
     pending_guard_limit ()
     |> Or_error.bind ~f:(fun guard ->
            Cli_common.with_db_url (fun url ->
                let* repo = Repo_postgres.create url in
                let* () = enforce_pending_guard repo guard in
-               let ingest stats ~index ~raw game =
-                 let metadata = Game_metadata.of_headers game.Pgn_parser.headers in
-                 match Repo_postgres.insert_game repo ~metadata ~pgn:raw ~moves:game.moves with
-                 | Ok (game_id, position_count) ->
-                     printf "Stored game %d (PGN #%d) with %d positions\n" game_id index position_count;
-                     Or_error.return { stats with inserted = stats.inserted + 1 }
-                 | Error err ->
+               let stats = ref empty_stats in
+               let mutex = Lwt_mutex.create () in
+               let on_error ~index ~raw err =
+                 Lwt_mutex.with_lock mutex (fun () ->
                      log_skip index (Error.to_string_hum err) raw;
-                     Or_error.return { stats with skipped = stats.skipped + 1 }
+                     stats := { !stats with skipped = !stats.skipped + 1 };
+                     Lwt.return ())
                in
-               let on_error stats ~index ~raw err =
-                 log_skip index (Error.to_string_hum err) raw;
-                 Or_error.return { stats with skipped = stats.skipped + 1 }
+               let queue = Lwt_pool.create concurrency (fun () -> Lwt.return ()) in
+               let process_game ~index ~raw game =
+                 Lwt_pool.use queue (fun () ->
+                     let metadata = Game_metadata.of_headers game.Pgn_parser.headers in
+                     match Repo_postgres.insert_game repo ~metadata ~pgn:raw ~moves:game.moves with
+                     | Ok (game_id, position_count) ->
+                         Lwt_mutex.with_lock mutex (fun () ->
+                             printf "Stored game %d (PGN #%d) with %d positions\n" game_id index position_count;
+                             stats := { !stats with inserted = !stats.inserted + 1 };
+                             Lwt.return ())
+                     | Error err -> on_error ~index ~raw err)
                in
-               Pgn_parser.fold_games ~on_error contents ~init:empty_stats ~f:ingest
-               |> Or_error.bind ~f:(fun stats ->
-                      if Int.equal stats.inserted 0 then
-                        Or_error.error_string "No games ingested; see skipped entries above."
-                      else (
-                        printf "Ingest complete: %d stored, %d skipped.\n"
-                          stats.inserted stats.skipped;
-                        Or_error.return ();
-                      ))
+               Lwt_main.run
+                 (Pgn_parser.stream_games contents ~on_error ~f:process_game);
+               if Int.equal !stats.inserted 0 then
+                 Or_error.error_string "No games ingested; see skipped entries above."
+               else (
+                 printf "Ingest complete: %d stored, %d skipped.\n" !stats.inserted !stats.skipped;
+                 Or_error.return ())
            ))

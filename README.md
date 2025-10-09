@@ -1,7 +1,7 @@
 # Chessmate
 
 [![OCaml](https://img.shields.io/badge/OCaml-%3E%3D%205.1-orange.svg)](https://ocaml.org)
-[![Version](https://img.shields.io/badge/Version-0.5.1-blue.svg)](RELEASE_NOTES.md)
+[![Version](https://img.shields.io/badge/Version-0.5.2-blue.svg)](RELEASE_NOTES.md)
 [![Status](https://img.shields.io/badge/Status-Proof%20of%20Concept-yellow.svg)](docs/IMPLEMENTATION_PLAN.md)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/HendrikReh/chessmate/ci.yml?branch=master)](https://github.com/HendrikReh/chessmate/actions)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -86,7 +86,7 @@ data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
 
 ## Services & CLIs
 - `dune exec chessmate_api -- --port 8080`: starts the prototype query HTTP API.
-- `chessmate ingest <pgn>`: parses and persists PGNs (requires `DATABASE_URL`).
+- `chessmate ingest <pgn>`: parses and persists PGNs with parallel parsing (default 4 workers, set `CHESSMATE_INGEST_CONCURRENCY` to tune).
 - `chessmate twic-precheck <pgn>`: scans TWIC PGNs for malformed entries before ingestion.
 - `chessmate query "…"`: sends questions to the running query API (`CHESSMATE_API_URL` defaults to `http://localhost:8080`).
 - `chessmate fen <pgn> [output]`: prints FEN after each half-move (optional output file).
