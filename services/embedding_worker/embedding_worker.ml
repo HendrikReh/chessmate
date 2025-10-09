@@ -30,11 +30,6 @@ let log ?label msg = printf "%s %s\n%!" (prefix_for label) msg
 let warn ?label msg = eprintf "%s %s\n%!" (prefix_for label) msg
 let error ?label msg = eprintf "%s %s\n%!" (prefix_for label) msg
 
-let fetch_env name =
-  match Stdlib.Sys.getenv_opt name with
-  | Some value when not (String.is_empty (String.strip value)) -> Or_error.return value
-  | _ -> Or_error.errorf "%s not set" name
-
 type stats = {
   mutable processed : int;
   mutable failed : int;
@@ -150,6 +145,13 @@ let usage_msg = "Usage: embedding_worker [--poll-sleep SECONDS] [--workers COUNT
 
 let anon_args = ref []
 
+let worker_config : Config.Worker.t =
+  match Config.Worker.load () with
+  | Ok config -> config
+  | Error err ->
+      eprintf "[worker][fatal] %s\n%!" (Error.to_string_hum err);
+      Stdlib.exit 1
+
 let () =
   let speclist =
     [ ( "--poll-sleep"
@@ -177,16 +179,12 @@ let () =
       Stdlib.exit 1);
   let sleep_interval = Float.max 0.1 !poll_sleep in
   let env_result =
-    fetch_env "DATABASE_URL"
-    |> Or_error.bind ~f:(fun db_url ->
-           fetch_env "OPENAI_API_KEY"
-           |> Or_error.bind ~f:(fun api_key ->
-                  Repo_postgres.create db_url
-                  |> Or_error.bind ~f:(fun repo ->
-                         Embedding_client.create
-                           ~api_key
-                           ~endpoint:"https://api.openai.com/v1/embeddings"
-                         |> Or_error.map ~f:(fun embedding_client -> (repo, embedding_client)))))
+    Repo_postgres.create worker_config.Config.Worker.database_url
+    |> Or_error.bind ~f:(fun repo ->
+           Embedding_client.create
+             ~api_key:worker_config.Config.Worker.openai_api_key
+             ~endpoint:worker_config.Config.Worker.openai_endpoint
+           |> Or_error.map ~f:(fun embedding_client -> (repo, embedding_client)))
   in
   match env_result with
   | Error err ->
@@ -197,6 +195,16 @@ let () =
       let stats = { processed = 0; failed = 0 } in
       let exit_condition = make_exit_condition !exit_after_empty in
       let worker_count = Int.max 1 !concurrency in
+      let exit_after_summary =
+        match !exit_after_empty with
+        | None -> "disabled"
+        | Some n -> Printf.sprintf "after-%d-empty-polls" n
+      in
+      log (Printf.sprintf
+             "configuration: database=present openai_key=present workers=%d poll_sleep=%.2fs exit_after_empty=%s"
+             worker_count
+             sleep_interval
+             exit_after_summary);
       if Int.equal worker_count 1 then (
         log "starting polling loop";
         Stdlib.Sys.catch_break true;

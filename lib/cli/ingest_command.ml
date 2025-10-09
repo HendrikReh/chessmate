@@ -31,19 +31,7 @@ let default_pending_limit = 250_000
 let ( let* ) t f = Or_error.bind t ~f
 
 let pending_guard_limit () =
-  match Stdlib.Sys.getenv_opt "CHESSMATE_MAX_PENDING_EMBEDDINGS" with
-  | None -> Or_error.return (Some default_pending_limit)
-  | Some raw ->
-      let trimmed = String.strip raw in
-      if String.is_empty trimmed then Or_error.return (Some default_pending_limit)
-      else (
-        match Int.of_string trimmed with
-        | value when Int.(value <= 0) -> Or_error.return None
-        | value -> Or_error.return (Some value)
-        | exception _ ->
-            Or_error.errorf
-              "Invalid CHESSMATE_MAX_PENDING_EMBEDDINGS value: %s (expected positive integer or <= 0 to disable)"
-              raw )
+  Config.Cli.pending_guard_limit ~default:default_pending_limit
 
 let preview raw =
   let condensed = String.strip raw in

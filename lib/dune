@@ -3,4 +3,4 @@
 (library
  (name chessmate)
  (public_name chessmate)
- (libraries base stdio unix yojson lwt cohttp-lwt-unix uri))
+ (libraries base stdio unix yojson lwt cohttp-lwt-unix uri postgresql))

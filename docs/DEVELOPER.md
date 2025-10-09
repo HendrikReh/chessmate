@@ -10,7 +10,32 @@
 5. Start backing services when needed: `docker compose up -d postgres qdrant redis` (first run downloads images).
 6. Run migrations with a fresh database: `export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate && ./scripts/migrate.sh`.
 7. Launch the prototype query API in its own shell: `dune exec chessmate_api -- --port 8080`.
-8. Ensure `psql`, Docker (with Compose), and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker and `AGENT_API_KEY` if you plan to test GPT-5 agent ranking.
+8. Ensure Docker (with Compose) and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker and `AGENT_API_KEY` if you plan to test GPT-5 agent ranking. The CLI relies on the compiled binaries via libpq—no standalone `psql` invocation is required. Both the API and worker log a config summary at startup, so check stdout/stderr to confirm the right variables are detected.
+
+## Configuration Reference
+
+The executables validate their environment on startup and exit with a clear error when required values are missing or malformed. Use this table as a quick reference:
+
+| Variable | Required | Default | Used by | Notes |
+| --- | --- | --- | --- | --- |
+| `DATABASE_URL` | ✅ | — | API, worker, CLI | Postgres connection string. |
+| `QDRANT_URL` | ✅ | — | API, worker (indirect) | Base URL for Qdrant HTTP API. |
+| `CHESSMATE_API_PORT` | ⛏️ | `8080` | API | Port the HTTP server binds to. |
+| `CHESSMATE_API_URL` | ⛏️ | `http://localhost:8080` | CLI | Base URL for `chessmate query`. |
+| `CHESSMATE_MAX_PENDING_EMBEDDINGS` | ⛏️ | `250000` | CLI ingest | Guardrail for queue pressure (`<= 0` disables). |
+| `OPENAI_API_KEY` | ✅ (worker) | — | Embedding worker | Required to call the embeddings endpoint. |
+| `OPENAI_EMBEDDING_ENDPOINT` | ⛏️ | `https://api.openai.com/v1/embeddings` | Embedding worker | Override when proxying OpenAI. |
+| `AGENT_API_KEY` | ⛏️ | — | API | Enable GPT-5 agent re-ranking when present. |
+| `AGENT_ENDPOINT` | ⛏️ | `https://api.openai.com/v1/responses` | API | Endpoint for GPT-5 responses. |
+| `AGENT_MODEL` | ⛏️ | provider default | API | Override GPT-5 model (e.g., `gpt-5`). |
+| `AGENT_REASONING_EFFORT` | ⛏️ | `medium` | API | Parsed via `Agents_gpt5_client.Effort.of_string`. |
+| `AGENT_VERBOSITY` | ⛏️ | `medium` | API | Parsed via `Agents_gpt5_client.Verbosity.of_string`. |
+| `AGENT_CACHE_REDIS_URL` | ⛏️ | — | API | Enable Redis cache (`redis://...`). Requires optional namespace/TTL. |
+| `AGENT_CACHE_REDIS_NAMESPACE` | ⛏️ | `chessmate:agent:` | API | Optional when Redis cache enabled. |
+| `AGENT_CACHE_TTL_SECONDS` | ⛏️ | disabled | API | Positive integer TTL for Redis cache entries. |
+| `AGENT_CACHE_CAPACITY` | ⛏️ | — | API | Enable in-memory cache when Redis is not configured. |
+
+✅ = required, ⛏️ = optional. Empty strings are treated as unset. On startup the API and worker print a `[...][config]` line summarising detected values—this is the quickest way to verify your environment before running anything heavy.
 
 ## Repository Layout (Top Level)
 - `lib/chess/`: PGN/FEN parsing, metadata helpers, ECO catalogue, FEN tooling.
@@ -33,7 +58,7 @@ docker compose up -d postgres qdrant redis
 ```
 For day-to-day service operations, scaling, and cache management, refer to the [Operations Playbook](OPERATIONS.md).
 - Drop/reset by removing `data/postgres` and re-running migrations (the script is idempotent).
-- Inspect data with `psql "$DATABASE_URL" -c 'SELECT id, opening_slug FROM games;'`.
+- Inspect data with your preferred SQL client (e.g., `psql`, DBeaver, TablePlus) using `DATABASE_URL`—the OCaml services now connect through libpq directly, so no helper command is required.
 
 ## Build & Test Workflow
 - Formatting: `dune fmt` (run before commits; CI enforces `dune fmt --check`).

@@ -20,6 +20,7 @@ depends: [
   "lwt"
   "cohttp-lwt-unix"
   "opium"
+  "postgresql"
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]

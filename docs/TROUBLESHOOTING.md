@@ -11,8 +11,9 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
 1. **Check Postgres connectivity**
    ```sh
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-   psql postgres://chess:chess@localhost:5433/chessmate -c "SELECT 1"
+   psql "$DATABASE_URL" -c "SELECT 1"
    ```
+   The API and embedding worker also emit `[config]` lines on startup; if any required setting reports `missing`, correct it before proceeding.
 2. **Ingest a known-good PGN** (TWIC 1611 ships with the repo fixtures)
    ```sh
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
@@ -21,7 +22,7 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
 3. **Confirm positions land with vector stubs**
    ```sh
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-   psql postgres://chess:chess@localhost:5433/chessmate \
+   psql "$DATABASE_URL" \
    -c "SELECT COUNT(*) FROM positions WHERE vector_id IS NOT NULL"
    ```
 4. **Start the embedding worker with exported env**
@@ -35,15 +36,15 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
 5. **Watch the queue drain**
    ```sh
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-   psql postgres://chess:chess@localhost:5433/chessmate \
+   psql "$DATABASE_URL" \
    -c "SELECT status, COUNT(*) FROM embedding_jobs GROUP BY status ORDER BY status"
    ```
-   `pending` should drop while `completed` rises. If logs still show `Malformed job row`, pull the latest code - psql now emits real tab delimiters so rows parse correctly.
+   `pending` should drop while `completed` rises. With the libpq client in place, any parsing errors usually point to real schema mismatches—capture the worker log and investigate before re-running ingest.
 
 ## PGN Ingestion
 
 ### Invalid UTF-8 while ingesting TWIC dumps
-- **Symptom** `psql ... invalid byte sequence for encoding "UTF8"` during `chessmate ingest`.
+- **Symptom** `invalid byte sequence for encoding "UTF8"` during `chessmate ingest`.
 - **Cause** Many public PGNs (including TWIC) ship as Windows-1252.
 - **Fix** Re-encode before ingestion:
   ```sh
@@ -86,7 +87,7 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
   ```sh
   dune exec chessmate -- embedding-worker
   ```
-  Double-check `OPENAI_API_KEY` and endpoint settings. When the worker logs `Malformed job row`, update to the latest code (psql field separator fix). While triaging, run
+  Double-check `OPENAI_API_KEY` and endpoint settings. While triaging, run
   ```sh
   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
     scripts/embedding_metrics.sh --interval 120
@@ -99,14 +100,14 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
   1. **Queue depth**
      ```sh
      DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-     psql postgres://chess:chess@localhost:5433/chessmate \
+     psql "$DATABASE_URL" \
      -c "SELECT status, COUNT(*) FROM embedding_jobs GROUP BY status"
      ```
      `pending` should fall while `completed` rises.
   2. **Postgres vector IDs**
      ```sh
      DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-     psql postgres://chess:chess@localhost:5433/chessmate \
+     psql "$DATABASE_URL" \
      -c "SELECT COUNT(*) FROM positions WHERE vector_id IS NOT NULL"
      ```
      Non-zero counts mean vectors are being attached.
@@ -128,7 +129,7 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
   - Host shells may lack `redis-cli`; run it inside the container: `docker compose exec redis redis-cli --scan --pattern 'chessmate:agent:*'`.
   - If nothing appears, trigger an agent run (`dune exec -- chessmate -- query ...` with `AGENT_API_KEY` set) and retry; keys only exist after GPT-5 evaluations write to the cache.
   - Force persistence when you expect `data/redis` to populate immediately: `docker compose exec redis redis-cli SAVE` (or `BGSAVE`), then `docker compose exec redis ls -l /data`.
-  - Spot-check PGN integrity without re-ingesting: `docker compose exec postgres psql "$DATABASE_URL" -c "SELECT id, LENGTH(pgn) FROM games ORDER BY id LIMIT 5;"`—non-zero lengths confirm stored PGNs.
+  - Spot-check PGN integrity without re-ingesting: `docker compose exec postgres psql "$DATABASE_URL" -c "SELECT id, LENGTH(pgn) FROM games ORDER BY id LIMIT 5;"`—non-zero lengths confirm stored PGNs. (Any libpq-compatible client works; `psql` remains a convenient option.)
 - When the agent is temporarily disabled, results fall back to heuristic scoring—address the warning before relying on explanations.
 
 ## Queue Management

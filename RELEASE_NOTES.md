@@ -1,3 +1,15 @@
+## 0.5.1 – Config Validation & libpq-backed persistence
+
+### Added
+- Centralised configuration parsing/validation (`Config` module) with crisp startup errors and `[config]` log summaries for the API and embedding worker.
+- Libpq-backed repository implementation replacing the `psql` shell wrapper, enabling parameterised queries and safer SQL throughout.
+- Configuration reference and troubleshooting docs covering required/optional environment variables.
+- Regression tests for configuration loading scenarios.
+
+### Notes
+- Ensure the `postgresql` opam package is installed (`opam install postgresql`).
+- Verify service startup logs for `[config]` summaries before running ingest or queries.
+
 ## 0.5.0 – Redis Agent Cache & ECO Coverage
 
 ### Added

@@ -16,16 +16,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Postgres repository for ingesting games, managing jobs, and fetching query data. *)
-
 open! Base
-open Stdio
 
 let ( let* ) t f = Or_error.bind t ~f
 let ( let+ ) t f = Or_error.map t ~f
 
 module Job = Embedding_job
 module Metadata = Game_metadata
+module Pg = Postgresql
 
 type game_summary = {
   id : int;
@@ -41,11 +39,95 @@ type game_summary = {
   played_on : string option;
 }
 
-let option_of_string s =
-  let trimmed = String.strip s in
-  if String.is_empty trimmed then None else Some trimmed
+type t = {
+  conn : Pg.connection;
+  mutex : Stdlib.Mutex.t;
+}
 
-let int_option_of_string s = Option.bind (option_of_string s) ~f:Int.of_string_opt
+let string_of_status = function
+  | Pg.Empty_query -> "empty_query"
+  | Pg.Command_ok -> "command_ok"
+  | Pg.Tuples_ok -> "tuples_ok"
+  | Pg.Copy_out -> "copy_out"
+  | Pg.Copy_in -> "copy_in"
+  | Pg.Bad_response -> "bad_response"
+  | Pg.Nonfatal_error -> "nonfatal_error"
+  | Pg.Fatal_error -> "fatal_error"
+  | Pg.Copy_both -> "copy_both"
+  | Pg.Single_tuple -> "single_tuple"
+
+let try_pg f =
+  try Ok (f ()) with
+  | Pg.Error err -> Or_error.error_string (Pg.string_of_error err)
+  | exn -> Or_error.of_exn exn
+
+let exec_raw t query params =
+  Stdlib.Mutex.lock t.mutex;
+  let result =
+    let perform () =
+      match params with
+      | [] -> t.conn#exec query
+      | _ ->
+          let param_array =
+            params
+            |> List.map ~f:(function Some value -> value | None -> Pg.null)
+            |> Array.of_list
+          in
+          t.conn#exec ~params:param_array query
+    in
+    match try_pg perform with
+    | Error err -> Error err
+    | Ok res -> (
+        match res#status with
+        | Pg.Command_ok
+        | Pg.Tuples_ok -> Ok res
+        | status ->
+            let msg = String.strip t.conn#error_message in
+            let message =
+              if String.is_empty msg then
+                Printf.sprintf "Postgres returned unexpected status %s" (string_of_status status)
+              else msg
+            in
+            Or_error.error_string message)
+  in
+  Stdlib.Mutex.unlock t.mutex;
+  result
+
+let exec_unit t query params =
+  let* _ = exec_raw t query params in
+  Or_error.return ()
+
+let parse_int field value =
+  match Int.of_string value with
+  | v -> Or_error.return v
+  | exception _ -> Or_error.errorf "Expected integer for %s, got %s" field value
+
+let fetch_optional_int t query params =
+  let* result = exec_raw t query params in
+  if Int.equal result#ntuples 0 then Or_error.return None
+  else
+    let value = result#getvalue 0 0 in
+    let+ parsed = parse_int "id" value in
+    Some parsed
+
+let fetch_returning_int t query params =
+  let* result = exec_raw t query params in
+  if Int.equal result#ntuples 0 then Or_error.error_string "Query returned no rows"
+  else
+    let value = result#getvalue 0 0 in
+    parse_int "id" value
+
+let create conninfo =
+  if String.is_empty (String.strip conninfo) then
+    Or_error.error_string "Postgres connection string cannot be empty"
+  else
+    match Or_error.try_with (fun () -> new Pg.connection ~conninfo ()) with
+    | Ok conn -> Or_error.return { conn; mutex = Stdlib.Mutex.create () }
+    | Error err ->
+        let exn = Error.to_exn err in
+        (match exn with
+        | Pg.Error pg_err -> Or_error.error_string (Pg.string_of_error pg_err)
+        | _ -> Error err)
 
 let normalize_eco_code s = String.uppercase (String.strip s)
 
@@ -56,104 +138,26 @@ let eco_filter value =
       `Range (start_code, end_code)
   | _ -> `Exact value
 
-(* Connection string wrapper delegating to the local [psql] client. *)
-type t = { conninfo : string }
-
-let create conninfo =
-  if String.is_empty (String.strip conninfo) then
-    Or_error.error_string "Postgres connection string cannot be empty"
-  else
-    Or_error.return { conninfo }
-
-let escape_literal s = String.substr_replace_all s ~pattern:"'" ~with_:"''"
-
-let sql_string s = Printf.sprintf "'%s'" (escape_literal s)
-
-let sql_string_opt = function
-  | None -> "NULL"
-  | Some s -> sql_string s
-
-let sql_int_opt = function
-  | None -> "NULL"
-  | Some i -> Int.to_string i
-
-let run_psql t sql =
-  let script = Stdlib.Filename.temp_file "chessmate_sql" ".sql" in
-  Exn.protect
-    ~f:(fun () ->
-        Out_channel.write_all script ~data:sql;
-        let field_separator = "\t" in
-        let command =
-          Printf.sprintf
-            "psql --no-psqlrc -X -q -t -A -F \"%s\" --dbname=%s -v ON_ERROR_STOP=1 -f %s"
-            field_separator
-            (Stdlib.Filename.quote t.conninfo)
-            (Stdlib.Filename.quote script)
-        in
-        let ic, oc, ec = Unix.open_process_full command (Unix.environment ()) in
-        Out_channel.close oc;
-        let stdout = In_channel.input_all ic in
-        let stderr = In_channel.input_all ec in
-        match Unix.close_process_full (ic, oc, ec) with
-        | Unix.WEXITED 0 ->
-            stdout
-            |> String.split_lines
-            |> List.map ~f:String.strip
-            |> List.filter ~f:(Fn.non String.is_empty)
-            |> Or_error.return
-        | Unix.WEXITED code ->
-            Or_error.errorf "psql exited with code %d: %s" code (String.strip stderr)
-        | Unix.WSIGNALED signal ->
-            Or_error.errorf "psql terminated by signal %d" signal
-        | Unix.WSTOPPED signal ->
-            Or_error.errorf "psql stopped by signal %d" signal)
-    ~finally:(fun () -> try Stdlib.Sys.remove script with _ -> ())
-
-let exec t sql =
-  let* _ = run_psql t sql in
-  Or_error.return ()
-
-let query_single_int t sql =
-  let* rows = run_psql t sql in
-  match rows with
-  | [] -> Or_error.return None
-  | value :: _ -> (
-      match Int.of_string value with
-      | id -> Or_error.return (Some id)
-      | exception _ -> Or_error.errorf "Expected integer result, got %s" value)
-
-let insert_single_row t sql =
-  let* rows = run_psql t sql in
-  match rows with
-  | value :: _ -> (
-      match Int.of_string value with
-      | id -> Or_error.return id
-      | exception _ -> Or_error.errorf "Expected integer result, got %s" value)
-  | [] -> Or_error.error_string "Query returned no rows"
-
 let select_player_by_fide t fide_id =
-  let sql =
-    Printf.sprintf
-      "SELECT id FROM players WHERE fide_id = %s LIMIT 1;"
-      (sql_string fide_id)
-  in
-  query_single_int t sql
+  fetch_optional_int
+    t
+    "SELECT id FROM players WHERE fide_id = $1 LIMIT 1"
+    [ Some fide_id ]
 
 let select_player_by_name t name =
-  let sql =
-    Printf.sprintf "SELECT id FROM players WHERE name = %s LIMIT 1;" (sql_string name)
-  in
-  query_single_int t sql
+  fetch_optional_int
+    t
+    "SELECT id FROM players WHERE name = $1 LIMIT 1"
+    [ Some name ]
 
 let insert_player t (player : Metadata.player) =
-  let sql =
-    Printf.sprintf
-      "INSERT INTO players (name, fide_id, rating_peak) VALUES (%s, %s, %s) RETURNING id;"
-      (sql_string player.name)
-      (sql_string_opt player.fide_id)
-      (sql_int_opt player.rating)
-  in
-  insert_single_row t sql
+  fetch_returning_int
+    t
+    "INSERT INTO players (name, fide_id, rating_peak) VALUES ($1, $2, $3) RETURNING id"
+    [ Some player.name
+    ; Option.map player.fide_id ~f:Fn.id
+    ; Option.map player.rating ~f:(fun rating -> Int.to_string rating)
+    ]
 
 let upsert_player t (player : Metadata.player) =
   let name = String.strip player.name in
@@ -179,24 +183,23 @@ let side_to_move ply = if Int.(ply % 2 = 1) then "black" else "white"
 let insert_position t game_id (move : Pgn_parser.move) fen =
   let* fen = Fen.normalize fen in
   let side = side_to_move move.ply in
-  let move_number_literal =
-    if Int.(move.turn <= 0) then "NULL" else Int.to_string move.turn
+  let move_number =
+    if Int.(move.turn <= 0) then None else Some (Int.to_string move.turn)
   in
-  let sql =
-    Printf.sprintf
-      "WITH inserted AS (\n\
-       INSERT INTO positions (game_id, ply, move_number, side_to_move, fen, san)\n\
-       VALUES (%d, %d, %s, %s, %s, %s) RETURNING id, fen)\n\
-       INSERT INTO embedding_jobs (position_id, fen)\n\
-       SELECT id, fen FROM inserted;"
-      game_id
-      move.ply
-      move_number_literal
-      (sql_string side)
-      (sql_string fen)
-      (sql_string move.san)
-  in
-  exec t sql
+  exec_unit
+    t
+    "WITH inserted AS (\n\
+     INSERT INTO positions (game_id, ply, move_number, side_to_move, fen, san)\n\
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, fen)\n\
+     INSERT INTO embedding_jobs (position_id, fen)\n\
+     SELECT id, fen FROM inserted"
+    [ Some (Int.to_string game_id)
+    ; Some (Int.to_string move.ply)
+    ; move_number
+    ; Some side
+    ; Some fen
+    ; Some move.san
+    ]
 
 let rec insert_positions t game_id move_fens count =
   match move_fens with
@@ -214,187 +217,234 @@ let insert_game (repo : t) ~metadata ~pgn ~moves =
   else (
     let* white_id = upsert_player repo metadata.Metadata.white in
     let* black_id = upsert_player repo metadata.Metadata.black in
-    let sql =
-      Printf.sprintf
-        "INSERT INTO games\n       (white_player_id, black_player_id, event, site, round, played_on, eco_code, opening_name, opening_slug, result, white_rating, black_rating, pgn)\n       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id;"
-        (sql_int_opt white_id)
-        (sql_int_opt black_id)
-        (sql_string_opt metadata.event)
-        (sql_string_opt metadata.site)
-        (sql_string_opt metadata.round)
-        (sql_string_opt metadata.date)
-        (sql_string_opt metadata.eco_code)
-        (sql_string_opt metadata.opening_name)
-        (sql_string_opt metadata.opening_slug)
-        (sql_string_opt metadata.result)
-        (sql_int_opt metadata.white.rating)
-        (sql_int_opt metadata.black.rating)
-        (sql_string pgn)
+    let params =
+      [ Option.map white_id ~f:Int.to_string
+      ; Option.map black_id ~f:Int.to_string
+      ; Option.map metadata.event ~f:Fn.id
+      ; Option.map metadata.site ~f:Fn.id
+      ; Option.map metadata.round ~f:Fn.id
+      ; Option.map metadata.date ~f:Fn.id
+      ; Option.map metadata.eco_code ~f:Fn.id
+      ; Option.map metadata.opening_name ~f:Fn.id
+      ; Option.map metadata.opening_slug ~f:Fn.id
+      ; Option.map metadata.result ~f:Fn.id
+      ; Option.map metadata.white.rating ~f:Int.to_string
+      ; Option.map metadata.black.rating ~f:Int.to_string
+      ; Some pgn
+      ]
     in
-    let* game_id = insert_single_row repo sql in
+    let* game_id =
+      fetch_returning_int
+        repo
+        "INSERT INTO games\n\
+         (white_player_id, black_player_id, event, site, round, played_on, eco_code, opening_name, opening_slug, result, white_rating, black_rating, pgn)\n\
+         VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8, $9, $10, $11, $12, $13)\n\
+         RETURNING id"
+        params
+    in
     let move_fens = List.zip_exn moves fen_sequence in
     let+ inserted = insert_positions repo game_id move_fens 0 in
     (game_id, inserted))
 
-let parse_game_row line =
-  match String.split line ~on:'\t' with
-  | [ id_str
-    ; white
-    ; black
-    ; result
-    ; event
-    ; opening_slug
-    ; opening_name
-    ; eco_code
-    ; white_rating
-    ; black_rating
-    ; played_on ] ->
-      (match Int.of_string_opt id_str with
-      | None -> Or_error.errorf "Invalid game id: %s" id_str
-      | Some id ->
-          Or_error.return
-            { id
-            ; white = if String.is_empty white then "Unknown" else white
-            ; black = if String.is_empty black then "Unknown" else black
-            ; result = option_of_string result
-            ; event = option_of_string event
-            ; opening_slug = option_of_string opening_slug
-            ; opening_name = option_of_string opening_name
-            ; eco_code = option_of_string eco_code
-            ; white_rating = int_option_of_string white_rating
-            ; black_rating = int_option_of_string black_rating
-            ; played_on = option_of_string played_on
-            })
-  | _ -> Or_error.errorf "Unexpected game row: %s" line
+let option_of_field result row col =
+  if result#getisnull row col then None else Some (result#getvalue row col)
 
 let build_conditions ~filters ~rating =
   let conditions = ref [] in
+  let params_rev = ref [] in
+  let next_param = ref 1 in
+  let add_param value =
+    let placeholder = Printf.sprintf "$%d" !next_param in
+    Int.incr next_param;
+    params_rev := value :: !params_rev;
+    placeholder
+  in
+  let add_string value = add_param (Some value) in
+  let add_int value = add_param (Some (Int.to_string value)) in
   List.iter filters ~f:(fun (filter : Query_intent.metadata_filter) ->
       match String.lowercase filter.field with
-      | "opening" -> conditions := Printf.sprintf "g.opening_slug = %s" (sql_string filter.value) :: !conditions
-      | "result" -> conditions := Printf.sprintf "g.result = %s" (sql_string filter.value) :: !conditions
-      | "eco_range" ->
-          (match eco_filter filter.value with
+      | "opening" ->
+          let placeholder = add_string (String.lowercase (String.strip filter.value)) in
+          conditions := Printf.sprintf "g.opening_slug = %s" placeholder :: !conditions
+      | "result" ->
+          let placeholder = add_string (String.strip filter.value) in
+          conditions := Printf.sprintf "g.result = %s" placeholder :: !conditions
+      | "eco_range" -> (
+          match eco_filter filter.value with
           | `Range (start_code, end_code) ->
+              let start_placeholder = add_string start_code in
+              let end_placeholder = add_string end_code in
               conditions :=
-                Printf.sprintf "g.eco_code >= %s AND g.eco_code <= %s" (sql_string start_code) (sql_string end_code)
+                Printf.sprintf "g.eco_code BETWEEN %s AND %s" start_placeholder end_placeholder
                 :: !conditions
-          | `Exact single -> conditions := Printf.sprintf "g.eco_code = %s" (sql_string single) :: !conditions)
+          | `Exact single ->
+              let placeholder = add_string single in
+              conditions := Printf.sprintf "g.eco_code = %s" placeholder :: !conditions)
       | _ -> ());
   (match rating.Query_intent.white_min with
-  | Some min -> conditions := Printf.sprintf "g.white_rating >= %d" min :: !conditions
+  | Some min ->
+      let placeholder = add_int min in
+      conditions := Printf.sprintf "g.white_rating >= %s" placeholder :: !conditions
   | None -> ());
   (match rating.Query_intent.black_min with
-  | Some min -> conditions := Printf.sprintf "g.black_rating >= %d" min :: !conditions
+  | Some min ->
+      let placeholder = add_int min in
+      conditions := Printf.sprintf "g.black_rating >= %s" placeholder :: !conditions
   | None -> ());
   (match rating.Query_intent.max_rating_delta with
   | Some delta ->
+      let placeholder = add_int delta in
       conditions :=
         Printf.sprintf
-          "g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL AND ABS(g.white_rating - g.black_rating) <= %d"
-          delta
+          "g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL AND ABS(g.white_rating - g.black_rating) <= %s"
+          placeholder
         :: !conditions
   | None -> ());
-  !conditions
+  let params = List.rev !params_rev in
+  let next_index = !next_param in
+  (List.rev !conditions, params, next_index)
 
 let search_games repo ~filters ~rating ~limit =
   let limit = Int.max 1 limit in
-  let conditions = build_conditions ~filters ~rating in
+  let conditions, params, next_index = build_conditions ~filters ~rating in
   let where_clause =
     if List.is_empty conditions then ""
-    else "WHERE " ^ String.concat ~sep:" AND " (List.rev conditions)
+    else "WHERE " ^ String.concat ~sep:" AND " conditions
   in
+  let limit_placeholder = Printf.sprintf "$%d" next_index in
   let sql =
     Printf.sprintf
-      "SELECT g.id,\n              COALESCE(w.name, ''),\n              COALESCE(b.name, ''),\n              COALESCE(g.result, ''),\n              COALESCE(g.event, ''),\n              COALESCE(g.opening_slug, ''),\n              COALESCE(g.opening_name, ''),\n              COALESCE(g.eco_code, ''),\n              COALESCE(CAST(g.white_rating AS TEXT), ''),\n              COALESCE(CAST(g.black_rating AS TEXT), ''),\n              COALESCE(CAST(g.played_on AS TEXT), '')\n       FROM games g\n       LEFT JOIN players w ON g.white_player_id = w.id\n       LEFT JOIN players b ON g.black_player_id = b.id\n       %s\n       ORDER BY g.played_on DESC NULLS LAST, g.id DESC\n       LIMIT %d;"
+      "SELECT g.id,\n              COALESCE(w.name, ''),\n              COALESCE(b.name, ''),\n              g.result,\n              g.event,\n              g.opening_slug,\n              g.opening_name,\n              g.eco_code,\n              g.white_rating,\n              g.black_rating,\n              TO_CHAR(g.played_on, 'YYYY-MM-DD')\n       FROM games g\n       LEFT JOIN players w ON g.white_player_id = w.id\n       LEFT JOIN players b ON g.black_player_id = b.id\n       %s\n       ORDER BY g.played_on DESC NULLS LAST, g.id DESC\n       LIMIT %s"
       where_clause
-      limit
+      limit_placeholder
   in
-  let* rows = run_psql repo sql in
-  rows |> List.map ~f:parse_game_row |> Or_error.all
+  let params = params @ [ Some (Int.to_string limit) ] in
+  let* result = exec_raw repo sql params in
+  let tuples = result#ntuples in
+  let rec build acc row =
+    if row < 0 then acc
+    else
+      let summary =
+        { id = Int.of_string (result#getvalue row 0)
+        ; white = result#getvalue row 1
+        ; black = result#getvalue row 2
+        ; result = option_of_field result row 3
+        ; event = option_of_field result row 4
+        ; opening_slug = option_of_field result row 5
+        ; opening_name = option_of_field result row 6
+        ; eco_code = option_of_field result row 7
+        ; white_rating = Option.bind (option_of_field result row 8) ~f:Int.of_string_opt
+        ; black_rating = Option.bind (option_of_field result row 9) ~f:Int.of_string_opt
+        ; played_on = option_of_field result row 10
+        }
+      in
+      build (summary :: acc) (row - 1)
+  in
+  Or_error.return (build [] (tuples - 1))
 
 let fetch_games_with_pgn repo ~ids =
-  let unique_ids =
-    ids
-    |> List.dedup_and_sort ~compare:Int.compare
-  in
+  let unique_ids = ids |> List.dedup_and_sort ~compare:Int.compare in
   match unique_ids with
   | [] -> Or_error.return []
   | _ ->
-      let id_list =
-        unique_ids
-        |> List.map ~f:Int.to_string
-        |> String.concat ~sep:","
+      let placeholders, params =
+        List.foldi unique_ids ~init:([], []) ~f:(fun idx (ph, params) id ->
+            let placeholder = Printf.sprintf "$%d" (idx + 1) in
+            (placeholder :: ph, Some (Int.to_string id) :: params))
       in
       let sql =
         Printf.sprintf
-          "SELECT json_build_object('id', id, 'pgn', pgn)::text FROM games WHERE id IN (%s);"
-          id_list
+          "SELECT id, pgn FROM games WHERE id IN (%s)"
+          (String.concat ~sep:"," (List.rev placeholders))
       in
-      let* rows = run_psql repo sql in
-      rows
-      |> List.map ~f:(fun line ->
-             match Or_error.try_with (fun () -> Yojson.Safe.from_string line) with
-             | Error err -> Or_error.errorf "Malformed game pgn row (json): %s (%s)" line (Error.to_string_hum err)
-             | Ok json -> (
-                 let open Yojson.Safe.Util in
-                 match member "id" json |> to_int_option, member "pgn" json |> to_string_option with
-                 | Some id, Some pgn -> Or_error.return (id, pgn)
-                 | _ -> Or_error.errorf "Malformed game pgn row: %s" line))
-      |> Or_error.all
+      let* result = exec_raw repo sql (List.rev params) in
+      let tuples = result#ntuples in
+      let rec build acc row =
+        if row < 0 then acc
+        else
+          let id = Int.of_string (result#getvalue row 0) in
+          let pgn = result#getvalue row 1 in
+          build ((id, pgn) :: acc) (row - 1)
+      in
+      Or_error.return (build [] (tuples - 1))
 
-let parse_job_row line =
-  let parse_int field value =
-    Or_error.try_with (fun () -> Int.of_string value)
-    |> Or_error.tag ~tag:(Printf.sprintf "Invalid integer for %s" field)
+let parse_job_row result row =
+  let value idx = result#getvalue row idx in
+  let int_field name idx = parse_int name (value idx) in
+  let status_field idx = Job.status_of_string (value idx) in
+  let last_error =
+    if result#getisnull row 4 then None else Some (value 4)
   in
-  match String.split line ~on:'\t' with
-  | id_str :: fen :: attempts_str :: status_str :: rest ->
-      let last_error_str = String.concat ~sep:"\t" rest in
-      let last_error = if String.is_empty last_error_str then None else Some last_error_str in
-      let* id = parse_int "id" id_str in
-      let* attempts = parse_int "attempts" attempts_str in
-      let* status = Job.status_of_string status_str in
-      Or_error.return { Job.id; fen; attempts; status; last_error }
-  | _ -> Or_error.errorf "Malformed job row: %s" line
+  let* id = int_field "id" 0 in
+  let fen = value 1 in
+  let* attempts = int_field "attempts" 2 in
+  let* status = status_field 3 in
+  Or_error.return { Job.id; fen; attempts; status; last_error }
 
 let pending_embedding_job_count repo =
-  let sql = "SELECT COUNT(*) FROM embedding_jobs WHERE status = 'pending';" in
-  let* count = query_single_int repo sql in
-  match count with
+  let* result =
+    exec_raw
+      repo
+      "SELECT COUNT(*) FROM embedding_jobs WHERE status = 'pending'"
+      []
+  in
+  let count =
+    if Int.equal result#ntuples 0 then "0" else result#getvalue 0 0
+  in
+  match Int.of_string_opt count with
   | Some value -> Or_error.return value
-  | None -> Or_error.return 0
+  | None -> Or_error.errorf "Unexpected count value %s" count
 
 let claim_pending_jobs repo ~limit =
   if Int.(limit <= 0) then Or_error.return []
   else
-    let sql =
-      Printf.sprintf
-        "WITH candidate AS (\n         SELECT id\n         FROM embedding_jobs\n         WHERE status = 'pending'\n         ORDER BY enqueued_at ASC\n         FOR UPDATE SKIP LOCKED\n         LIMIT %d\n       )\n       UPDATE embedding_jobs AS ej\n       SET status = 'in_progress', attempts = ej.attempts + 1, started_at = NOW(), last_error = NULL\n       WHERE ej.id IN (SELECT id FROM candidate)\n       RETURNING ej.id, ej.fen, ej.attempts, ej.status, COALESCE(ej.last_error, '');"
-        limit
+    let* result =
+      exec_raw
+        repo
+        "WITH candidate AS (\n\
+         SELECT id\n\
+         FROM embedding_jobs\n\
+         WHERE status = 'pending'\n\
+         ORDER BY enqueued_at ASC\n\
+         FOR UPDATE SKIP LOCKED\n\
+         LIMIT $1\n\
+         )\n\
+         UPDATE embedding_jobs AS ej\n\
+         SET status = 'in_progress', attempts = ej.attempts + 1, started_at = NOW(), last_error = NULL\n\
+         WHERE ej.id IN (SELECT id FROM candidate)\n\
+         RETURNING ej.id, ej.fen, ej.attempts, ej.status, ej.last_error"
+        [ Some (Int.to_string limit) ]
     in
-    let* rows = run_psql repo sql in
-    rows
-    |> List.map ~f:parse_job_row
-    |> Or_error.all
+    let tuples = result#ntuples in
+    let rec build acc row =
+      if row < 0 then Or_error.return acc
+      else
+        match parse_job_row result row with
+        | Ok job -> build (job :: acc) (row - 1)
+        | Error err -> Error err
+    in
+    build [] (tuples - 1)
 
 let mark_job_completed repo ~job_id ~vector_id =
-  let vector_literal =
-    if String.is_empty (String.strip vector_id) then "NULL" else sql_string vector_id
+  let vector_param =
+    if String.is_empty (String.strip vector_id) then None else Some vector_id
   in
-  let sql =
-    Printf.sprintf
-      "WITH updated AS (\n       UPDATE embedding_jobs\n       SET status = 'completed', completed_at = NOW(), last_error = NULL\n       WHERE id = %d\n       RETURNING position_id)\n       UPDATE positions\n       SET vector_id = %s\n       WHERE id IN (SELECT position_id FROM updated);"
-      job_id
-      vector_literal
-  in
-  exec repo sql
+  exec_unit
+    repo
+    "WITH updated AS (\n\
+     UPDATE embedding_jobs\n\
+     SET status = 'completed', completed_at = NOW(), last_error = NULL\n\
+     WHERE id = $1\n\
+     RETURNING position_id)\n\
+     UPDATE positions\n\
+     SET vector_id = $2\n\
+     WHERE id IN (SELECT position_id FROM updated)"
+    [ Some (Int.to_string job_id); vector_param ]
 
 let mark_job_failed repo ~job_id ~error =
-  let sql =
-    Printf.sprintf
-      "UPDATE embedding_jobs\n       SET status = 'failed', last_error = %s, completed_at = NULL\n       WHERE id = %d;"
-      (sql_string error)
-      job_id
-  in
-  exec repo sql
+  exec_unit
+    repo
+    "UPDATE embedding_jobs\n\
+     SET status = 'failed', last_error = $1, completed_at = NULL\n\
+     WHERE id = $2"
+    [ Some error; Some (Int.to_string job_id) ]

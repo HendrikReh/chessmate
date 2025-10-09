@@ -51,10 +51,8 @@ This comprehensive review examined the Chessmate codebase across architecture, i
 - **Recommendation**: Add `X-Agent-Status` response header or warning field in JSON response
 
 **Postgres Connection Pooling Absent**
-- Every `Repo_postgres` operation spawns new `psql` process via shell
-- Extremely inefficient for high-throughput scenarios
-- **Impact**: Performance bottleneck under load, resource exhaustion
-- **Recommendation**: Migrate to native Postgres driver (`pgx` or `postgresql-ocaml`) with connection pooling
+- ✅ Addressed: repository now uses in-process libpq (`postgresql-ocaml`) with a shared connection.
+- **Remaining gap**: consider a proper pool per service once concurrency grows beyond the single worker/APIs.
 
 ### 1.2 Type Safety & Validation
 
@@ -330,7 +328,7 @@ This comprehensive review examined the Chessmate codebase across architecture, i
 **Architectural Decision Records (ADRs) Missing**
 - No documentation of key decisions:
   - Why OCaml vs other languages
-  - Why psql shell vs native Postgres driver
+  - Why the project now uses libpq (`postgresql-ocaml`) instead of the previous `psql` shell wrapper
   - Why Opium vs Dream/CoHTTP
   - Why Qdrant vs Elasticsearch/Milvus
 - **Impact**: New developers don't understand context for design choices
@@ -877,10 +875,9 @@ This comprehensive review examined the Chessmate codebase across architecture, i
    - Audit all SQL construction code
    - Estimated effort: 8-12 hours
 
-4. **Add Startup Configuration Validation** ⚠️ Critical
-   - Fail fast with clear error messages
-   - Document all required environment variables
-   - Estimated effort: 4-6 hours
+4. **Add Startup Configuration Validation** ⚠️ Critical — ✅ Completed
+   - Services now exit early with descriptive configuration errors and emit a `[config]` summary at startup.
+   - Documentation includes a consolidated configuration reference.
 
 5. **Implement Request Rate Limiting** 🔒 Security
    - Protect API from abuse/DoS
@@ -889,10 +886,8 @@ This comprehensive review examined the Chessmate codebase across architecture, i
 
 ### Medium Priority (Scalability & Performance)
 
-1. **Replace psql Shell with Native Driver** 🚀 Performance
-   - Implement connection pooling
-   - Significant performance improvement under load
-   - Estimated effort: 16-24 hours
+1. **Replace psql Shell with Native Driver** 🚀 Performance — ✅ Completed
+   - Consider adding a small connection pool when services handle concurrent workloads.
 
 2. **Add Batch Size Limits for Embeddings** ⚠️ Reliability
    - Chunk large batches to respect API limits

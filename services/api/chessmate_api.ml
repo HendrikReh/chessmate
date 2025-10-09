@@ -120,45 +120,64 @@ module Result = struct
       ; "agent_usage", usage_to_json t.agent_usage ]
 end
 
+let api_config : Config.Api.t =
+  match Config.Api.load () with
+  | Ok config ->
+      let agent_mode = if Option.is_some config.Config.Api.agent.api_key then "enabled" else "disabled" in
+      let cache_mode =
+        match config.Config.Api.agent.cache with
+        | Config.Api.Agent_cache.Redis _ -> "redis"
+        | Config.Api.Agent_cache.Memory _ -> "memory"
+        | Config.Api.Agent_cache.Disabled -> "disabled"
+      in
+      Stdio.eprintf
+        "[chessmate-api][config] port=%d database=present qdrant=present agent=%s cache=%s\n%!"
+        config.port
+        agent_mode
+        cache_mode;
+      config
+  | Error err ->
+      Stdio.eprintf "[chessmate-api][fatal] %s\n%!" (Error.to_string_hum err);
+      Stdlib.exit 1
+
 let postgres_repo : Repo_postgres.t Or_error.t Lazy.t =
-  lazy
-    (match Stdlib.Sys.getenv_opt "DATABASE_URL" with
-    | Some url when not (String.is_empty (String.strip url)) -> Repo_postgres.create url
-    | _ -> Or_error.error_string "DATABASE_URL environment variable is required for chessmate-api")
+  lazy (Repo_postgres.create api_config.database_url)
 
 let agent_client : Agents_gpt5_client.t option Lazy.t =
   lazy
-    (match Agents_gpt5_client.create_from_env () with
-    | Ok client -> Some client
-    | Error err ->
-        Stdio.eprintf "[chessmate-api] agent disabled: %s\n%!" (Error.to_string_hum err);
-        None)
+    (match api_config.Config.Api.agent.api_key with
+    | None -> None
+    | Some api_key ->
+        let agent = api_config.Config.Api.agent in
+        let create_client () =
+          Agents_gpt5_client.create
+            ~api_key
+            ~endpoint:agent.endpoint
+            ?model:agent.model
+            ~default_effort:agent.reasoning_effort
+            ?default_verbosity:agent.verbosity
+            ()
+        in
+        match create_client () with
+        | Ok client -> Some client
+        | Error err ->
+            Stdio.eprintf "[chessmate-api] agent disabled: %s\n%!" (Error.to_string_hum err);
+            None)
 
 let agent_cache : Agent_cache.t option Lazy.t =
-  let non_empty_env name =
-    Stdlib.Sys.getenv_opt name
-    |> Option.map ~f:String.strip
-    |> Option.bind ~f:(fun value -> if String.is_empty value then None else Some value)
-  in
-  let parse_positive_int name raw =
-    match Int.of_string_opt raw with
-    | Some value when value > 0 -> Some value
-    | _ ->
-        Stdio.eprintf "[chessmate-api] ignoring %s=%s (expected positive int)\n%!" name raw;
-        None
-  in
   lazy
-    (match non_empty_env "AGENT_CACHE_REDIS_URL" with
-    | Some url -> (
-        let namespace = non_empty_env "AGENT_CACHE_REDIS_NAMESPACE" in
-        let ttl_seconds =
-          match non_empty_env "AGENT_CACHE_TTL_SECONDS" with
-          | None -> None
-          | Some raw -> parse_positive_int "AGENT_CACHE_TTL_SECONDS" raw
-        in
-        (match Agent_cache.create_redis ?namespace ?ttl_seconds url with
+    (match api_config.Config.Api.agent.cache with
+    | Config.Api.Agent_cache.Disabled -> None
+    | Config.Api.Agent_cache.Memory { capacity } -> (
+        let capacity_value = Option.value capacity ~default:1000 in
+        Stdio.eprintf
+          "[chessmate-api] agent cache enabled (mode=memory capacity=%d)\n%!"
+          capacity_value;
+        Some (Agent_cache.create ~capacity:capacity_value))
+    | Config.Api.Agent_cache.Redis { url; namespace; ttl_seconds } -> (
+        match Agent_cache.create_redis ?namespace ?ttl_seconds url with
         | Ok cache ->
-            let namespace_log = Option.value namespace ~default:"<default>" in
+            let namespace_log = Option.value namespace ~default:"chessmate:agent:" in
             let ttl_log = Option.value_map ttl_seconds ~default:"<none>" ~f:Int.to_string in
             Stdio.eprintf
               "[chessmate-api] agent cache enabled via redis (namespace=%s ttl=%s)\n%!"
@@ -167,25 +186,7 @@ let agent_cache : Agent_cache.t option Lazy.t =
         | Error err ->
             Stdio.eprintf "[chessmate-api] redis agent cache disabled: %s\n%!"
               (Error.to_string_hum err);
-            (match non_empty_env "AGENT_CACHE_CAPACITY" with
-            | Some raw -> (
-                match parse_positive_int "AGENT_CACHE_CAPACITY" raw with
-                | Some capacity ->
-                    Stdio.eprintf
-                      "[chessmate-api] falling back to in-memory cache (capacity=%d)\n%!"
-                      capacity;
-                    Some (Agent_cache.create ~capacity)
-                | None -> None)
-            | None -> None)))
-    | None -> (
-        match non_empty_env "AGENT_CACHE_CAPACITY" with
-        | Some raw -> (
-            match parse_positive_int "AGENT_CACHE_CAPACITY" raw with
-            | Some capacity ->
-                Stdio.eprintf "[chessmate-api] agent cache enabled (capacity=%d)\n%!" capacity;
-                Some (Agent_cache.create ~capacity)
-            | None -> None)
-        | None -> None))
+            None))
 
 let plan_to_json (plan : Query_intent.plan) =
   `Assoc
@@ -318,9 +319,4 @@ let routes =
   |> App.post "/query" query_handler
 
 let () =
-  let port =
-    match Stdlib.Sys.getenv_opt "CHESSMATE_API_PORT" with
-    | Some value -> (match Int.of_string_opt value with Some port when port > 0 -> port | _ -> 8080)
-    | None -> 8080
-  in
-  App.run_command (routes |> App.port port)
+  App.run_command (routes |> App.port api_config.Config.Api.port)

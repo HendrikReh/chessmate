@@ -28,6 +28,7 @@
   lwt
   cohttp-lwt-unix
   opium
+  postgresql
   (alcotest :with-test))
  (tags
   ("chess" "ocaml" "vector-search" "postgres" "qdrant")))

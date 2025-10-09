@@ -25,12 +25,14 @@ docker compose up -d postgres qdrant redis
 # seed sample PGNs (optional) - respects CHESSMATE_MAX_PENDING_EMBEDDINGS
 chessmate ingest test/fixtures/extended_sample_game.pgn
 ```
+Cross-check the environment against the [Configuration Reference](DEVELOPER.md#configuration-reference); the services will refuse to boot if a required variable is missing.
 
 ### Service Startup
 - Query API (prototype): `dune exec chessmate_api -- --port 8080`.
 - Embedding worker: `OPENAI_API_KEY=... chessmate embedding-worker --workers N` (run multiple loops inside one process; increase `N` gradually when clearing backlogs).
 - CLI queries: `chessmate query "find king's indian games"` (ensure API is running).
 - Queue metrics: `scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log` keeps per-status counts, throughput, and ETA.
+- Startup sanity check: both processes emit a `[...][config]` line summarising detected env vars (port, database URL presence, agent/Redis caches). If a variable shows as `missing`, correct it before continuing.
 - GPT-5 agent (optional): set `AGENT_API_KEY` (and optionally `AGENT_MODEL`, `AGENT_REASONING_EFFORT`, `AGENT_VERBOSITY`, `AGENT_CACHE_REDIS_URL`) before calling `chessmate query` or starting the API to enable ranking/explanations. If Redis is unavailable, fall back to `AGENT_CACHE_CAPACITY` for the in-process cache.
 
 ## Runtime Management
@@ -92,7 +94,7 @@ chessmate ingest test/fixtures/extended_sample_game.pgn
   docker compose exec postgres psql "$DATABASE_URL" \
     -c "SELECT id, LENGTH(pgn) FROM games ORDER BY id LIMIT 5;"
   ```
-  Non-zero lengths confirm PGNs are intact for agent retrieval.
+  (Any SQL client hitting `DATABASE_URL` works—our services now use libpq internally, so `psql` is optional.) Non-zero lengths confirm PGNs are intact for agent retrieval.
 - Force Redis snapshots when you expect `data/redis` to populate immediately (default policy `--save 60 1` waits for a write + 60 seconds):
   ```sh
   docker compose exec redis redis-cli SAVE    # synchronous

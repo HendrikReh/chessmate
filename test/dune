@@ -6,6 +6,7 @@
   test_query
   test_fen
   test_retry
+  test_config
   test_openai_common
   test_main)
  (libraries chessmate alcotest stdio)

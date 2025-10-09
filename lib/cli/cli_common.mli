@@ -21,7 +21,7 @@
 open! Base
 
 val with_db_url : (string -> 'a Or_error.t) -> 'a Or_error.t
-(** Fetch [DATABASE_URL] from the environment using [Stdlib.Sys.getenv_opt] and apply the provided function. *)
+(** Fetch [DATABASE_URL] via {!Config.Cli.database_url} and apply the provided function. *)
 
 val api_base_url : unit -> string
-(** Resolve the query API base URL from [CHESSMATE_API_URL] or default to [http://localhost:8080]. *)
+(** Resolve the query API base URL via {!Config.Cli.api_base_url}. *)
