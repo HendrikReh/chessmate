@@ -174,12 +174,10 @@ let upsert_player t (player : Metadata.player) =
             let+ id = insert_player t { player with name } in
             Some id)
 
-let placeholder_fen san = Printf.sprintf "SAN:%s" san
-
 let side_to_move ply = if Int.(ply % 2 = 1) then "black" else "white"
 
-let insert_position t game_id (move : Pgn_parser.move) =
-  let fen = placeholder_fen move.san in
+let insert_position t game_id (move : Pgn_parser.move) fen =
+  let* fen = Fen.normalize fen in
   let side = side_to_move move.ply in
   let move_number_literal =
     if Int.(move.turn <= 0) then "NULL" else Int.to_string move.turn
@@ -200,36 +198,43 @@ let insert_position t game_id (move : Pgn_parser.move) =
   in
   exec t sql
 
-let rec insert_positions t game_id moves count =
-  match moves with
+let rec insert_positions t game_id move_fens count =
+  match move_fens with
   | [] -> Or_error.return count
-  | move :: rest ->
-      let* () = insert_position t game_id move in
+  | (move, fen) :: rest ->
+      let* () = insert_position t game_id move fen in
       insert_positions t game_id rest (count + 1)
 
 let insert_game (repo : t) ~metadata ~pgn ~moves =
-  let* white_id = upsert_player repo metadata.Metadata.white in
-  let* black_id = upsert_player repo metadata.Metadata.black in
-  let sql =
-    Printf.sprintf
-      "INSERT INTO games\n       (white_player_id, black_player_id, event, site, round, played_on, eco_code, opening_name, opening_slug, result, white_rating, black_rating, pgn)\n       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id;"
-      (sql_int_opt white_id)
-      (sql_int_opt black_id)
-      (sql_string_opt metadata.event)
-      (sql_string_opt metadata.site)
-      (sql_string_opt metadata.round)
-      (sql_string_opt metadata.date)
-      (sql_string_opt metadata.eco_code)
-      (sql_string_opt metadata.opening_name)
-      (sql_string_opt metadata.opening_slug)
-      (sql_string_opt metadata.result)
-      (sql_int_opt metadata.white.rating)
-      (sql_int_opt metadata.black.rating)
-      (sql_string pgn)
-  in
-  let* game_id = insert_single_row repo sql in
-  let+ inserted = insert_positions repo game_id moves 0 in
-  (game_id, inserted)
+  let* fen_sequence = Pgn_to_fen.fens_of_string pgn in
+  let move_count = List.length moves in
+  let fen_count = List.length fen_sequence in
+  if not (Int.equal move_count fen_count) then
+    Or_error.errorf "PGN generated %d moves but %d FEN positions" move_count fen_count
+  else (
+    let* white_id = upsert_player repo metadata.Metadata.white in
+    let* black_id = upsert_player repo metadata.Metadata.black in
+    let sql =
+      Printf.sprintf
+        "INSERT INTO games\n       (white_player_id, black_player_id, event, site, round, played_on, eco_code, opening_name, opening_slug, result, white_rating, black_rating, pgn)\n       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id;"
+        (sql_int_opt white_id)
+        (sql_int_opt black_id)
+        (sql_string_opt metadata.event)
+        (sql_string_opt metadata.site)
+        (sql_string_opt metadata.round)
+        (sql_string_opt metadata.date)
+        (sql_string_opt metadata.eco_code)
+        (sql_string_opt metadata.opening_name)
+        (sql_string_opt metadata.opening_slug)
+        (sql_string_opt metadata.result)
+        (sql_int_opt metadata.white.rating)
+        (sql_int_opt metadata.black.rating)
+        (sql_string pgn)
+    in
+    let* game_id = insert_single_row repo sql in
+    let move_fens = List.zip_exn moves fen_sequence in
+    let+ inserted = insert_positions repo game_id move_fens 0 in
+    (game_id, inserted))
 
 let parse_game_row line =
   match String.split line ~on:'\t' with
