@@ -1,0 +1,350 @@
+openapi: 3.1.0
+info:
+  title: Chessmate API
+  description: >
+    Hybrid chess search API. Analyse a natural-language question and retrieve
+    curated game results combining structured filters and vector similarity.
+  version: 0.1.0
+  contact:
+    name: Chessmate Maintainers
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+tags:
+  - name: health
+    description: Service health probes
+  - name: query
+    description: Chess search endpoints
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Verify the API is reachable
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+  /query:
+    get:
+      tags: [query]
+      summary: Execute a chess search using a query string
+      parameters:
+        - $ref: '#/components/parameters/QuestionQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/QueryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [query]
+      summary: Execute a chess search using a JSON payload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+            examples:
+              simple:
+                value:
+                  question: >
+                    Find King's Indian games where White is 2500 and Black 100 points lower
+      responses:
+        '200':
+          $ref: '#/components/responses/QueryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  parameters:
+    QuestionQuery:
+      name: q
+      in: query
+      description: Natural-language chess question to analyse.
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  responses:
+    QueryResponse:
+      description: Successful query execution
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/QueryResponse'
+          examples:
+            sample:
+              value:
+                question: >
+                  Find King's Indian games where White is 2500 and Black 100 points lower
+                plan:
+                  cleaned_text: find kings indian games where white is 2500 and black 100 points lower
+                  limit: 5
+                  filters:
+                    - field: opening
+                      value: kings_indian_defense
+                    - field: eco_range
+                      value: E60-E99
+                  keywords:
+                    - kings
+                    - indian
+                    - white
+                    - black
+                    - points
+                    - lower
+                  rating:
+                    white_min: 2500
+                    black_min: null
+                    max_rating_delta: 100
+                summary: >
+                  3 games match: White leads with queenside majority attacks while Black trails by ≤100 Elo.
+                results:
+                  - game_id: 42
+                    white: Kasparov, Garry
+                    black: Karpov, Anatoly
+                    result: 1-0
+                    year: 1985
+                    event: World Championship
+                    opening_slug: kings_indian_defense
+                    opening_name: King's Indian Defense
+                    eco: E97
+                    phases: [middlegame]
+                    themes: [attack]
+                    keywords: [kasparov, kings_indian_defense]
+                    white_elo: 2800
+                    black_elo: 2750
+                    synopsis: Kasparov's King's Indian features aggressive pawn storms...
+                    score: 0.86
+                    vector_score: 0.92
+                    keyword_score: 0.71
+                    agent_score: 0.88
+                    agent_explanation: Tactical motifs align with request.
+                    agent_themes: [queenside_attack]
+                    agent_reasoning_effort: high
+                    agent_usage:
+                      input_tokens: 1200
+                      output_tokens: 400
+                      reasoning_tokens: 256
+                warnings:
+                  - Vector search unavailable (falling back to metadata heuristics)
+    BadRequest:
+      description: Invalid or missing request data
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missing-question:
+              value:
+                error: question parameter missing
+    InternalError:
+      description: Unexpected server-side failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            upstream:
+              value:
+                error: Failed to fetch candidate games
+  schemas:
+    QueryRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          description: Natural-language search string.
+          minLength: 1
+    QueryResponse:
+      type: object
+      required:
+        - question
+        - plan
+        - summary
+        - results
+      properties:
+        question:
+          type: string
+        plan:
+          $ref: '#/components/schemas/QueryPlan'
+        summary:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueryResult'
+        warnings:
+          type: array
+          description: Non-fatal issues encountered while processing the query.
+          items:
+            type: string
+    QueryPlan:
+      type: object
+      required:
+        - cleaned_text
+        - limit
+        - filters
+        - keywords
+        - rating
+      properties:
+        cleaned_text:
+          type: string
+          description: Normalised user question used for downstream processing.
+        limit:
+          type: integer
+          minimum: 1
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueryPlanFilter'
+        keywords:
+          type: array
+          items:
+            type: string
+        rating:
+          $ref: '#/components/schemas/QueryPlanRating'
+    QueryPlanFilter:
+      type: object
+      required: [field, value]
+      properties:
+        field:
+          type: string
+        value:
+          type: string
+    QueryPlanRating:
+      type: object
+      properties:
+        white_min:
+          type: integer
+          nullable: true
+          minimum: 0
+        black_min:
+          type: integer
+          nullable: true
+          minimum: 0
+        max_rating_delta:
+          type: integer
+          nullable: true
+          minimum: 0
+    QueryResult:
+      type: object
+      required:
+        - game_id
+        - white
+        - black
+        - result
+        - year
+        - event
+        - opening_slug
+        - opening_name
+        - phases
+        - themes
+        - keywords
+        - synopsis
+        - score
+        - vector_score
+        - keyword_score
+        - agent_themes
+      properties:
+        game_id:
+          type: integer
+        white:
+          type: string
+        black:
+          type: string
+        result:
+          type: string
+          description: Game result in PGN format (1-0, 0-1, 1/2-1/2, or *).
+        year:
+          type: integer
+          minimum: 0
+        event:
+          type: string
+        opening_slug:
+          type: string
+        opening_name:
+          type: string
+        eco:
+          type: string
+          nullable: true
+        phases:
+          type: array
+          items:
+            type: string
+        themes:
+          type: array
+          items:
+            type: string
+        keywords:
+          type: array
+          items:
+            type: string
+        white_elo:
+          type: integer
+          nullable: true
+        black_elo:
+          type: integer
+          nullable: true
+        synopsis:
+          type: string
+        score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        vector_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        keyword_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        agent_score:
+          type: number
+          format: float
+          nullable: true
+          minimum: 0
+          maximum: 1
+        agent_explanation:
+          type: string
+          nullable: true
+        agent_themes:
+          type: array
+          items:
+            type: string
+        agent_reasoning_effort:
+          type: string
+          nullable: true
+          enum: [low, medium, high]
+        agent_usage:
+          $ref: '#/components/schemas/AgentUsage'
+    AgentUsage:
+      type: object
+      nullable: true
+      properties:
+        input_tokens:
+          type: integer
+          nullable: true
+        output_tokens:
+          type: integer
+          nullable: true
+        reasoning_tokens:
+          type: integer
+          nullable: true
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

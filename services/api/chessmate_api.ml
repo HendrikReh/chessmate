@@ -237,6 +237,42 @@ let respond_json ?(status = `OK) json =
   let headers = Cohttp.Header.init_with "Content-Type" "application/json" in
   App.respond' ~code:status ~headers (`String (Yojson.Safe.to_string json))
 
+let respond_yaml ?(status = `OK) text =
+  let headers = Cohttp.Header.init_with "Content-Type" "application/yaml; charset=utf-8" in
+  App.respond' ~code:status ~headers (`String text)
+
+let source_root =
+  lazy
+    (Stdlib.Sys.getenv_opt "DUNE_SOURCEROOT"
+    |> Option.value ~default:".")
+
+let resolve_openapi_path () =
+  match Stdlib.Sys.getenv_opt "CHESSMATE_OPENAPI_SPEC" with
+  | Some raw when not (String.is_empty (String.strip raw)) -> raw
+  | _ ->
+      let root_candidate = Stdlib.Filename.concat (Lazy.force source_root) "docs/openapi.yaml" in
+      if Stdlib.Sys.file_exists root_candidate then root_candidate else "docs/openapi.yaml"
+
+let openapi_spec : ((string * string), string) Base.Result.t Lazy.t =
+  lazy
+    (let path = resolve_openapi_path () in
+     match Or_error.try_with (fun () -> Stdio.In_channel.read_all path) with
+     | Ok contents ->
+         Stdio.eprintf "[chessmate-api][openapi] serving spec from %s\n%!" path;
+         Ok (path, contents)
+     | Error err ->
+         let message = Error.to_string_hum err in
+         Stdio.eprintf "[chessmate-api][openapi] failed to load %s (%s)\n%!" path message;
+         Error message)
+
+let openapi_handler _req =
+  match Lazy.force openapi_spec with
+  | Ok (_, spec) -> respond_yaml spec
+  | Error message ->
+      respond_json
+        ~status:`Internal_server_error
+        (`Assoc [ "error", `String ("OpenAPI specification unavailable: " ^ message) ])
+
 let health_handler _req = respond_plain_text "ok"
 
 let extract_question req =
@@ -315,6 +351,7 @@ let query_handler req =
 let routes =
   App.empty
   |> App.get "/health" health_handler
+  |> App.get "/openapi.yaml" openapi_handler
   |> App.get "/query" query_handler
   |> App.post "/query" query_handler
 

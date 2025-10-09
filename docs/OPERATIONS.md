@@ -16,6 +16,7 @@ Copy `.env.sample` to `.env`, adjust the values, and then export or `source` the
 export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
 export CHESSMATE_API_URL=http://localhost:8080
 export CHESSMATE_TEST_DATABASE_URL=postgres://chess:chess@localhost:5433/postgres  # integration tests
+# export CHESSMATE_OPENAPI_SPEC=/etc/chessmate/openapi.yaml                            # optional override for spec path
 
 # start core services (first run pulls images)
 docker compose up -d postgres qdrant redis
@@ -38,6 +39,7 @@ Cross-check the environment against the [Configuration Reference](DEVELOPER.md#c
 - Query API (prototype): `dune exec services/api/chessmate_api.exe -- --port 8080`.
 - Embedding worker: `OPENAI_API_KEY=... dune exec services/embedding_worker/embedding_worker.exe -- --workers N` (run multiple loops inside one process; increase `N` gradually when clearing backlogs).
 - CLI queries: `dune exec chessmate -- query "find king's indian games"` (ensure the API is running in another shell).
+- OpenAPI specification: `curl http://localhost:8080/openapi.yaml` (serve an alternate file by exporting `CHESSMATE_OPENAPI_SPEC`).
 - Queue metrics: `scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log` keeps per-status counts, throughput, and ETA.
 - Startup sanity check: both processes emit a `[...][config]` line summarising detected env vars (port, database URL presence, agent/Redis caches). If a variable shows as `missing`, correct it before continuing.
 - High-volume ingest: adjust `CHESSMATE_INGEST_CONCURRENCY` (default 4) to balance CPU throughput vs. Postgres load when parsing large PGN dumps.
