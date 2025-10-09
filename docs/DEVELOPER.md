@@ -20,6 +20,7 @@ The executables validate their environment on startup and exit with a clear erro
 | Variable | Required | Default | Used by | Notes |
 | --- | --- | --- | --- | --- |
 | `DATABASE_URL` | ✅ | — | API, worker, CLI | Postgres connection string. |
+| `CHESSMATE_DB_POOL_SIZE` | ⛏️ | `10` | API, worker | Max Postgres connections in the shared pool. |
 | `QDRANT_URL` | ✅ | — | API, worker (indirect) | Base URL for Qdrant HTTP API. |
 | `CHESSMATE_API_PORT` | ⛏️ | `8080` | API | Port the HTTP server binds to. |
 | `CHESSMATE_API_URL` | ⛏️ | `http://localhost:8080` | CLI | Base URL for `chessmate query`. |

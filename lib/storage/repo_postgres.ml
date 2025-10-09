@@ -40,9 +40,96 @@ type game_summary = {
 }
 
 type t = {
-  conn : Pg.connection;
+  mutable available : Pg.connection list;
+  mutable in_use : int;
+  mutable waiting : int;
+  capacity : int;
   mutex : Stdlib.Mutex.t;
+  cond : Stdlib.Condition.t;
 }
+
+type pool_stats = {
+  capacity : int;
+  in_use : int;
+  available : int;
+  waiting : int;
+}
+
+let pool_size_env = "CHESSMATE_DB_POOL_SIZE"
+
+let default_pool_size = 10
+
+let parse_pool_size () =
+  match Stdlib.Sys.getenv_opt pool_size_env with
+  | None -> default_pool_size
+  | Some raw -> (
+      match Int.of_string_opt (String.strip raw) with
+      | Some value when value > 0 -> value
+      | _ -> default_pool_size)
+
+let finish_connection conn =
+  try conn#finish with _ -> ()
+
+let rec create_connections conninfo count acc =
+  if count <= 0 then Or_error.return (List.rev acc)
+  else
+    match Or_error.try_with (fun () -> new Pg.connection ~conninfo ()) with
+    | Ok conn -> create_connections conninfo (count - 1) (conn :: acc)
+    | Error err ->
+        List.iter acc ~f:finish_connection;
+        Error err
+
+let create conninfo =
+  if String.is_empty (String.strip conninfo) then
+    Or_error.error_string "Postgres connection string cannot be empty"
+  else
+    let pool_size = parse_pool_size () in
+    match create_connections conninfo pool_size [] with
+    | Error err -> Error err
+    | Ok connections ->
+        Or_error.return
+          { available = connections
+          ; in_use = 0
+          ; waiting = 0
+          ; capacity = pool_size
+          ; mutex = Stdlib.Mutex.create ()
+          ; cond = Stdlib.Condition.create () }
+
+let with_connection t f =
+  Stdlib.Mutex.lock t.mutex;
+  let rec acquire () =
+    match t.available with
+    | conn :: rest ->
+        t.available <- rest;
+        t.in_use <- t.in_use + 1;
+        Stdlib.Mutex.unlock t.mutex;
+        conn
+    | [] ->
+        t.waiting <- t.waiting + 1;
+        Stdlib.Condition.wait t.cond t.mutex;
+        t.waiting <- Int.max 0 (t.waiting - 1);
+        acquire ()
+  in
+  let conn = acquire () in
+  Exn.protect
+    ~f:(fun () -> f conn)
+    ~finally:(fun () ->
+      Stdlib.Mutex.lock t.mutex;
+      t.in_use <- Int.max 0 (t.in_use - 1);
+      t.available <- conn :: t.available;
+      Stdlib.Condition.signal t.cond;
+      Stdlib.Mutex.unlock t.mutex)
+
+let pool_stats t =
+  Stdlib.Mutex.lock t.mutex;
+  let stats =
+    { capacity = t.capacity
+    ; in_use = t.in_use
+    ; available = List.length t.available
+    ; waiting = t.waiting }
+  in
+  Stdlib.Mutex.unlock t.mutex;
+  stats
 
 type vector_payload = {
   position_id : int;
@@ -68,38 +155,34 @@ let try_pg f =
   | exn -> Or_error.of_exn exn
 
 let exec_raw t query params =
-  Stdlib.Mutex.lock t.mutex;
-  let result =
-    let perform () =
-      match params with
-      | [] -> t.conn#exec query
-      | _ ->
-          let param_array =
-            params
-            |> List.map ~f:(function Some value -> value | None -> Pg.null)
-            |> Array.of_list
-          in
-          t.conn#exec ~params:param_array query
-    in
-    match try_pg perform with
-    | Error err ->
-        let message = Sanitizer.sanitize_string (Error.to_string_hum err) in
-        Error (Error.of_string message)
-    | Ok res -> (
-        match res#status with
-        | Pg.Command_ok
-        | Pg.Tuples_ok -> Ok res
-        | status ->
-            let msg = String.strip t.conn#error_message in
-            let message =
-              if String.is_empty msg then
-                Printf.sprintf "Postgres returned unexpected status %s" (string_of_status status)
-              else msg
+  with_connection t (fun conn ->
+      let perform () =
+        match params with
+        | [] -> conn#exec query
+        | _ ->
+            let param_array =
+              params
+              |> List.map ~f:(function Some value -> value | None -> Pg.null)
+              |> Array.of_list
             in
-            Or_error.error_string message)
-  in
-  Stdlib.Mutex.unlock t.mutex;
-  result
+            conn#exec ~params:param_array query
+      in
+      match try_pg perform with
+      | Error err ->
+          let message = Sanitizer.sanitize_string (Error.to_string_hum err) in
+          Error (Error.of_string message)
+      | Ok res -> (
+          match res#status with
+          | Pg.Command_ok
+          | Pg.Tuples_ok -> Ok res
+          | status ->
+              let raw_message = String.strip conn#error_message in
+              let message =
+                if String.is_empty raw_message then
+                  Printf.sprintf "Postgres returned unexpected status %s" (string_of_status status)
+                else Sanitizer.sanitize_string raw_message
+              in
+              Or_error.error_string message))
 
 let exec_unit t query params =
   let* _ = exec_raw t query params in
@@ -124,18 +207,6 @@ let fetch_returning_int t query params =
   else
     let value = result#getvalue 0 0 in
     parse_int "id" value
-
-let create conninfo =
-  if String.is_empty (String.strip conninfo) then
-    Or_error.error_string "Postgres connection string cannot be empty"
-  else
-    match Or_error.try_with (fun () -> new Pg.connection ~conninfo ()) with
-    | Ok conn -> Or_error.return { conn; mutex = Stdlib.Mutex.create () }
-    | Error err ->
-        let exn = Error.to_exn err in
-        (match exn with
-        | Pg.Error pg_err -> Or_error.error_string (Pg.string_of_error pg_err)
-        | _ -> Error err)
 
 let normalize_eco_code s = String.uppercase (String.strip s)
 

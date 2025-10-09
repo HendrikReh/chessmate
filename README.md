@@ -291,6 +291,17 @@ Typical JSON response:
 }
 ```
 
+### Metrics
+```sh
+curl http://localhost:8080/metrics
+# db_pool_capacity 10
+# db_pool_in_use 1
+# db_pool_available 9
+# db_pool_waiting 0
+```
+
+The pool size can be tuned via `CHESSMATE_DB_POOL_SIZE` (default 10).
+
 ## Repository Structure
 ```
 lib/            # OCaml libraries (chess, storage, embedding, query, cli)

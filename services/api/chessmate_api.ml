@@ -271,9 +271,28 @@ let openapi_handler _req =
   | Error message ->
       respond_json
         ~status:`Internal_server_error
-        (`Assoc [ "error", `String ("OpenAPI specification unavailable: " ^ message) ])
+        (`Assoc [ "error", `String ("OpenAPI specification unavailable: " ^ Sanitizer.sanitize_string message) ])
 
 let health_handler _req = respond_plain_text "ok"
+
+let metrics_handler _req =
+  match Lazy.force postgres_repo with
+  | Error err ->
+      respond_plain_text ~status:`Internal_server_error (Sanitizer.sanitize_error err)
+  | Ok repo ->
+      let stats = Repo_postgres.pool_stats repo in
+      let body =
+        Printf.sprintf
+          "db_pool_capacity %d\n\
+           db_pool_in_use %d\n\
+           db_pool_available %d\n\
+           db_pool_waiting %d\n"
+          stats.capacity
+          stats.in_use
+          stats.available
+          stats.waiting
+      in
+      respond_plain_text body
 
 let extract_question req =
   let open Lwt.Syntax in
@@ -351,6 +370,7 @@ let query_handler req =
 let routes =
   App.empty
   |> App.get "/health" health_handler
+  |> App.get "/metrics" metrics_handler
   |> App.get "/openapi.yaml" openapi_handler
   |> App.get "/query" query_handler
   |> App.post "/query" query_handler

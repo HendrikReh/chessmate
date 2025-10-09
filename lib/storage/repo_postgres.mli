@@ -25,6 +25,16 @@ type t
 val create : string -> t Or_error.t
 (** Initialize a repository using a database connection string. *)
 
+type pool_stats = {
+  capacity : int;
+  in_use : int;
+  available : int;
+  waiting : int;
+}
+
+val pool_stats : t -> pool_stats
+(** Expose current pool utilisation for diagnostics/metrics. *)
+
 val insert_game :
   t ->
   metadata:Game_metadata.t ->
