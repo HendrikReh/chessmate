@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Models embedding jobs and their status transitions in Postgres. *)
+
 open! Base
 
 (** Status of an embedding job. *)

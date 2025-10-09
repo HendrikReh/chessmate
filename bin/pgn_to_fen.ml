@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(* Legacy CLI that converts PGN files into FEN sequences. *)
+
 open! Base
 open Stdio
 open Chessmate

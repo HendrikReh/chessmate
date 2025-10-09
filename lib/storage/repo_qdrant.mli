@@ -16,9 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-open! Base
+(** Minimal Qdrant client for upserting and searching chess position vectors. *)
 
-(** Wrapper around Qdrant HTTP API. *)
+open! Base
 
 type point = {
   id : string;

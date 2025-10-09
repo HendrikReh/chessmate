@@ -16,9 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-open! Base
+(** Helpers for reading and updating the embedding job queue in Postgres. *)
 
-(** Simple interface for managing ingestion jobs. *)
+open! Base
 
 type job = {
   fen : string;

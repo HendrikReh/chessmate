@@ -16,48 +16,166 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(* Embedding worker loop that drains jobs and persists vectors. *)
+
 open! Base
 open Stdio
 open Chessmate
 
-let log msg = printf "[worker] %s\n%!" msg
-let warn msg = eprintf "[worker][warn] %s\n%!" msg
-let error msg = eprintf "[worker][error] %s\n%!" msg
+let prefix_for = function
+  | None -> "[worker]"
+  | Some label -> Printf.sprintf "[worker:%s]" label
+
+let log ?label msg = printf "%s %s\n%!" (prefix_for label) msg
+let warn ?label msg = eprintf "%s %s\n%!" (prefix_for label) msg
+let error ?label msg = eprintf "%s %s\n%!" (prefix_for label) msg
 
 let fetch_env name =
   match Stdlib.Sys.getenv_opt name with
   | Some value when not (String.is_empty (String.strip value)) -> Or_error.return value
   | _ -> Or_error.errorf "%s not set" name
 
-let process_job repo embedding_client job =
-  match Repo_postgres.mark_job_started repo ~job_id:job.Embedding_job.id with
-  | Error err -> error (Error.to_string_hum err)
-  | Ok () ->
-      (match Embedding_client.embed_fens embedding_client [ job.fen ] with
-      | Error err ->
-          let _ = Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:(Error.to_string_hum err) in
-          error (Printf.sprintf "job %d failed: %s" job.id (Error.to_string_hum err))
-      | Ok vectors ->
-          let vector_id = Stdlib.Digest.string job.fen |> Stdlib.Digest.to_hex in
-          let () = ignore vectors in
-          (match Repo_postgres.mark_job_completed repo ~job_id:job.id ~vector_id with
-          | Ok () -> log (Printf.sprintf "job %d completed" job.id)
-          | Error err -> error (Printf.sprintf "job %d completion update failed: %s" job.id (Error.to_string_hum err))))
+type stats = {
+  mutable processed : int;
+  mutable failed : int;
+}
 
-let rec work_loop repo embedding_client ~poll_sleep =
-  match Repo_postgres.fetch_pending_jobs repo ~limit:16 with
+let stats_lock = Stdlib.Mutex.create ()
+
+let record_result stats ~failed =
+  Stdlib.Mutex.lock stats_lock;
+  stats.processed <- stats.processed + 1;
+  if failed then stats.failed <- stats.failed + 1;
+  Stdlib.Mutex.unlock stats_lock
+
+type exit_condition = {
+  limit : int option;
+  mutable empty_streak : int;
+  mutable triggered : bool;
+  mutable announced : bool;
+  mutex : Stdlib.Mutex.t;
+}
+
+let make_exit_condition limit =
+  { limit; empty_streak = 0; triggered = false; announced = false; mutex = Stdlib.Mutex.create () }
+
+let should_stop exit_condition =
+  Stdlib.Mutex.lock exit_condition.mutex;
+  let triggered = exit_condition.triggered in
+  Stdlib.Mutex.unlock exit_condition.mutex;
+  triggered
+
+let note_jobs exit_condition =
+  match exit_condition.limit with
+  | None -> ()
+  | Some _ ->
+      Stdlib.Mutex.lock exit_condition.mutex;
+      exit_condition.empty_streak <- 0;
+      Stdlib.Mutex.unlock exit_condition.mutex
+
+let note_empty exit_condition =
+  Stdlib.Mutex.lock exit_condition.mutex;
+  let result =
+    match exit_condition.limit with
+    | None -> `Continue
+    | Some limit ->
+        if exit_condition.triggered then `Stop false
+        else (
+          exit_condition.empty_streak <- exit_condition.empty_streak + 1;
+          if exit_condition.empty_streak >= limit then (
+            exit_condition.triggered <- true;
+            `Stop true)
+          else `Continue)
+  in
+  Stdlib.Mutex.unlock exit_condition.mutex;
+  result
+
+let force_stop exit_condition =
+  Stdlib.Mutex.lock exit_condition.mutex;
+  exit_condition.triggered <- true;
+  Stdlib.Mutex.unlock exit_condition.mutex
+
+let mark_announced exit_condition =
+  Stdlib.Mutex.lock exit_condition.mutex;
+  let first = not exit_condition.announced in
+  exit_condition.announced <- true;
+  Stdlib.Mutex.unlock exit_condition.mutex;
+  first
+
+let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
+  match Embedding_client.embed_fens embedding_client [ job.fen ] with
   | Error err ->
-      warn (Printf.sprintf "failed to fetch jobs: %s" (Error.to_string_hum err));
-      Unix.sleepf poll_sleep;
-      work_loop repo embedding_client ~poll_sleep
-  | Ok [] ->
-      Unix.sleepf poll_sleep;
-      work_loop repo embedding_client ~poll_sleep
-  | Ok jobs ->
-      List.iter jobs ~f:(process_job repo embedding_client);
-      work_loop repo embedding_client ~poll_sleep
+      let _ = Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:(Error.to_string_hum err) in
+      error ?label (Printf.sprintf "job %d failed: %s" job.id (Error.to_string_hum err));
+      record_result stats ~failed:true
+  | Ok vectors ->
+      let vector_id = Stdlib.Digest.string job.fen |> Stdlib.Digest.to_hex in
+      let () = ignore vectors in
+      (match Repo_postgres.mark_job_completed repo ~job_id:job.id ~vector_id with
+      | Ok () ->
+          log ?label (Printf.sprintf "job %d completed" job.id);
+          record_result stats ~failed:false
+      | Error err ->
+          error ?label (Printf.sprintf "job %d completion update failed: %s" job.id (Error.to_string_hum err));
+          record_result stats ~failed:true)
+
+let rec work_loop repo embedding_client ~poll_sleep ~label stats exit_condition =
+  if should_stop exit_condition then ()
+  else
+    match Repo_postgres.claim_pending_jobs repo ~limit:16 with
+    | Error err ->
+        warn ?label (Printf.sprintf "failed to fetch jobs: %s" (Error.to_string_hum err));
+        Unix.sleepf poll_sleep;
+        work_loop repo embedding_client ~poll_sleep ~label stats exit_condition
+    | Ok [] ->
+        (match note_empty exit_condition with
+        | `Continue ->
+            Unix.sleepf poll_sleep;
+            work_loop repo embedding_client ~poll_sleep ~label stats exit_condition
+        | `Stop first_trigger ->
+            if first_trigger then (
+              let first_global = mark_announced exit_condition in
+              if first_global then log ?label "exit-after-empty threshold reached" else ());
+            ())
+    | Ok jobs ->
+        note_jobs exit_condition;
+        List.iter jobs ~f:(process_job repo embedding_client ~label stats);
+        work_loop repo embedding_client ~poll_sleep ~label stats exit_condition
+
+let poll_sleep = ref 2.0
+let concurrency = ref 1
+let exit_after_empty = ref None
+
+let usage_msg = "Usage: embedding_worker [--poll-sleep SECONDS] [--workers COUNT] [--exit-after-empty N]"
+
+let anon_args = ref []
 
 let () =
+  let speclist =
+    [ ( "--poll-sleep"
+      , Stdlib.Arg.Set_float poll_sleep
+      , "Seconds between polling attempts (default: 2.0)" )
+    ; ( "--workers"
+      , Stdlib.Arg.Set_int concurrency
+      , "Number of worker loops to run concurrently (default: 1)" )
+    ; ( "--exit-after-empty"
+      , Stdlib.Arg.Int (fun n -> exit_after_empty := Some (Int.max 1 n))
+      , "Exit after N consecutive empty polls (default: run indefinitely)" )
+    ; ( "-w"
+      , Stdlib.Arg.Set_int concurrency
+      , "Alias for --workers" )
+    ]
+  in
+  Stdlib.Arg.parse
+    speclist
+    (fun arg -> anon_args := arg :: !anon_args)
+    usage_msg;
+  (match !anon_args with
+  | [] -> ()
+  | _ ->
+      eprintf "[worker][fatal] unexpected positional arguments: %s\n%!" (String.concat ~sep:" " (List.rev !anon_args));
+      Stdlib.exit 1);
+  let sleep_interval = Float.max 0.1 !poll_sleep in
   let env_result =
     fetch_env "DATABASE_URL"
     |> Or_error.bind ~f:(fun db_url ->
@@ -75,5 +193,58 @@ let () =
       eprintf "[worker][fatal] %s\n%!" (Error.to_string_hum err);
       Stdlib.exit 1
   | Ok (repo, embedding_client) ->
-      log "starting polling loop";
-      work_loop repo embedding_client ~poll_sleep:2.0
+      let start_time = Unix.gettimeofday () in
+      let stats = { processed = 0; failed = 0 } in
+      let exit_condition = make_exit_condition !exit_after_empty in
+      let worker_count = Int.max 1 !concurrency in
+      if Int.equal worker_count 1 then (
+        log "starting polling loop";
+        Stdlib.Sys.catch_break true;
+        let run () = work_loop repo embedding_client ~poll_sleep:sleep_interval ~label:None stats exit_condition in
+        (try run () with
+        | Stdlib.Sys.Break ->
+            log "interrupt received, shutting down";
+            force_stop exit_condition
+        | exn ->
+            warn "unexpected exception, shutting down";
+            warn (Exn.to_string exn);
+            force_stop exit_condition);
+        let elapsed = Unix.gettimeofday () -. start_time in
+        log (Printf.sprintf "summary: processed=%d failures=%d duration=%.2fs"
+               stats.processed stats.failed elapsed))
+      else (
+        log (Printf.sprintf "starting %d worker loops (poll_sleep=%.2fs)" worker_count sleep_interval);
+        Stdlib.Sys.catch_break true;
+        let labels = List.init worker_count ~f:(fun idx -> Some (Int.to_string (idx + 1))) in
+        let threads =
+          List.map labels ~f:(fun label ->
+              Thread.create
+                (fun label ->
+                  log ?label "starting polling loop";
+                  work_loop
+                    repo
+                    embedding_client
+                    ~poll_sleep:sleep_interval
+                    ~label
+                    stats
+                    exit_condition)
+                label)
+        in
+        let rec join_all () =
+          try List.iter threads ~f:Thread.join with
+          | Stdlib.Sys.Break ->
+              log "interrupt received, cancelling workers";
+              force_stop exit_condition;
+              join_all ()
+        in
+        (try join_all () with
+        | exn ->
+            warn "unexpected exception, cancelling workers";
+            warn (Exn.to_string exn);
+            force_stop exit_condition;
+            List.iter threads ~f:(fun thread ->
+                try Thread.join thread with
+                | _ -> ()));
+        let elapsed = Unix.gettimeofday () -. start_time in
+        log (Printf.sprintf "summary: processed=%d failures=%d duration=%.2fs"
+               stats.processed stats.failed elapsed))

@@ -1,7 +1,7 @@
 # Chessmate
 
 [![OCaml](https://img.shields.io/badge/OCaml-%3E%3D%205.1-orange.svg)](https://ocaml.org)
-[![Version](https://img.shields.io/badge/Version-0.4.0-blue.svg)](RELEASE_NOTES.md)
+[![Version](https://img.shields.io/badge/Version-0.5.0-blue.svg)](RELEASE_NOTES.md)
 [![Status](https://img.shields.io/badge/Status-Proof%20of%20Concept-yellow.svg)](docs/IMPLEMENTATION_PLAN.md)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/HendrikReh/chessmate/ci.yml?branch=master)](https://github.com/HendrikReh/chessmate/actions)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -12,29 +12,31 @@
 Self-hosted chess tutor that blends relational data (PostgreSQL) with vector search (Qdrant) to answer natural-language questions about annotated chess games. OCaml powers ingestion, hybrid retrieval, and CLI tooling.
 
 ## Requirements
-- OCaml 5.1.0 (managed via opam) and Dune ≥ 3.20.
-- Docker & Docker Compose (local Postgres + Qdrant stack).
-- PostgreSQL client (`psql`) on your `PATH`.
-- `curl` (embedding worker diagnostics).
-- Optional: `OPENAI_API_KEY` if you want to run the embedding worker against OpenAI.
+- OCaml ≥ 5.1 (opam-managed switch) and Dune ≥ 3.20.
+- Docker & Docker Compose (brings up Postgres, Qdrant, Redis).
+- `psql` CLI (migrations/ingest) and `curl` for health checks.
+- `.env` derived from `.env.sample` — set `DATABASE_URL`, `QDRANT_URL`, and optionally `AGENT_*` / `OPENAI_API_KEY`.
+- Redis (local Docker service) when GPT-5 agent caching is enabled.
 
 ## Feature Highlights
 - **PGN ingestion pipeline:** parses headers/SAN, derives per-ply FEN snapshots, extracts ECO codes, and persists metadata (players, openings, results) to Postgres.
 - **Opening catalogue:** maps natural-language opening phrases to ECO ranges (`lib/chess/openings`), so queries like “King’s Indian games” become deterministic filters.
 - **Prototype hybrid search:** milestone 4 ships an Opium-based `/query` API (`dune exec chessmate_api`) plus `chessmate query` CLI surfacing intent analysis and curated sample results.
-- **Embedding worker skeleton:** polls `embedding_jobs`, calls OpenAI embeddings, and records vector identifiers ready for Qdrant sync.
-- **Diagnostics tooling:** `chessmate fen <game.pgn>` prints per-ply FENs; ingestion/worker CLIs emit structured logs for troubleshooting.
+- **Embedding pipeline & safeguards:** worker polls `embedding_jobs`, calls OpenAI embeddings, records vector identifiers for Qdrant, and now benefits from an ingest guard that halts new PGNs when the queue crosses a configurable threshold.
+- **Agent ranking (optional):** when `AGENT_API_KEY` is set, a GPT-5 agent re-scores results, surfaces explanations/themes, honours the new `reasoning.effort`/verbosity controls, and now emits structured telemetry (latency, tokens, cost estimates).
+- **Diagnostics tooling:** `chessmate fen <game.pgn>` prints per-ply FENs; ingestion/worker CLIs emit structured logs for troubleshooting; `scripts/embedding_metrics.sh` surfaces queue depth, throughput, and ETA snapshots.
 
 ## Getting Started
 1. Clone and enter the repository.
-2. Create an opam switch and install dependencies:
+2. Copy `.env.sample` to `.env` and adjust the environment variables (see comments inside the file).
+3. Create an opam switch and install dependencies:
    ```sh
    opam switch create . 5.1.0
    opam install . --deps-only --with-test
    ```
-3. Launch backing services (Postgres, Qdrant) via Docker (first run may take a minute while images download):
+4. Launch backing services (Postgres, Qdrant) via Docker (first run may take a minute while images download):
    ```sh
-   docker compose up -d postgres qdrant
+    docker compose up -d postgres qdrant redis
    ```
 4. Initialize the database (migrations expect `DATABASE_URL` to be set):
    ```sh
@@ -55,11 +57,17 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    # In another shell, call the API via the CLI (set CHESSMATE_API_URL if you changed the port)
    CHESSMATE_API_URL=http://localhost:8080 dune exec chessmate -- query "Find King's Indian games where White is 2500 and Black 100 points lower"
 
-   # Ingest a PGN (persists players/games/positions/openings)
+   # Ingest a PGN (persists players/games/positions/openings). The CLI aborts if the
+   # embedding queue already exceeds CHESSMATE_MAX_PENDING_EMBEDDINGS (default 250k).
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec chessmate -- ingest test/fixtures/extended_sample_game.pgn
 
    # Run the embedding worker loop (requires OPENAI_API_KEY for real embeddings)
-   OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec embedding_worker
+   OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     dune exec embedding_worker -- --workers 2 --poll-sleep 1.5
+
+   # Enable GPT-5 agent ranking (optional)
+   AGENT_API_KEY=dummy-agents-key AGENT_REASONING_EFFORT=high AGENT_CACHE_REDIS_URL=redis://localhost:6379/0 \
+     DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec chessmate -- query "Find attacking King's Indian games"
 
    # Generate FENs from a PGN for quick inspection
    chessmate fen test/fixtures/sample_game.pgn
@@ -73,7 +81,7 @@ scripts/        # Database migrations (`migrate.sh`, `migrations/`, seeds)
 services/       # Long-running services (e.g., embedding_worker)
 docs/           # Architecture, developer, ops, and planning docs
 test/           # Alcotest suites
-data/           # Bind-mounted volumes for Postgres and Qdrant
+data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
 ```
 
 ## Services & CLIs
@@ -82,7 +90,67 @@ data/           # Bind-mounted volumes for Postgres and Qdrant
 - `chessmate twic-precheck <pgn>`: scans TWIC PGNs for malformed entries before ingestion.
 - `chessmate query "…"`: sends questions to the running query API (`CHESSMATE_API_URL` defaults to `http://localhost:8080`).
 - `chessmate fen <pgn> [output]`: prints FEN after each half-move (optional output file).
-- `OPENAI_API_KEY=… chessmate embedding-worker`: polls `embedding_jobs`, calls OpenAI, updates vector IDs.
+- `OPENAI_API_KEY=… chessmate embedding-worker [--workers N] [--poll-sleep SECONDS]`: polls `embedding_jobs`, calls OpenAI, updates vector IDs. Use `--workers` to run multiple concurrent loops safely.
+
+### Operational Scripts
+- `scripts/embedding_metrics.sh [--interval N] [--log path]`: report queue depth, recent throughput, and ETA for draining pending jobs.
+- `scripts/prune_pending_jobs.sh [batch_size]`: mark pending jobs whose positions already have vectors as completed (useful after re-ingest).
+
+### Ingestion & Queue Monitoring
+1. Set an appropriate guard before heavy ingest runs:
+   ```sh
+   # Limit pending jobs to 400k before the CLI aborts (0 disables the guard)
+   export CHESSMATE_MAX_PENDING_EMBEDDINGS=400000
+   ```
+2. Kick off ingest as usual; the command aborts early once the guard threshold is reached.
+3. In a separate shell, stream queue metrics every couple of minutes and log them for later analysis:
+   ```sh
+   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log
+   ```
+   Sample output:
+   ```
+   [2025-10-08T06:41:09Z] embedding jobs snapshot
+     total        : 756744
+     pending      : 607083
+     in_progress  : 2
+     completed    : 149601
+     failed       : 58
+     throughput/min (5m | 15m | 60m): 0 | 60.40 | 88.88
+     pending ETA  : 10051 minutes (~167.5 hours) based on 15m rate
+   ```
+4. Keep the embedding worker ahead of the queue:
+   ```sh
+   OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     dune exec embedding_worker -- --workers 4 --poll-sleep 1.0
+   ```
+   Increase or reduce `--workers` based on the metrics output; look for falling `pending` and steady throughput.
+5. Keep the GPT-5 agent (if enabled) supplied with fresh vectors:
+   ```sh
+   AGENT_API_KEY=real-key AGENT_REASONING_EFFORT=medium \
+     DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     CHESSMATE_API_URL=http://localhost:8080 dune exec chessmate -- query "Explain thematic rook sacrifices"
+   ```
+   Agent responses include explanations, detected themes, and token usage in the API/CLI output.
+6. If the guard triggers or throughput drops unexpectedly, prune stale work before resuming:
+   ```sh
+   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     scripts/prune_pending_jobs.sh 2000
+   ```
+
+### Agent Configuration
+- `AGENT_API_KEY`: required to enable GPT-5 ranking (absent → agent disabled).
+- `AGENT_MODEL`: optional, defaults to `gpt-5` (also supports `gpt-5-mini`, `gpt-5-nano`).
+- `AGENT_REASONING_EFFORT`: one of `minimal|low|medium|high`; defaults to `medium`.
+- `AGENT_VERBOSITY`: `low|medium|high` (choose higher values for verbose reports).
+- `AGENT_ENDPOINT`: override the OpenAI Responses API endpoint (advanced setups).
+- `AGENT_CACHE_REDIS_URL`: optional `redis://` URL to persist GPT-5 evaluations (requires the Redis service in `docker-compose`).
+- `AGENT_CACHE_REDIS_NAMESPACE`: optional key namespace (defaults to `chessmate:agent:` when unset).
+- `AGENT_CACHE_TTL_SECONDS`: optional positive integer TTL for Redis entries (omit to keep cached values indefinitely).
+- `AGENT_CACHE_CAPACITY`: fallback in-memory cache size (positive integer) when Redis is unavailable or intentionally disabled.
+- `AGENT_COST_INPUT_PER_1K`, `AGENT_COST_OUTPUT_PER_1K`, `AGENT_COST_REASONING_PER_1K`: optional USD rates that power telemetry cost estimates (set per 1K tokens; unset → costs omitted).
+
+When any of these variables change, restart API/CLI sessions so the lazy client picks up the new configuration. The API/CLI prints telemetry lines prefixed with `[agent-telemetry]` containing the sanitized question, candidate counts, latency, token usage, and any cost estimates.
 
 ### CLI Usage
 Example CLI session (assuming Postgres is running locally):
@@ -90,9 +158,11 @@ Example CLI session (assuming Postgres is running locally):
 export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
 CHESSMATE_API_URL=http://localhost:8080
 
-# Ingest a PGN
+# Ingest a PGN (guarded by CHESSMATE_MAX_PENDING_EMBEDDINGS)
 chessmate ingest test/fixtures/extended_sample_game.pgn
 # => Stored game 1 with 77 positions
+# If the embedding queue already exceeds the guard, the command aborts early.
+# Set CHESSMATE_MAX_PENDING_EMBEDDINGS=0 (or a higher integer) to adjust the limit.
 
 # Ask a question (make sure the API is running in another shell)
 chessmate query "Show French Defense draws with queenside majority endings"
@@ -112,12 +182,52 @@ for pgn in fixtures/*.pgn; do
 done
 ```
 
-Worker loop with log snippets (using a dummy API key in dry-run mode):
+### Example Query Session
+After loading a larger event (e.g. TWIC bulletin), the CLI can surface random games or specific openings. The transcript below comes from a live session:
+
+```sh
+$ dune exec chessmate -- query "Show me 5 random games"
+Summary: #3954 Smolik,Jachym vs Yurovskykh,Oleksandr (score 0.42)
+#3953 Prokofiev,Valentyn vs Prazak,Daniel (score 0.42)
+#3952 Velicka,P vs Haring,Filip (score 0.42)
+#3951 Rasik,V vs Akshat Sureka (score 0.42)
+#3950 Mayank,Chakraborty vs Cvek,R (score 0.42)
+Limit: 5
+Filters: No structured filters detected
+Ratings: none
+Results:
+1. #3954 Smolik,Jachym vs Yurovskykh,Oleksandr [English opening] score 0.42
+       Smolik,Jachym vs Yurovskykh,Oleksandr — 3rd Gambit GM Closed 2025 (1/2-1/2)
+2. #3953 Prokofiev,Valentyn vs Prazak,Daniel [QGD Slav] score 0.42
+       Prokofiev,Valentyn vs Prazak,Daniel — 3rd Gambit GM Closed 2025 (1-0)
+...
+
+$ dune exec chessmate -- query "Show me games in the English opening (5 max)"
+Summary: #3954 Smolik,Jachym vs Yurovskykh,Oleksandr (score 0.90)
+#420 Smolik,Jachym vs Yurovskykh,Oleksandr (score 0.90)
+#106 Smolik,Jachym vs Yurovskykh,Oleksandr (score 0.90)
+#8138 Sarno,S vs Montorsi,Matteo (score 0.90)
+#8132 Lumachi,Gabriele vs Fedorchuk,S (score 0.90)
+Limit: 5
+Filters: eco_range=A10-A39, opening=english_opening
+Ratings: none
+Results:
+1. #3954 Smolik,Jachym vs Yurovskykh,Oleksandr [English opening] score 0.90
+       Smolik,Jachym vs Yurovskykh,Oleksandr — 3rd Gambit GM Closed 2025 (1/2-1/2)
+...
+```
+
+These logs demonstrate how the planner surfaces structured filters (ECO ranges, openings) and how the result list shifts once the database contains relevant games.
+
 ```sh
 OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
   chessmate embedding-worker
 # [worker] starting polling loop
 # [worker] job 42 completed
+
+# In another shell, watch queue depth and ETA every 10 minutes
+DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+  scripts/embedding_metrics.sh --interval 600
 ```
 
 FEN tooling for sanity checks:
@@ -184,7 +294,7 @@ scripts/        # Database migrations (`migrate.sh`, `migrations/`, seeds)
 services/       # Long-running services (e.g., embedding_worker, API prototype)
 docs/           # Architecture, developer, ops, and planning docs
 test/           # Alcotest suites
-data/           # Bind-mounted volumes for Postgres and Qdrant
+data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
 ```
 
 ## Resetting the Stack

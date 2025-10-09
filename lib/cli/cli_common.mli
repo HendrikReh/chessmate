@@ -16,9 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-open! Base
+(** Shared CLI helpers for environment setup, logging, and error reporting. *)
 
-(** Shared helpers for command-line entry points. *)
+open! Base
 
 val with_db_url : (string -> 'a Or_error.t) -> 'a Or_error.t
 (** Fetch [DATABASE_URL] from the environment using [Stdlib.Sys.getenv_opt] and apply the provided function. *)

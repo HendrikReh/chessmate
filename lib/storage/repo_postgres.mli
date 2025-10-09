@@ -16,9 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-open! Base
+(** Postgres repository for ingesting games, managing jobs, and fetching query data. *)
 
-(** Storage facade for PostgreSQL interactions. *)
+open! Base
 
 type t
 
@@ -54,7 +54,8 @@ val search_games :
   limit:int ->
   game_summary list Or_error.t
 
-val fetch_pending_jobs : t -> limit:int -> Embedding_job.t list Or_error.t
-val mark_job_started : t -> job_id:int -> unit Or_error.t
+val pending_embedding_job_count : t -> int Or_error.t
+val fetch_games_with_pgn : t -> ids:int list -> (int * string) list Or_error.t
+val claim_pending_jobs : t -> limit:int -> Embedding_job.t list Or_error.t
 val mark_job_completed : t -> job_id:int -> vector_id:string -> unit Or_error.t
 val mark_job_failed : t -> job_id:int -> error:string -> unit Or_error.t

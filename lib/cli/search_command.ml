@@ -72,8 +72,42 @@ let parse_success body =
           let white = item |> member "white" |> to_string in
           let black = item |> member "black" |> to_string in
           let score = item |> member "score" |> to_float in
-          let opening = item |> member "opening" |> to_string in
+          let opening =
+            match member "opening_name" item |> to_string_option with
+            | Some name when not (String.is_empty (String.strip name)) -> name
+            | _ ->
+                Option.value
+                  (member "opening_slug" item |> to_string_option)
+                  ~default:"unknown_opening"
+          in
           let synopsis = item |> member "synopsis" |> to_string in
+          let agent_score = member "agent_score" item |> to_float_option in
+          let agent_explanation = member "agent_explanation" item |> to_string_option in
+          let agent_themes =
+            member "agent_themes" item
+            |> (function
+                 | `Null -> []
+                 | json -> json |> to_list |> List.filter_map ~f:to_string_option)
+          in
+          let agent_line =
+            match agent_score with
+            | Some agent when Float.(agent > 0.) ->
+                let theme_suffix =
+                  match agent_themes with
+                  | [] -> ""
+                  | themes -> Printf.sprintf " (themes: %s)" (String.concat ~sep:", " themes)
+                in
+                let explanation_suffix =
+                  match agent_explanation with
+                  | Some explanation -> Printf.sprintf " — %s" explanation
+                  | None -> ""
+                in
+                Printf.sprintf "Agent score %.2f%s%s" agent theme_suffix explanation_suffix
+            | _ -> ""
+          in
+          let details =
+            if String.is_empty agent_line then synopsis else synopsis ^ "\n       " ^ agent_line
+          in
           Printf.sprintf
             "%d. #%d %s vs %s [%s] score %.2f\n       %s"
             (index + 1)
@@ -82,7 +116,7 @@ let parse_success body =
             black
             opening
             score
-            synopsis)
+            details)
     in
     let filters_line =
       if List.is_empty filters then "No structured filters detected"

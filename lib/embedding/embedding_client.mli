@@ -16,9 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-open! Base
+(** Wraps the OpenAI embeddings API for batch FEN requests. *)
 
-(** Interface to OpenAI embeddings. *)
+open! Base
 
 type t
 

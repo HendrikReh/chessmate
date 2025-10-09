@@ -1,4 +1,21 @@
+## 0.5.0 – Redis Agent Cache & ECO Coverage
+
+### Added
+- Redis-backed GPT-5 evaluation cache with env-driven configuration and Docker compose support.
+- Expanded agent telemetry (token/cost logging) and caching docs.
+- Imported full ECO ranges into `lib/chess/openings.ml` for richer intent recognition.
+
+### Changed
+- `.env.sample` reorganized with clearer sections and required `QDRANT_URL` note.
+- Architecture documentation refreshed to show Redis/GPT-5 flows.
+
 # Release Notes
+
+## 0.4.1 – Ingestion Guard & Parallel Embedding
+- Added a configurable `CHESSMATE_MAX_PENDING_EMBEDDINGS` guard to the ingest CLI so bulk imports pause when the embedding queue is saturated.
+- Reworked `Repo_postgres`/`embedding_worker` to atomically claim jobs and support `--workers`/`--poll-sleep` flags for safe multi-loop execution.
+- Integrated an optional GPT-5 agent: new client wrapper, `reasoning.effort`/verbosity controls, agent-backed scoring in the hybrid executor, and CLI/API output enhancements.
+- Documented end-to-end ingestion monitoring with `scripts/embedding_metrics.sh`, pruning utilities, agent configuration, and scaling guidance across README, Operations, and Troubleshooting guides.
 
 ## 0.4.0 – Hybrid Query Prototype
 - Enhanced `Query_intent` heuristics: opening detection via ECO catalogue, rating/keyword extraction, configurable result limits, and Alcotest coverage.

@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Implements the `chessmate ingest` CLI command. *)
+
 open! Base
 
 (** Ingest a PGN file into the configured Postgres instance. *)

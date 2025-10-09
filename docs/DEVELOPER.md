@@ -1,13 +1,16 @@
 # Developer Handbook
 
+> Related guides: [Operations Playbook](OPERATIONS.md) for runtime procedures, [Testing Plan](TESTING.md) for manual validation, [Troubleshooting](TROUBLESHOOTING.md) for common issues, and [Collaboration Guidelines](GUIDELINES.md) for team norms.
+
 ## Onboarding Checklist
-1. Install OCaml 5.1.x and `opam`; create the local switch inside the repo (lives under `_opam/`) and load it per shell with `eval $(opam env --set-switch)`.
-2. Install dependencies: `opam install . --deps-only --with-test`.
-3. Build/test baseline: `dune build`, `dune runtest`, `dune fmt --check`.
-4. Start backing services when needed: `docker compose up -d postgres qdrant` (first run downloads images).
-5. Run migrations with a fresh database: `export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate && ./scripts/migrate.sh`.
-6. Launch the prototype query API in its own shell: `dune exec chessmate_api -- --port 8080`.
-7. Ensure `psql`, Docker (with Compose), and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker.
+1. Copy `.env.sample` to `.env` and update the connection strings/API keys you need locally.
+2. Install OCaml 5.1.x and `opam`; create the local switch inside the repo (lives under `_opam/`) and load it per shell with `eval $(opam env --set-switch)`.
+3. Install dependencies: `opam install . --deps-only --with-test`.
+4. Build/test baseline: `dune build`, `dune runtest`, `dune fmt --check`.
+5. Start backing services when needed: `docker compose up -d postgres qdrant redis` (first run downloads images).
+6. Run migrations with a fresh database: `export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate && ./scripts/migrate.sh`.
+7. Launch the prototype query API in its own shell: `dune exec chessmate_api -- --port 8080`.
+8. Ensure `psql`, Docker (with Compose), and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker and `AGENT_API_KEY` if you plan to test GPT-5 agent ranking.
 
 ## Repository Layout (Top Level)
 - `lib/chess/`: PGN/FEN parsing, metadata helpers, ECO catalogue, FEN tooling.
@@ -17,7 +20,7 @@
 - `scripts/`: migrations/seeding helpers.
 - `docs/`: architecture, operations, developer, contribution guides.
 - `test/`: Alcotest suites + fixtures (`test/fixtures/`).
-- `data/`: Docker volumes (`data/postgres`, `data/qdrant`).
+- `data/`: Docker volumes (`data/postgres`, `data/qdrant`, `data/redis`).
 
 ## Database & Services
 ```sh
@@ -25,9 +28,10 @@
 export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
 CHESSMATE_API_URL=http://localhost:8080
 
-docker compose up -d postgres qdrant
+docker compose up -d postgres qdrant redis
 ./scripts/migrate.sh
 ```
+For day-to-day service operations, scaling, and cache management, refer to the [Operations Playbook](OPERATIONS.md).
 - Drop/reset by removing `data/postgres` and re-running migrations (the script is idempotent).
 - Inspect data with `psql "$DATABASE_URL" -c 'SELECT id, opening_slug FROM games;'`.
 
@@ -37,22 +41,48 @@ docker compose up -d postgres qdrant
 - Watch mode: `WATCH=1 dune runtest` (re-runs changed suites).
 - Stream test output: `dune runtest --no-buffer` (useful for verbose parsers).
 - Integration passes: ensure Docker services are running, then `dune runtest --force`.
+- For manual verification flows, follow the checklist in [TESTING.md](TESTING.md).
 - Before opening a PR: capture `dune build && dune runtest` output in the PR template.
 
 ### CLI Usage Cheatsheet
 ```sh
-# Ingest a PGN (requires DATABASE_URL)
+# Ingest a PGN (requires DATABASE_URL). Adjust or disable the queue guard via
+# CHESSMATE_MAX_PENDING_EMBEDDINGS before bulk imports.
 chessmate ingest test/fixtures/extended_sample_game.pgn
 
 # Query prototype API (ensure server runs on localhost:8080)
 chessmate query "Show French Defense draws with queenside majority"
 
 # Embedding worker loop (replace OPENAI_API_KEY for real runs)
-OPENAI_API_KEY=dummy chessmate embedding-worker
+OPENAI_API_KEY=dummy chessmate embedding-worker --workers 4 --poll-sleep 1.0
+
+# Watch queue depth & throughput every two minutes
+DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+  scripts/embedding_metrics.sh --interval 120
+
+# Prune stale pending jobs after re-ingest
+DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+  scripts/prune_pending_jobs.sh 2000
 
 # FEN diagnostics
 chessmate fen test/fixtures/sample_game.pgn | head -n 5
+
+# Enable GPT-5 agent ranking (optional)
+AGENT_API_KEY=test-key AGENT_REASONING_EFFORT=low AGENT_CACHE_REDIS_URL=redis://localhost:6379/0 \
+  chessmate query "Explain Najdorf exchange sacrifices"
 ```
+
+### Bulk Ingestion Tips
+- Keep `CHESSMATE_MAX_PENDING_EMBEDDINGS` conservative in development (≤ 400k) so runaway queues fail fast.
+- Metrics script cadence: 60–120 seconds works well for 5–10 worker loops; shorten to 30 seconds while tuning.
+- When throughput plateaus, lower `--workers` or increase `--poll-sleep` before OpenAI throttling kicks in.
+- Always prune pending jobs with populated `vector_id`s before re-ingesting the same PGN to avoid duplicates.
+- Agent evaluations are optional; unset `AGENT_API_KEY` when running tests offline or use `AGENT_REASONING_EFFORT=low` to reduce cost/latency during development.
+
+- Keep `CHESSMATE_MAX_PENDING_EMBEDDINGS` conservative in development (≤ 400k) so runaway queues fail fast.
+- Metrics script cadence: 60–120 seconds works well for 5–10 worker loops; shorten to 30 seconds while tuning.
+- When throughput plateaus, lower `--workers` or increase `--poll-sleep` before OpenAI throttling kicks in.
+- Always prune pending jobs with populated `vector_id`s before re-ingesting the same PGN to avoid duplicates.
 
 ### Parsing PGNs Programmatically
 ```ocaml

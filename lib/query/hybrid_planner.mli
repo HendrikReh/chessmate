@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Builds hybrid plans combining deterministic filters and vector signals. *)
+
 open! Base
 
 (** Build hybrid Qdrant + SQL requests from analysed intent. *)

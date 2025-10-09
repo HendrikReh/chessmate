@@ -26,6 +26,25 @@ type stats = {
 
 let empty_stats = { inserted = 0; skipped = 0 }
 
+let default_pending_limit = 250_000
+
+let ( let* ) t f = Or_error.bind t ~f
+
+let pending_guard_limit () =
+  match Stdlib.Sys.getenv_opt "CHESSMATE_MAX_PENDING_EMBEDDINGS" with
+  | None -> Or_error.return (Some default_pending_limit)
+  | Some raw ->
+      let trimmed = String.strip raw in
+      if String.is_empty trimmed then Or_error.return (Some default_pending_limit)
+      else (
+        match Int.of_string trimmed with
+        | value when Int.(value <= 0) -> Or_error.return None
+        | value -> Or_error.return (Some value)
+        | exception _ ->
+            Or_error.errorf
+              "Invalid CHESSMATE_MAX_PENDING_EMBEDDINGS value: %s (expected positive integer or <= 0 to disable)"
+              raw )
+
 let preview raw =
   let condensed = String.strip raw in
   if String.length condensed <= 100 then condensed else String.prefix condensed 100 ^ "…"
@@ -34,14 +53,30 @@ let log_skip index reason raw =
   eprintf "Skipping PGN #%d: %s\n" index reason;
   eprintf "  Preview: %s\n" (preview raw)
 
+let enforce_pending_guard repo = function
+  | None -> Or_error.return ()
+  | Some limit ->
+      let* pending = Repo_postgres.pending_embedding_job_count repo in
+      if Int.(pending >= limit) then
+        Or_error.errorf
+          "Pending embedding queue has %d jobs which meets or exceeds the guard limit (%d). Aborting ingest. Set CHESSMATE_MAX_PENDING_EMBEDDINGS to raise or <= 0 to disable."
+          pending
+          limit
+      else (
+        if Int.(pending > 0) then
+          eprintf "Embedding queue currently has %d pending jobs (limit %d). Proceeding with ingest.\n" pending limit;
+        Or_error.return () )
+
 let run path =
   if not (Stdlib.Sys.file_exists path) then
     Or_error.errorf "PGN file %s does not exist" path
   else
     let contents = In_channel.read_all path in
-    Cli_common.with_db_url (fun url ->
-        Repo_postgres.create url
-        |> Or_error.bind ~f:(fun repo ->
+    pending_guard_limit ()
+    |> Or_error.bind ~f:(fun guard ->
+           Cli_common.with_db_url (fun url ->
+               let* repo = Repo_postgres.create url in
+               let* () = enforce_pending_guard repo guard in
                let ingest stats ~index ~raw game =
                  let metadata = Game_metadata.of_headers game.Pgn_parser.headers in
                  match Repo_postgres.insert_game repo ~metadata ~pgn:raw ~moves:game.moves with
@@ -65,5 +100,4 @@ let run path =
                           stats.inserted stats.skipped;
                         Or_error.return ();
                       ))
-        )
-    )
+           ))

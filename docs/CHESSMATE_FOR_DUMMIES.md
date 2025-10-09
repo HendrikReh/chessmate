@@ -2,6 +2,8 @@
 
 This document explains how Chessmate ingests chess games, stores information across PostgreSQL and Qdrant, and processes natural language queries to deliver relevant results.
 
+> Looking for a blueprint or operational details? See the [Architecture Overview](ARCHITECTURE.md) for component diagrams, [Operations Playbook](OPERATIONS.md) for runbooks, and [Developer Handbook](DEVELOPER.md) for setup instructions. Prompt engineering ideas live in [PROMPTS.md](PROMPTS.md).
+
 ## What is Semantic Search?
 
 Before diving in, let's understand the concept: Traditional search matches exact keywords (like Google in the 1990s). **Semantic search** understands *meaning*. For example, if you search for "King's Indian games," the system knows you're looking for games with ECO codes E60-E99, even though "E60-E99" never appears in your query.
@@ -118,8 +120,12 @@ The database schema (`scripts/migrations/0001_init.sql`):
 **What happens during ingestion** (`lib/cli/ingest_command.ml:47-68`):
 1. Upsert players (avoid duplicates by name/FIDE ID)
 2. Insert game record
-3. For each move, insert position + enqueue embedding job
+3. For each move, insert position + enqueue embedding job (but aborts early if the
+   pending queue already exceeds `CHESSMATE_MAX_PENDING_EMBEDDINGS` — default 250k).
 4. Print: "Stored game 42 with 77 positions"
+
+> Guard rail: the CLI checks `CHESSMATE_MAX_PENDING_EMBEDDINGS` (default 250k) before inserting
+> new jobs. Raise or disable this value only when you are certain the embedding workers can keep up.
 
 ---
 
@@ -127,20 +133,19 @@ The database schema (`scripts/migrations/0001_init.sql`):
 
 ### Step 5: The Embedding Worker (`services/embedding_worker/embedding_worker.ml`)
 
-This is a **background service** that runs continuously:
+This is a **background service** that runs continuously (pass `--workers N` to run multiple loops in one process):
 
 ```ocaml
 let rec work_loop repo embedding_client ~poll_sleep =
-  match fetch_pending_jobs repo ~limit:16 with
+  match claim_pending_jobs repo ~limit:16 with
   | Ok jobs -> List.iter jobs ~f:(process_job repo embedding_client)
   | Error _ -> sleep and retry
 ```
 
 Every 2 seconds, it:
 
-1. **Polls** `embedding_jobs` table for pending jobs (limit 16)
-2. **Marks job as started** (`status = 'in_progress'`)
-3. **Calls OpenAI API** (`lib/embedding/embedding_client.ml:75-93`):
+1. **Atomically claims** pending jobs (limit 16) – rows transition from `pending` to `in_progress` using `FOR UPDATE SKIP LOCKED`, so multiple workers can run without duplicating work.
+2. **Calls OpenAI API** (`lib/embedding/embedding_client.ml:75-93`):
    ```json
    POST https://api.openai.com/v1/embeddings
    {
@@ -150,7 +155,7 @@ Every 2 seconds, it:
    ```
    Returns a **1536-dimensional vector**: `[0.023, -0.451, 0.882, ...]`
 
-4. **Stores in Qdrant** (vector database) via `lib/storage/repo_qdrant.ml`:
+3. **Stores in Qdrant** (vector database) via `lib/storage/repo_qdrant.ml`:
    ```ocaml
    upsert_points [
      { id: "abc123",  # hash of FEN
@@ -173,9 +178,12 @@ Every 2 seconds, it:
    ]
    ```
 
-5. **Updates PostgreSQL**:
+4. **Updates PostgreSQL**:
    - Set `positions.vector_id = "abc123"` (links Postgres position to Qdrant vector)
    - Mark job as completed
+
+> Need to see progress in real time? Run `scripts/embedding_metrics.sh --interval 120`
+> to print queue depth, throughput, and a back-of-the-envelope ETA while the worker runs.
 
 ### What Goes Where: PostgreSQL vs Qdrant
 

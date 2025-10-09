@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(* Formats ranked games and summaries for CLI/API responses. *)
+
 open! Base
 
 type game_ref = {

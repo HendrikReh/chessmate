@@ -16,9 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-open! Base
+(** Streaming PGN parser that extracts headers, moves, and metadata. *)
 
-(** PGN parsing and normalization utilities. *)
+open! Base
 
 val default_valid_results : string list
 (** Valid tokens permitted in the [Result] tag. *)

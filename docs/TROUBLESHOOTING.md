@@ -2,8 +2,11 @@
 
 Common symptoms, quick diagnostics, and proven fixes for keeping Chessmate healthy.
 
+> Reference [OPERATIONS.md](OPERATIONS.md) for routine procedures and [TESTING.md](TESTING.md) for the step-by-step validation plan when closing incidents.
+
 ## Quick Smoke Test
-Run this loop whenever you reset dependencies or suspect ingest/embedding is wedged.
+Run this loop whenever you reset dependencies or suspect ingest/embedding is wedged. Use
+`scripts/embedding_metrics.sh` between steps to verify queue health and estimated finish times.
 
 1. **Check Postgres connectivity**
    ```sh
@@ -26,8 +29,9 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
    set -a
    source .env
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-   QDRANT_URL=http://localhost:6333 dune exec embedding_worker
+   QDRANT_URL=http://localhost:6333 dune exec embedding_worker -- --workers 3 --poll-sleep 1.0 --exit-after-empty 3
    ```
+   Adjust `--workers`/`--poll-sleep` based on throughput, and tweak `--exit-after-empty` to choose how many empty polls trigger the new auto-shutdown + summary (3 is a good starting point).
 5. **Watch the queue drain**
    ```sh
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
@@ -82,7 +86,12 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
   ```sh
   dune exec chessmate -- embedding-worker
   ```
-  Double-check `OPENAI_API_KEY` and endpoint settings. When the worker logs `Malformed job row`, update to the latest code (psql field separator fix).
+  Double-check `OPENAI_API_KEY` and endpoint settings. When the worker logs `Malformed job row`, update to the latest code (psql field separator fix). While triaging, run
+  ```sh
+  DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+    scripts/embedding_metrics.sh --interval 120
+  ```
+  to ensure new completions are flowing; a flat `throughput/min` indicates the worker is stuck before reaching OpenAI.
 
 ### Worker runs but positions miss vectors
 - **Symptom** `/query` keeps warning about missing vectors even though the worker is active.
@@ -107,6 +116,38 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
      ```
      Expect a positive count; zero implies vectors were not pushed.
   If any checkpoint flatlines, inspect worker logs for rate limits or credential issues.
+
+### Agent evaluation returns warnings
+- **Symptom** API/CLI responses include warnings such as `Agent evaluation failed` or lack `agent_score` even though the key is set.
+- **Fix**
+- Confirm `AGENT_API_KEY` and internet access; GPT-5 errors surface in the warning message.
+- Ensure `AGENT_REASONING_EFFORT` is valid (`minimal|low|medium|high`) and that the API key has access to the selected model.
+- Inspect `[agent-telemetry]` JSON lines for latency, token usage, and cost estimates—persistent spikes or missing usage often explain slowdowns and quota overruns.
+- If caching is enabled (`AGENT_CACHE_REDIS_URL` or `AGENT_CACHE_CAPACITY`), stale responses can persist until entries expire—flush the Redis namespace or drop the in-memory capacity/restart the API after schema/prompt changes.
+- Redis inspection tips:
+  - Host shells may lack `redis-cli`; run it inside the container: `docker compose exec redis redis-cli --scan --pattern 'chessmate:agent:*'`.
+  - If nothing appears, trigger an agent run (`dune exec -- chessmate -- query ...` with `AGENT_API_KEY` set) and retry; keys only exist after GPT-5 evaluations write to the cache.
+  - Force persistence when you expect `data/redis` to populate immediately: `docker compose exec redis redis-cli SAVE` (or `BGSAVE`), then `docker compose exec redis ls -l /data`.
+  - Spot-check PGN integrity without re-ingesting: `docker compose exec postgres psql "$DATABASE_URL" -c "SELECT id, LENGTH(pgn) FROM games ORDER BY id LIMIT 5;"`—non-zero lengths confirm stored PGNs.
+- When the agent is temporarily disabled, results fall back to heuristic scoring—address the warning before relying on explanations.
+
+## Queue Management
+- **Monitor continuously.** `scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log`
+- **Scale workers safely.** Prefer a single process with multiple loops:
+  ```sh
+  set -a
+  source .env
+  DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+  QDRANT_URL=http://localhost:6333 dune exec embedding_worker -- --workers 3 --poll-sleep 1.0 --exit-after-empty 5
+  ```
+  Increase `--workers` gradually (or stagger extra processes if you must) and watch
+  `scripts/embedding_metrics.sh` for rising throughput or new failures (429s, connection drops). Use `--exit-after-empty` to let the worker wind down automatically once the queue is clear, avoiding manual interrupts during maintenance runs.
+- **Prune stale jobs.** When re-ingesting PGNs, run `scripts/prune_pending_jobs.sh 2000`
+  to mark pending jobs whose positions already hold a `vector_id` as completed before
+  queueing more work.
+- **Throttle ingest automatically.** The ingest CLI now enforces a guard based on
+  `CHESSMATE_MAX_PENDING_EMBEDDINGS` (default 250000). Set it to a higher value to push
+  more load, or `0`/negative to disable the guard entirely.
 
 ## CLI Tips
 - Always export `DATABASE_URL` before running ingest/query commands.

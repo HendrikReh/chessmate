@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Translates parsed PGNs into per-ply FEN snapshots and move annotations. *)
+
 open! Base
 
 val fens_of_string : string -> string list Or_error.t

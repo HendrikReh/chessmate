@@ -16,12 +16,17 @@ Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(* Opium HTTP API handling `/query` requests. *)
+
 open! Base
 open Chessmate
 open Opium.Std
 
 module Result = struct
   type t = Hybrid_executor.result
+
+  module Effort = Agents_gpt5_client.Effort
+  module Usage = Agents_gpt5_client.Usage
 
   let summary (result : t) =
     let { Hybrid_executor.summary; _ } = result in
@@ -58,6 +63,32 @@ module Result = struct
         |> String.concat ~sep:" "
     | None, None -> "Unknown opening"
 
+  let usage_to_json usage =
+    let token_field label value =
+      match value with
+      | None -> label, `Null
+      | Some v -> label, `Int v
+    in
+    match usage with
+    | None -> `Null
+    | Some usage ->
+        `Assoc
+          [ token_field "input_tokens" usage.Usage.input_tokens
+          ; token_field "output_tokens" usage.Usage.output_tokens
+          ; token_field "reasoning_tokens" usage.Usage.reasoning_tokens ]
+
+  let agent_score_json = function
+    | None -> `Null
+    | Some score -> `Float score
+
+  let agent_effort_json = function
+    | None -> `Null
+    | Some effort -> `String (Effort.to_string effort)
+
+  let agent_explanation_json = function
+    | None -> `Null
+    | Some text -> `String text
+
   let to_json t =
     let summary = summary t in
     `Assoc
@@ -81,7 +112,12 @@ module Result = struct
       ; "synopsis", `String (synopsis t)
       ; "score", `Float t.total_score
       ; "vector_score", `Float t.vector_score
-      ; "keyword_score", `Float t.keyword_score ]
+      ; "keyword_score", `Float t.keyword_score
+      ; "agent_score", agent_score_json t.agent_score
+      ; "agent_explanation", agent_explanation_json t.agent_explanation
+      ; "agent_themes", `List (List.map t.agent_themes ~f:(fun theme -> `String theme))
+      ; "agent_reasoning_effort", agent_effort_json t.agent_reasoning_effort
+      ; "agent_usage", usage_to_json t.agent_usage ]
 end
 
 let postgres_repo : Repo_postgres.t Or_error.t Lazy.t =
@@ -89,6 +125,67 @@ let postgres_repo : Repo_postgres.t Or_error.t Lazy.t =
     (match Stdlib.Sys.getenv_opt "DATABASE_URL" with
     | Some url when not (String.is_empty (String.strip url)) -> Repo_postgres.create url
     | _ -> Or_error.error_string "DATABASE_URL environment variable is required for chessmate-api")
+
+let agent_client : Agents_gpt5_client.t option Lazy.t =
+  lazy
+    (match Agents_gpt5_client.create_from_env () with
+    | Ok client -> Some client
+    | Error err ->
+        Stdio.eprintf "[chessmate-api] agent disabled: %s\n%!" (Error.to_string_hum err);
+        None)
+
+let agent_cache : Agent_cache.t option Lazy.t =
+  let non_empty_env name =
+    Stdlib.Sys.getenv_opt name
+    |> Option.map ~f:String.strip
+    |> Option.bind ~f:(fun value -> if String.is_empty value then None else Some value)
+  in
+  let parse_positive_int name raw =
+    match Int.of_string_opt raw with
+    | Some value when value > 0 -> Some value
+    | _ ->
+        Stdio.eprintf "[chessmate-api] ignoring %s=%s (expected positive int)\n%!" name raw;
+        None
+  in
+  lazy
+    (match non_empty_env "AGENT_CACHE_REDIS_URL" with
+    | Some url -> (
+        let namespace = non_empty_env "AGENT_CACHE_REDIS_NAMESPACE" in
+        let ttl_seconds =
+          match non_empty_env "AGENT_CACHE_TTL_SECONDS" with
+          | None -> None
+          | Some raw -> parse_positive_int "AGENT_CACHE_TTL_SECONDS" raw
+        in
+        (match Agent_cache.create_redis ?namespace ?ttl_seconds url with
+        | Ok cache ->
+            let namespace_log = Option.value namespace ~default:"<default>" in
+            let ttl_log = Option.value_map ttl_seconds ~default:"<none>" ~f:Int.to_string in
+            Stdio.eprintf
+              "[chessmate-api] agent cache enabled via redis (namespace=%s ttl=%s)\n%!"
+              namespace_log ttl_log;
+            Some cache
+        | Error err ->
+            Stdio.eprintf "[chessmate-api] redis agent cache disabled: %s\n%!"
+              (Error.to_string_hum err);
+            (match non_empty_env "AGENT_CACHE_CAPACITY" with
+            | Some raw -> (
+                match parse_positive_int "AGENT_CACHE_CAPACITY" raw with
+                | Some capacity ->
+                    Stdio.eprintf
+                      "[chessmate-api] falling back to in-memory cache (capacity=%d)\n%!"
+                      capacity;
+                    Some (Agent_cache.create ~capacity)
+                | None -> None)
+            | None -> None)))
+    | None -> (
+        match non_empty_env "AGENT_CACHE_CAPACITY" with
+        | Some raw -> (
+            match parse_positive_int "AGENT_CACHE_CAPACITY" raw with
+            | Some capacity ->
+                Stdio.eprintf "[chessmate-api] agent cache enabled (capacity=%d)\n%!" capacity;
+                Some (Agent_cache.create ~capacity)
+            | None -> None)
+        | None -> None))
 
 let plan_to_json (plan : Query_intent.plan) =
   `Assoc
@@ -114,6 +211,11 @@ let fetch_games_impl plan =
   match Lazy.force postgres_repo with
   | Error err -> Error err
   | Ok repo -> Repo_postgres.search_games repo ~filters:plan.Query_intent.filters ~rating:plan.rating ~limit:plan.limit
+
+let fetch_game_pgns_impl ids =
+  match Lazy.force postgres_repo with
+  | Error err -> Error err
+  | Ok repo -> Repo_postgres.fetch_games_with_pgn repo ~ids
 
 let fetch_vector_hits_impl plan =
   let vector = Hybrid_planner.query_vector plan in
@@ -155,7 +257,23 @@ let query_handler req =
   | None -> respond_json ~status:`Bad_request (`Assoc [ "error", `String "question parameter missing" ])
   | Some question ->
       let plan = Query_intent.analyse { Query_intent.text = question } in
-      (match Hybrid_executor.execute ~fetch_games ~fetch_vector_hits plan with
+      let agent_client_opt = Lazy.force agent_client in
+      let agent_cache_opt = Lazy.force agent_cache in
+      let fetch_game_pgns_opt =
+        match agent_client_opt, agent_cache_opt with
+        | None, None -> None
+        | Some _, _ -> Some fetch_game_pgns_impl
+        | None, Some _ -> Some fetch_game_pgns_impl
+      in
+      (match
+         Hybrid_executor.execute
+           ~fetch_games
+           ~fetch_vector_hits
+           ?fetch_game_pgns:fetch_game_pgns_opt
+           ?agent_client:agent_client_opt
+           ?agent_cache:agent_cache_opt
+           plan
+      with
       | Error err ->
           respond_json ~status:`Internal_server_error
             (`Assoc [ "error", `String (Error.to_string_hum err) ])
