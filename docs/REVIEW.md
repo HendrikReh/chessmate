@@ -35,13 +35,13 @@ This comprehensive review examined the Chessmate codebase across architecture, i
 - **Impact**: Transient network issues or rate limits cause data loss
 - **Recommendation**: Add configurable retry with exponential backoff and jitter
   ```ocaml
-  let rec retry ~max_attempts ~backoff_ms f =
+  let rec retry ?(attempt = 1) ~max_attempts ~backoff_ms f =
     match f () with
     | Ok result -> Ok result
-    | Error _ when attempts < max_attempts ->
+    | Error err when attempt < max_attempts ->
         Unix.sleep (backoff_ms / 1000);
-        retry ~max_attempts ~backoff_ms:(backoff_ms * 2) f
-    | Error e -> Error e
+        retry ~attempt:(attempt + 1) ~max_attempts ~backoff_ms:(backoff_ms * 2) f
+    | Error err -> Error err
   ```
 
 **Agent Evaluation Failures Silently Degraded** (`services/api/chessmate_api.ml:133-135`)
@@ -455,8 +455,11 @@ This comprehensive review examined the Chessmate codebase across architecture, i
 - **Recommendation**: Sanitize error messages before logging:
   ```ocaml
   let sanitize_error err =
-    Error.to_string_hum err
-    |> String.substr_replace_all ~pattern:(Sys.getenv "OPENAI_API_KEY") ~with_:"***"
+    match Sys.getenv_opt "OPENAI_API_KEY" with
+    | None -> Error.to_string_hum err
+    | Some secret ->
+        Error.to_string_hum err
+        |> String.substr_replace_all ~pattern:secret ~with_:"***"
   ```
 
 **No Rate Limiting on API**
@@ -506,9 +509,9 @@ This comprehensive review examined the Chessmate codebase across architecture, i
 - Example: `[worker] starting polling loop` vs `embedding jobs snapshot`
 - **Recommendation**: Adopt structured logging library:
   ```ocaml
-  Logs.info (fun m -> m "Worker started"
-    ~workers:worker_count
-    ~poll_sleep:poll_sleep_seconds)
+  Logs.info (fun m ->
+      m "Worker started (workers=%d poll_sleep=%.1fs)"
+        worker_count poll_sleep_seconds)
   ```
 
 **No Request Tracing**
