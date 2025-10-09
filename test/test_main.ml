@@ -11,5 +11,6 @@ let () =
       "fen", Test_fen.suite;
       "chess-parsing", Test_chess_parsing.suite;
       "query", Test_query.suite;
-      "integration", Test_integration.suite
+      "integration", Test_integration.suite;
+      "qdrant", Test_qdrant.suite
     ]

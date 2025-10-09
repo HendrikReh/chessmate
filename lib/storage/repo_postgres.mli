@@ -59,3 +59,12 @@ val fetch_games_with_pgn : t -> ids:int list -> (int * string) list Or_error.t
 val claim_pending_jobs : t -> limit:int -> Embedding_job.t list Or_error.t
 val mark_job_completed : t -> job_id:int -> vector_id:string -> unit Or_error.t
 val mark_job_failed : t -> job_id:int -> error:string -> unit Or_error.t
+
+type vector_payload = {
+  position_id : int;
+  game_id : int;
+  json : Yojson.Safe.t;
+}
+
+val vector_payload_for_job : t -> job_id:int -> vector_payload Or_error.t
+(** Retrieve contextual information for an embedding job used when building the Qdrant payload. *)

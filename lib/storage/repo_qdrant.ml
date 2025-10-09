@@ -39,6 +39,22 @@ type scored_point = {
   payload : Yojson.Safe.t option;
 }
 
+type test_hooks = {
+  upsert : point list -> unit Or_error.t;
+  search :
+    vector:float list ->
+    filters:Yojson.Safe.t list option ->
+    limit:int ->
+    scored_point list Or_error.t;
+}
+
+let test_hooks_ref : test_hooks option ref = ref None
+
+let with_test_hooks hooks f =
+  let previous = !test_hooks_ref in
+  test_hooks_ref := Some hooks;
+  Exn.protect ~f ~finally:(fun () -> test_hooks_ref := previous)
+
 let point_to_yojson (point : point) =
   `Assoc
     [ "id", `String point.id
@@ -78,7 +94,10 @@ let upsert_points_request points =
     let* body_string = Cohttp_lwt.Body.to_string body in
     Lwt.return (Error (Printf.sprintf "Qdrant upsert failed: %s" body_string))
 
-let upsert_points points = run_request (upsert_points_request points)
+let upsert_points points =
+  match !test_hooks_ref with
+  | Some hooks -> hooks.upsert points
+  | None -> run_request (upsert_points_request points)
 
 let parse_scored_point json =
   let open Yojson.Safe.Util in
@@ -131,4 +150,6 @@ let vector_search_request ~vector ~filters ~limit =
     Lwt.return (Error (Printf.sprintf "Qdrant search failed: %s" body_string))
 
 let vector_search ~vector ~filters ~limit =
-  run_request (vector_search_request ~vector ~filters ~limit)
+  match !test_hooks_ref with
+  | Some hooks -> hooks.search ~vector ~filters ~limit
+  | None -> run_request (vector_search_request ~vector ~filters ~limit)

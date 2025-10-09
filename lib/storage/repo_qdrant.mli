@@ -41,3 +41,15 @@ val vector_search :
   limit:int ->
   scored_point list Or_error.t
 (** Perform a vector search returning scored points with payloads. *)
+
+type test_hooks = {
+  upsert : point list -> unit Or_error.t;
+  search :
+    vector:float list ->
+    filters:Yojson.Safe.t list option ->
+    limit:int ->
+    scored_point list Or_error.t;
+}
+
+val with_test_hooks : test_hooks -> (unit -> 'a) -> 'a
+(** Execute [f] with custom hooks for unit testing. Restores the previous hooks afterwards. *)

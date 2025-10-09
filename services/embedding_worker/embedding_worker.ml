@@ -100,6 +100,38 @@ let install_signal_handlers exit_condition =
   Stdlib.Sys.set_signal Stdlib.Sys.sigint (handler_for "SIGINT");
   Stdlib.Sys.set_signal Stdlib.Sys.sigterm (handler_for "SIGTERM")
 
+let qdrant_retry_max_attempts = 3
+let qdrant_retry_initial_delay = 0.5
+let qdrant_retry_multiplier = 2.0
+let qdrant_retry_jitter = 0.2
+
+let add_payload_field json ~key ~value =
+  match json with
+  | `Assoc fields -> `Assoc ((key, value) :: fields)
+  | _ -> `Assoc [ key, value ]
+
+let upsert_vector ?label point =
+  Retry.with_backoff
+    ~max_attempts:qdrant_retry_max_attempts
+    ~initial_delay:qdrant_retry_initial_delay
+    ~multiplier:qdrant_retry_multiplier
+    ~jitter:qdrant_retry_jitter
+    ~on_retry:(fun ~attempt ~delay err ->
+      warn ?label
+        (Printf.sprintf
+           "[qdrant] upsert attempt %d/%d failed: %s (retrying in %.2fs)"
+           attempt
+           qdrant_retry_max_attempts
+           (Error.to_string_hum err)
+           delay))
+    ~f:(fun ~attempt ->
+      match Repo_qdrant.upsert_points [ point ] with
+      | Ok () -> Retry.Resolved (Or_error.return ())
+      | Error err ->
+          if Int.(attempt >= qdrant_retry_max_attempts) then Retry.Resolved (Error err)
+          else Retry.Retry err)
+    ()
+
 let mark_announced exit_condition =
   Stdlib.Mutex.lock exit_condition.mutex;
   let first = not exit_condition.announced in
@@ -110,19 +142,54 @@ let mark_announced exit_condition =
 let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
   match Embedding_client.embed_fens embedding_client [ job.fen ] with
   | Error err ->
-      let _ = Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:(Error.to_string_hum err) in
-      error ?label (Printf.sprintf "job %d failed: %s" job.id (Error.to_string_hum err));
+      let message = Error.to_string_hum err in
+      let _ = Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:message in
+      error ?label (Printf.sprintf "job %d failed: %s" job.id message);
       record_result stats ~failed:true
-  | Ok vectors ->
+  | Ok [] ->
+      let message = "embedding client returned no vectors" in
+      let _ = Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:message in
+      error ?label (Printf.sprintf "job %d failed: %s" job.id message);
+      record_result stats ~failed:true
+  | Ok (vector :: _ as embeddings) ->
+      if List.length embeddings > 1 then
+        warn ?label (Printf.sprintf "job %d returned multiple vectors; using the first entry" job.id);
       let vector_id = Stdlib.Digest.string job.fen |> Stdlib.Digest.to_hex in
-      let () = ignore vectors in
-      (match Repo_postgres.mark_job_completed repo ~job_id:job.id ~vector_id with
-      | Ok () ->
-          log ?label (Printf.sprintf "job %d completed" job.id);
-          record_result stats ~failed:false
+      let vector_values = Array.to_list vector in
+      match Repo_postgres.vector_payload_for_job repo ~job_id:job.id with
       | Error err ->
-          error ?label (Printf.sprintf "job %d completion update failed: %s" job.id (Error.to_string_hum err));
-          record_result stats ~failed:true)
+          let message = Error.to_string_hum err in
+          let _ = Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:message in
+          error ?label (Printf.sprintf "job %d failed: %s" job.id message);
+          record_result stats ~failed:true
+      | Ok context ->
+          let payload =
+            context.Repo_postgres.json
+            |> add_payload_field ~key:"fen" ~value:(`String job.fen)
+            |> add_payload_field ~key:"vector_id" ~value:(`String vector_id)
+          in
+          let point = { Repo_qdrant.id = vector_id; vector = vector_values; payload } in
+          let upsert_result = upsert_vector ?label point in
+          match upsert_result with
+          | Ok () ->
+              begin
+                match Repo_postgres.mark_job_completed repo ~job_id:job.id ~vector_id with
+                | Ok () ->
+                    log ?label (Printf.sprintf "job %d completed" job.id);
+                    record_result stats ~failed:false
+                | Error err ->
+                    let message = Error.to_string_hum err in
+                    let _ =
+                      Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:message
+                    in
+                    error ?label (Printf.sprintf "job %d failed: %s" job.id message);
+                    record_result stats ~failed:true
+              end
+          | Error err ->
+              let message = Error.to_string_hum err in
+              let _ = Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:message in
+              error ?label (Printf.sprintf "job %d failed: %s" job.id message);
+              record_result stats ~failed:true
 
 let rec work_loop repo embedding_client ~poll_sleep ~label stats exit_condition =
   if should_stop exit_condition then ()

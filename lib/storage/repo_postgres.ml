@@ -44,6 +44,12 @@ type t = {
   mutex : Stdlib.Mutex.t;
 }
 
+type vector_payload = {
+  position_id : int;
+  game_id : int;
+  json : Yojson.Safe.t;
+}
+
 let string_of_status = function
   | Pg.Empty_query -> "empty_query"
   | Pg.Command_ok -> "command_ok"
@@ -448,3 +454,113 @@ let mark_job_failed repo ~job_id ~error =
      SET status = 'failed', last_error = $1, completed_at = NULL\n\
      WHERE id = $2"
     [ Some error; Some (Int.to_string job_id) ]
+
+let vector_payload_for_job repo ~job_id =
+  let* result =
+    exec_raw
+      repo
+      "SELECT ej.position_id,\n\
+      \            p.game_id,\n\
+      \            p.ply,\n\
+      \            p.tags,\n\
+      \            p.san,\n\
+      \            p.side_to_move,\n\
+      \            g.opening_slug,\n\
+      \            g.opening_name,\n\
+      \            g.eco_code,\n\
+      \            g.result,\n\
+      \            g.white_rating,\n\
+      \            g.black_rating,\n\
+      \            w.name,\n\
+      \            b.name\n\
+      \     FROM embedding_jobs ej\n\
+      \     JOIN positions p ON p.id = ej.position_id\n\
+      \     JOIN games g ON g.id = p.game_id\n\
+      \     LEFT JOIN players w ON g.white_player_id = w.id\n\
+      \     LEFT JOIN players b ON g.black_player_id = b.id\n\
+      \     WHERE ej.id = $1\n\
+      \     LIMIT 1"
+      [ Some (Int.to_string job_id) ]
+  in
+  if Int.equal result#ntuples 0 then
+    Or_error.errorf "Unable to build vector payload: embedding job %d not found" job_id
+  else (
+    let value idx = result#getvalue 0 idx in
+    let is_null idx = result#getisnull 0 idx in
+    let parse_int_field name raw =
+      match Int.of_string_opt raw with
+      | Some v -> Ok v
+      | None -> Or_error.errorf "Expected integer for %s, got %s" name raw
+    in
+    let opt_string idx =
+      if is_null idx then None
+      else
+        let trimmed = String.strip (value idx) in
+        if String.is_empty trimmed then None else Some trimmed
+    in
+    let opt_int idx =
+      if is_null idx then None else Int.of_string_opt (value idx)
+    in
+    let parse_tags raw =
+      try Yojson.Safe.from_string raw with
+      | Yojson.Json_error _ -> `Assoc []
+    in
+    let string_list_of_json = function
+      | `Null -> []
+      | `String s -> if String.is_empty (String.strip s) then [] else [ s ]
+      | `List items ->
+          items
+          |> List.filter_map ~f:(function
+               | `String s when not (String.is_empty (String.strip s)) -> Some s
+               | _ -> None)
+      | _ -> []
+    in
+    let add_opt_string ~key ~value acc =
+      match value with
+      | None -> acc
+      | Some v -> (key, `String v) :: acc
+    in
+    let add_opt_int ~key ~value acc =
+      match value with
+      | None -> acc
+      | Some v -> (key, `Int v) :: acc
+    in
+    let* position_id = parse_int_field "position_id" (value 0) in
+    let* game_id = parse_int_field "game_id" (value 1) in
+    let ply =
+      if is_null 2 then 0
+      else (
+        match parse_int_field "ply" (value 2) with
+        | Ok v -> v
+        | Error _ -> 0)
+    in
+    let tags =
+      if is_null 3 then `Assoc [] else parse_tags (value 3)
+    in
+    let phases = Yojson.Safe.Util.member "phases" tags |> string_list_of_json in
+    let themes = Yojson.Safe.Util.member "themes" tags |> string_list_of_json in
+    let keywords = Yojson.Safe.Util.member "keywords" tags |> string_list_of_json in
+    let fields =
+      []
+      |> add_opt_string ~key:"san" ~value:(opt_string 4)
+      |> add_opt_string ~key:"side_to_move" ~value:(opt_string 5)
+      |> add_opt_string ~key:"opening_slug" ~value:(opt_string 6)
+      |> add_opt_string ~key:"opening_name" ~value:(opt_string 7)
+      |> add_opt_string ~key:"eco" ~value:(opt_string 8)
+      |> add_opt_string ~key:"result" ~value:(opt_string 9)
+      |> add_opt_int ~key:"white_elo" ~value:(opt_int 10)
+      |> add_opt_int ~key:"black_elo" ~value:(opt_int 11)
+      |> add_opt_string ~key:"white" ~value:(opt_string 12)
+      |> add_opt_string ~key:"black" ~value:(opt_string 13)
+    in
+    let json =
+      `Assoc
+        ( [ "game_id", `Int game_id
+          ; "position_id", `Int position_id
+          ; "ply", `Int ply
+          ; "phases", `List (List.map phases ~f:(fun s -> `String s))
+          ; "themes", `List (List.map themes ~f:(fun s -> `String s))
+          ; "keywords", `List (List.map keywords ~f:(fun s -> `String s)) ]
+        @ fields )
+    in
+    Or_error.return { position_id; game_id; json })
