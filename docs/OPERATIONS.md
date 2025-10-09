@@ -11,6 +11,7 @@
 
 ## Bootstrapping Environment
 Copy `.env.sample` to `.env`, adjust the values, and then export or `source` them before running commands.
+Quick start: run `./bootstrap.sh` to automate the steps below; it is safe to re-run when dependencies change.
 ```sh
 # set connection strings for local dev
 export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate

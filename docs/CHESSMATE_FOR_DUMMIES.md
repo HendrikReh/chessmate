@@ -25,6 +25,8 @@ dune exec test/test_main.exe -- test integration                 # run only the 
 
 If you skip the test, the rest of this guide still applies; you just miss out on a fast regression check.
 
+- Short on time? Run `./bootstrap.sh` first—this idempotent helper sets up the opam switch, installs dependencies, starts Docker services, runs migrations, and executes `dune build && dune runtest`.
+
 ---
 
 ## What is Semantic Search?

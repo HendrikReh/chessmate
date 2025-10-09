@@ -8,6 +8,20 @@ the primary documentation for deeper context.
 
 ---
 
+## Bootstrap a Fresh Development Environment
+```sh
+./bootstrap.sh
+```
+What it does:
+- Copies `.env.sample` to `.env` (if missing)
+- Creates/loads the opam switch and installs dependencies
+- Starts Docker services (Postgres, Qdrant, Redis) and runs migrations
+- Runs `dune build` and `dune runtest`
+
+You can re-run the script anytime you need to resynchronise dependencies; it skips steps that are already satisfied.
+
+---
+
 ## Ingest a PGN and Issue a Query
 ```sh
 # 1. Ensure services and env vars are ready
@@ -87,4 +101,3 @@ eval "$(opam env --set-switch)"
 ```
 Handy when migrations or local data drift — follow up with the integration
 recipe above to sanity check the rebuilt environment.
-

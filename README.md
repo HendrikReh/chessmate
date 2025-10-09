@@ -29,27 +29,32 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 ## Getting Started
 1. Clone and enter the repository.
 2. Copy `.env.sample` to `.env` and adjust the environment variables (see comments inside the file).
-3. Create an opam switch and install dependencies:
+3. Run the automated bootstrap (optional but recommended):
+   ```sh
+   ./bootstrap.sh
+   ```
+   The script creates `.env` (if missing), initialises the opam switch, installs dependencies, starts Docker services, runs migrations, and executes `dune build && dune runtest`. Re-run it anytime you need to resynchronise your workspace.
+4. Create an opam switch and install dependencies (skip if `./bootstrap.sh` already did this):
    ```sh
    opam switch create . 5.1.0
    opam install . --deps-only --with-test
    ```
-4. Launch backing services (Postgres, Qdrant) via Docker (first run may take a minute while images download):
+5. Launch backing services (Postgres, Qdrant) via Docker (first run may take a minute while images download):
    ```sh
     docker compose up -d postgres qdrant redis
    ```
-4. Initialize the database (migrations expect `DATABASE_URL` to be set):
+6. Initialize the database (migrations expect `DATABASE_URL` to be set):
    ```sh
    # Example connection string; adjust credentials/port if you changed docker-compose.yml
    export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
    ./scripts/migrate.sh
    ```
-5. Build & test the workspace:
+7. Build & test the workspace:
    ```sh
    dune build
    dune runtest
    ```
-6. Explore the available tooling:
+8. Explore the available tooling:
    ```sh
    # Start the prototype query API (Opium server)
    dune exec -- chessmate-api --port 8080

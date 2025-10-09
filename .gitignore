@@ -39,6 +39,7 @@ _opam/
 /data/postgres/
 /data/qdrant/
 /data/redis/
+/data/games/twic_*.pgn
 
 # Environments
 .venv/
@@ -54,4 +55,4 @@ venv/
 # Logs & temp files
 *.log
 *.tmp
-/data/games/twic_*.pgn
+

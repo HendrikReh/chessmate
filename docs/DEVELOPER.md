@@ -3,14 +3,15 @@
 > Related guides: [Operations Playbook](OPERATIONS.md) for runtime procedures, [Testing Plan](TESTING.md) for manual validation, [Troubleshooting](TROUBLESHOOTING.md) for common issues, [Cookbook](COOKBOOK.md) for quick workflows, and [Collaboration Guidelines](GUIDELINES.md) for team norms.
 
 ## Onboarding Checklist
-1. Copy `.env.sample` to `.env` and update the connection strings/API keys you need locally.
-2. Install OCaml 5.1.x and `opam`; create the local switch inside the repo (lives under `_opam/`) and load it per shell with `eval $(opam env --set-switch)`.
-3. Install dependencies: `opam install . --deps-only --with-test`.
-4. Build/test baseline: `dune build`, `dune runtest`, `dune fmt --check`.
-5. Start backing services when needed: `docker compose up -d postgres qdrant redis` (first run downloads images).
-6. Run migrations with a fresh database: `export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate && ./scripts/migrate.sh`.
-7. Launch the prototype query API in its own shell: `dune exec chessmate_api -- --port 8080`.
-8. Ensure Docker (with Compose) and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker and `AGENT_API_KEY` if you plan to test GPT-5 agent ranking. The CLI relies on the compiled binaries via libpq—no standalone `psql` invocation is required. Both the API and worker log a config summary at startup, so check stdout/stderr to confirm the right variables are detected.
+1. Run the automated bootstrap (optional but recommended): `./bootstrap.sh`. Re-run safely to pick up dependency changes; the script is idempotent and skips existing `.env`/switches.
+2. Copy `.env.sample` to `.env` and update the connection strings/API keys you need locally (the script performs this step if `.env` is missing).
+3. Install OCaml 5.1.x and `opam`; create the local switch inside the repo (lives under `_opam/`) and load it per shell with `eval $(opam env --set-switch)`.
+4. Install dependencies: `opam install . --deps-only --with-test`.
+5. Build/test baseline: `dune build`, `dune runtest`, `dune fmt --check`.
+6. Start backing services when needed: `docker compose up -d postgres qdrant redis` (first run downloads images).
+7. Run migrations with a fresh database: `export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate && ./scripts/migrate.sh`.
+8. Launch the prototype query API in its own shell: `dune exec chessmate_api -- --port 8080`.
+9. Ensure Docker (with Compose) and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker and `AGENT_API_KEY` if you plan to test GPT-5 agent ranking. The CLI relies on the compiled binaries via libpq—no standalone `psql` invocation is required. Both the API and worker log a config summary at startup, so check stdout/stderr to confirm the right variables are detected.
 
 ## Configuration Reference
 
