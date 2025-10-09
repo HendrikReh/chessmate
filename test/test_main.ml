@@ -10,5 +10,6 @@ let () =
       "openai-common", Test_openai_common.suite;
       "fen", Test_fen.suite;
       "chess-parsing", Test_chess_parsing.suite;
-      "query", Test_query.suite
+      "query", Test_query.suite;
+      "integration", Test_integration.suite
     ]

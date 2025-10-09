@@ -4,6 +4,29 @@ This document explains how Chessmate ingests chess games, stores information acr
 
 > Looking for a blueprint or operational details? See the [Architecture Overview](ARCHITECTURE.md) for component diagrams, [Operations Playbook](OPERATIONS.md) for runbooks, and [Developer Handbook](DEVELOPER.md) for setup instructions. Prompt engineering ideas live in [PROMPTS.md](PROMPTS.md).
 
+---
+
+## Lightning Sanity Check
+
+Want proof everything still hangs together? Run the integration suite that accompanies this doc. It ingests a fixture PGN, walks the embedding queue, and exercises the hybrid search pipeline against a temporary database.
+
+```bash
+export CHESSMATE_TEST_DATABASE_URL="postgres://chess:chess@localhost:5433/postgres"
+eval "$(opam env --set-switch)"
+psql "$CHESSMATE_TEST_DATABASE_URL" -c '\conninfo'               # optional: verify credentials
+dune exec test/test_main.exe -- list                             # optional: inspect named suites
+dune exec test/test_main.exe -- test integration                 # run only the integration cases
+```
+
+- The URL must grant `CREATEDB`; the tests create and drop an isolated database per run.
+- Postgres must be reachable at that URL—if the connection fails, the suite stops immediately and reports the database error. With the provided Docker Compose stack run `docker compose exec postgres psql -U chess -c "ALTER ROLE chess WITH CREATEDB;"` once to grant the required privilege.
+- No Qdrant or OpenAI credentials are required—the suite stubs vector hits so it works offline.
+- Expect several seconds of runtime while migrations execute and ingestion completes.
+
+If you skip the test, the rest of this guide still applies; you just miss out on a fast regression check.
+
+---
+
 ## What is Semantic Search?
 
 Before diving in, let's understand the concept: Traditional search matches exact keywords (like Google in the 1990s). **Semantic search** understands *meaning*. For example, if you search for "King's Indian games," the system knows you're looking for games with ECO codes E60-E99, even though "E60-E99" never appears in your query.
@@ -155,32 +178,11 @@ Every 2 seconds, it:
    ```
    Returns a **1536-dimensional vector**: `[0.023, -0.451, 0.882, ...]`
 
-3. **Stores in Qdrant** (vector database) via `lib/storage/repo_qdrant.ml`:
-   ```ocaml
-   upsert_points [
-     { id: "abc123",  # hash of FEN
-       vector: [0.023, -0.451, ...],
-       payload: {
-         game_id: 42,
-         white_name: "Kasparov",
-         black_name: "Karpov",
-         white_elo: 2800,
-         black_elo: 2750,
-         opening_slug: "kings_indian_defense",
-         eco_code: "E97",
-         result: "1-0",
-         ply: 15,
-         phases: ["middlegame"],
-         themes: ["king_attack"],
-         keywords: ["kasparov", "karpov", "kings", "indian"]
-       }
-     }
-   ]
-   ```
+3. **Derives a deterministic `vector_id`** from the FEN (SHA digest today) and *marks the job completed*. At present the raw vector is still ignored; wiring up `Repo_qdrant.upsert_points` is tracked in follow-up work.
 
 4. **Updates PostgreSQL**:
-   - Set `positions.vector_id = "abc123"` (links Postgres position to Qdrant vector)
-   - Mark job as completed
+   - Set `positions.vector_id = "abc123"` (reserve the identifier for when the vector store comes online)
+   - Mark the job as completed and clear `last_error`
 
 > Need to see progress in real time? Run `scripts/embedding_metrics.sh --interval 120`
 > to print queue depth, throughput, and a back-of-the-envelope ETA while the worker runs.
@@ -192,9 +194,9 @@ Every 2 seconds, it:
 | **Player info** | ✅ Full records | ❌ Just names in payload |
 | **Game metadata** | ✅ Full records (event, date, result, ECO) | ❌ |
 | **Positions (FEN/SAN)** | ✅ Full records | ❌ |
-| **Vector embeddings** | ❌ | ✅ 1536-d vectors |
-| **Searchable payload** | ❌ | ✅ Denormalized (for filtering) |
-| **Linking** | `vector_id` → Qdrant | `game_id` → PostgreSQL |
+| **Vector embeddings** | ❌ | ⚠️ Reserved via `vector_id`; live uploads coming next |
+| **Searchable payload** | ❌ | ⚠️ Planned: denormalized metadata alongside vectors |
+| **Linking** | `vector_id` reserved | `game_id` → PostgreSQL |
 
 **Why two databases?**
 - **PostgreSQL**: Fast structured queries ("games where white rating > 2700 AND eco = 'E97'")
@@ -290,8 +292,8 @@ Returns: **List of game summaries** (metadata only, no positions yet)
 #### 7b. Qdrant Vector Search (`lib/storage/repo_qdrant.ml:101-134`)
 
 1. **Build query vector** (`lib/query/hybrid_planner.ml:83-95`):
-   - Hash keywords into 8-dimensional vector (simplified version)
-   - Real system uses OpenAI embedding of the query text
+   - Hash keywords into an 8-dimensional vector (current implementation)
+   - Upgrading this step to real OpenAI query embeddings is tracked in the roadmap
    - Result: `[0.65, 0.23, -0.41, ...]`
 
 2. **Build payload filters** (`lib/query/hybrid_planner.ml:69-76`):
@@ -305,7 +307,7 @@ Returns: **List of game summaries** (metadata only, no positions yet)
    }
    ```
 
-3. **Search Qdrant**:
+3. **Search Qdrant** (when `QDRANT_URL` is configured):
    ```json
    POST /collections/positions/points/search
    {
@@ -326,6 +328,8 @@ Returns: **List of game summaries** (metadata only, no positions yet)
      ...
    ]
    ```
+
+   If Qdrant is unreachable (or the env var is unset) the executor records a warning and falls back to the metadata-only heuristic from step 7a, so searches remain usable—just less semantically rich.
 
 ---
 
@@ -498,12 +502,12 @@ Final output (JSON or text):
 
 ## Summary: Key Takeaways
 
-1. **PostgreSQL** stores structured data (games, players, positions) - fast for exact filtering
-2. **Qdrant** stores vector embeddings - fast for semantic similarity
-3. **Hybrid search** combines both: filter by metadata, rank by similarity
-4. **Reranking** uses weighted scoring (70% vector, 30% keyword) to merge results
-5. **Every position** (not just games) is searchable - find specific board states
-6. **No LLMs in query processing** - deterministic intent parsing with opening catalogue
+1. **PostgreSQL** stores structured data (games, players, positions) - fast for exact filtering.
+2. **Qdrant** integration is prepared but not yet receiving live vectors; the worker reserves `vector_id`s so uploads can be enabled without reingesting.
+3. **Hybrid search** combines metadata filters with vector similarity when Qdrant replies; otherwise it gracefully falls back to heuristics.
+4. **Reranking** uses weighted scoring (70% vector, 30% keyword) whenever vector scores are available.
+5. **Every position** (not just games) becomes addressable, enabling “find this board shape” queries.
+6. **No LLMs in query processing**—intent parsing relies on deterministic rules and the opening catalogue.
 
 This architecture enables queries like "French Defense endgames that end in a draw with queenside pawn majority" by:
 - **Filtering**: opening=french, result=draw, phase=endgame (PostgreSQL)
@@ -537,9 +541,9 @@ Key modules implementing each stage:
 
 Current limitations and planned improvements:
 
-1. **Live Qdrant Integration**: Wire hybrid executor to real Qdrant queries (currently uses curated prototype data)
-2. **Reciprocal Rank Fusion (RRF)**: More sophisticated result merging algorithm
-3. **Query Embedding**: Embed user queries (not just keywords) for better semantic matching
-4. **Position Features**: Extract tactical themes (pins, forks, sacrifices) during ingestion
-5. **Caching**: Redis layer for frequently asked questions
-6. **Observability**: Structured logging + Prometheus metrics for worker/API performance
+1. **Persist embeddings to Qdrant**: Teach the worker to call `Repo_qdrant.upsert_points` so the reserved `vector_id`s reference real vectors.
+2. **Reciprocal Rank Fusion (RRF)**: Introduce a more robust result-merging algorithm.
+3. **Query Embedding**: Embed user queries (not just keywords) for better semantic matching.
+4. **Position Features**: Extract tactical themes (pins, forks, sacrifices) during ingestion.
+5. **Caching**: Redis layer for frequently asked questions.
+6. **Observability**: Structured logging + Prometheus metrics for worker/API performance.

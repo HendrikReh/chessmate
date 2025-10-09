@@ -13,6 +13,11 @@ This checklist validates the Milestone 5 checkpoints: agent-ranked search, telem
   ./scripts/migrate.sh
   chessmate ingest test/fixtures/extended_sample_game.pgn  # optional but recommended
   ```
+- For integration tests that exercise ingestion end-to-end, set `CHESSMATE_TEST_DATABASE_URL`
+  to a Postgres connection string owned by a role with `CREATEDB`. With the Docker Compose stack
+  run `docker compose exec postgres psql -U chess -c "ALTER ROLE chess WITH CREATEDB;"` once to
+  grant the permission. The harness creates and drops disposable databases; if the connection
+  fails, the suite aborts immediately and prints the database error.
 
 ## 2. Start Application Components
 - Bootstrap opam switch in each terminal: `eval $(opam env --set-switch)`.
@@ -80,6 +85,16 @@ This checklist validates the Milestone 5 checkpoints: agent-ranked search, telem
   ```sh
   dune build && dune test
   ```
+- Target just the integration cases when you need a quick ingest/query sanity check:
+  ```sh
+  export CHESSMATE_TEST_DATABASE_URL=postgres://chess:chess@localhost:5433/postgres
+  eval "$(opam env --set-switch)"
+  psql "$CHESSMATE_TEST_DATABASE_URL" -c '\conninfo'               # optional: verify credentials
+  dune exec test/test_main.exe -- list                             # optional: inspect suites
+  dune exec test/test_main.exe -- test integration                 # run the integration group
+  ```
+  These tests stub vector hits—no Qdrant or OpenAI credentials required—but they expect the
+  database URL above to work and to grant `CREATEDB`.
 - Optional: execute `redis-cli FLUSHDB` (only if Redis is dedicated) to confirm the application recovers cleanly on next query.
 
 ## 9. Clean-up
