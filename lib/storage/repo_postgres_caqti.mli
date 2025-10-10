@@ -51,6 +51,25 @@ val pending_embedding_job_count : t -> int Or_error.t
 val fetch_games_with_pgn :
   t -> ids:int list -> (int * string) list Or_error.t
 
+val insert_game :
+  t ->
+  metadata:Game_metadata.t ->
+  pgn:string ->
+  moves:Pgn_parser.move list ->
+  (int * int) Or_error.t
+
+val claim_pending_jobs : t -> limit:int -> Embedding_job.t list Or_error.t
+val mark_job_completed : t -> job_id:int -> vector_id:string -> unit Or_error.t
+val mark_job_failed : t -> job_id:int -> error:string -> unit Or_error.t
+
+type vector_payload = {
+  position_id : int;
+  game_id : int;
+  json : Yojson.Safe.t;
+}
+
+val vector_payload_for_job : t -> job_id:int -> vector_payload Or_error.t
+
 module Private : sig
   val build_conditions :
     filters:Query_intent.metadata_filter list ->

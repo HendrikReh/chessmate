@@ -30,7 +30,6 @@
   opium
   caqti
   caqti-driver-postgresql
-  postgresql
   (alcotest :with-test))
  (tags
   ("chess" "ocaml" "vector-search" "postgres" "qdrant")))
