@@ -56,3 +56,5 @@ venv/
 *.log
 *.tmp
 
+/RELEASE_NOTES_files
+/RELEASE_NOTES.html
