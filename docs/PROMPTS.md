@@ -94,6 +94,31 @@ let compress_empty_squares placement =
 
 ---
 
+## Pawn Structure Similarity Generation
+
+### Purpose
+
+Ask an LLM to propose alternative pawn formations that adhere closely to a reference FEN, preserving pawn counts and existing structural motifs (isolani, doubled pawns, etc.).
+
+### Prompt
+
+```
+pawn structure, chess ,fen: 8/pp3pp1/4p2p/8/2P4P/8/PP3PP1/8 w - - 0 1 -> give me 3 similar pawn structures (FEN) 
+BE AWARE: 
+- no possibility for a pawn to catch another pawn 
+- the number of white and black pawns stays the same 
+- do not introduce isolanis, double pawns pr triple pawns if they are not present in the original position
+- do not remove isolanis, double pawns pr triple pawns if they are already  present in the original position
+```
+
+### Notes
+
+- Validate each returned FEN by parsing it and confirming pawn counts/attack maps before storing results.
+- Pair this with `Fen.normalize` to keep canonical formatting across generated samples.
+- Works well as seed data for pawn-structure similarity search or curriculum generation.
+
+---
+
 ## Other Useful Chess Prompts
 
 ### 1. ECO Code Classification

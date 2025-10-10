@@ -114,3 +114,14 @@ This checklist validates the Milestone 5 checkpoints: agent-ranked search, telem
   ```
 - Repeat with higher concurrency (default 4, try 8/16) and record timings. Monitor Postgres load (e.g. `pg_stat_activity`) to ensure the database keeps up.
 - Compare results to validate throughput gains. Pick a concurrency level that balances CPU usage and database throughput for your environment.
+
+## 11. Load Test Validation (Optional)
+- Ensure the API is running on `localhost:8080` (default configuration from step 2) and that Qdrant/Postgres are warmed up with sample data.
+- Install a load generator (`oha` preferred, `vegeta` supported) and verify it’s on your `PATH`.
+- Execute the harness for a one-minute burst at 50 concurrent clients:
+  ```sh
+  TOOL=oha DURATION=60s CONCURRENCY=50 TARGET_URL=http://localhost:8080/query \
+    scripts/load_test.sh
+  ```
+- Review the summary printed by the tool (p50/p95 latency, throughput) and the trailing `/metrics` snapshot. Healthy runs show `db_pool_wait_ratio` near zero and `db_pool_in_use` well below `db_pool_capacity`.
+- Capture `docker stats` output (emitted by the script) to confirm Postgres and Qdrant stay within acceptable CPU/memory bounds.

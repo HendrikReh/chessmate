@@ -1,6 +1,17 @@
 
 # Release Notes
 
+## Unreleased – Caqti Repository Migration
+
+### Changed
+- Replaced the libpq-backed repository with a fully typed Caqti implementation for all read/write paths.
+- Removed the `postgresql` library dependency at runtime; services now rely on `caqti` + `caqti-driver-postgresql`.
+- Updated developer and operations docs to reflect the new pool instrumentation and dependency set.
+
+### Notes
+- Ensure the opam switch has `caqti` and `caqti-driver-postgresql` installed (`opam install caqti caqti-driver-postgresql`).
+- Tests still use `psql` for integration scaffolding; no application code links against libpq anymore.
+
 ## 0.5.4 – Parallel PGN Ingest & Embedding chunk tuning
 
 ### Added

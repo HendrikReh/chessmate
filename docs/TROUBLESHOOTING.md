@@ -39,7 +39,7 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
    psql "$DATABASE_URL" \
    -c "SELECT status, COUNT(*) FROM embedding_jobs GROUP BY status ORDER BY status"
    ```
-   `pending` should drop while `completed` rises. With the libpq client in place, any parsing errors usually point to real schema mismatches—capture the worker log and investigate before re-running ingest.
+  `pending` should drop while `completed` rises. With the new Caqti-backed repository in place, any parsing errors usually point to real schema mismatches—capture the worker log and investigate before re-running ingest.
 
 ## PGN Ingestion
 
@@ -129,7 +129,7 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
   - Host shells may lack `redis-cli`; run it inside the container: `docker compose exec redis redis-cli --scan --pattern 'chessmate:agent:*'`.
   - If nothing appears, trigger an agent run (`dune exec -- chessmate -- query ...` with `AGENT_API_KEY` set) and retry; keys only exist after GPT-5 evaluations write to the cache.
   - Force persistence when you expect `data/redis` to populate immediately: `docker compose exec redis redis-cli SAVE` (or `BGSAVE`), then `docker compose exec redis ls -l /data`.
-  - Spot-check PGN integrity without re-ingesting: `docker compose exec postgres psql "$DATABASE_URL" -c "SELECT id, LENGTH(pgn) FROM games ORDER BY id LIMIT 5;"`—non-zero lengths confirm stored PGNs. (Any libpq-compatible client works; `psql` remains a convenient option.)
+  - Spot-check PGN integrity without re-ingesting: `docker compose exec postgres psql "$DATABASE_URL" -c "SELECT id, LENGTH(pgn) FROM games ORDER BY id LIMIT 5;"`—non-zero lengths confirm stored PGNs. (Any Postgres client works; `psql` remains a convenient option.)
 - When the agent is temporarily disabled, results fall back to heuristic scoring—address the warning before relying on explanations.
 
 ## Queue Management

@@ -28,7 +28,8 @@
   lwt
   cohttp-lwt-unix
   opium
-  postgresql
+  caqti
+  caqti-driver-postgresql
   (alcotest :with-test))
  (tags
   ("chess" "ocaml" "vector-search" "postgres" "qdrant")))

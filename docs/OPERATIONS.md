@@ -124,7 +124,7 @@ The tests stub Qdrant/OpenAI access, so the suite passes without those services.
   docker compose exec postgres psql "$DATABASE_URL" \
     -c "SELECT id, LENGTH(pgn) FROM games ORDER BY id LIMIT 5;"
   ```
-  (Any SQL client hitting `DATABASE_URL` works—our services now use libpq internally, so `psql` is optional.) Non-zero lengths confirm PGNs are intact for agent retrieval.
+  (Any SQL client hitting `DATABASE_URL` works—our services now use the Caqti connection pool, so `psql` is optional.) Non-zero lengths confirm PGNs are intact for agent retrieval.
 - Force Redis snapshots when you expect `data/redis` to populate immediately (default policy `--save 60 1` waits for a write + 60 seconds):
   ```sh
   docker compose exec redis redis-cli SAVE    # synchronous

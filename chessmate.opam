@@ -20,7 +20,8 @@ depends: [
   "lwt"
   "cohttp-lwt-unix"
   "opium"
-  "postgresql"
+  "caqti"
+  "caqti-driver-postgresql"
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]

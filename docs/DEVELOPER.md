@@ -11,7 +11,7 @@
 6. Start backing services when needed: `docker compose up -d postgres qdrant redis` (first run downloads images).
 7. Run migrations with a fresh database: `export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate && ./scripts/migrate.sh`.
 8. Launch the prototype query API in its own shell: `dune exec chessmate_api -- --port 8080`.
-9. Ensure Docker (with Compose) and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker and `AGENT_API_KEY` if you plan to test GPT-5 agent ranking. The CLI relies on the compiled binaries via libpq—no standalone `psql` invocation is required. Both the API and worker log a config summary at startup, so check stdout/stderr to confirm the right variables are detected.
+9. Ensure Docker (with Compose) and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker and `AGENT_API_KEY` if you plan to test GPT-5 agent ranking. The services now connect through the bundled Caqti pool, so there’s no direct libpq dependency—`psql` remains optional for ad‑hoc inspection. Both the API and worker log a config summary at startup, so check stdout/stderr to confirm the right variables are detected.
 
 ## Configuration Reference
 
@@ -63,7 +63,7 @@ docker compose up -d postgres qdrant redis
 ```
 For day-to-day service operations, scaling, and cache management, refer to the [Operations Playbook](OPERATIONS.md).
 - Drop/reset by removing `data/postgres` and re-running migrations (the script is idempotent).
-- Inspect data with your preferred SQL client (e.g., `psql`, DBeaver, TablePlus) using `DATABASE_URL`—the OCaml services now connect through libpq directly, so no helper command is required.
+- Inspect data with your preferred SQL client (e.g., `psql`, DBeaver, TablePlus) using `DATABASE_URL`—the OCaml services use Caqti under the hood, so any Postgres client will do.
 
 ## Build & Test Workflow
 - Formatting: `dune fmt` (run before commits; CI enforces `dune fmt --check`).

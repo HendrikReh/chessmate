@@ -281,16 +281,22 @@ let metrics_handler _req =
       respond_plain_text ~status:`Internal_server_error (Sanitizer.sanitize_error err)
   | Ok repo ->
       let stats = Repo_postgres.pool_stats repo in
+      let wait_ratio =
+        if Int.(stats.capacity <= 0) then 0.0
+        else Float.of_int stats.waiting /. Float.of_int stats.capacity
+      in
       let body =
         Printf.sprintf
           "db_pool_capacity %d\n\
            db_pool_in_use %d\n\
            db_pool_available %d\n\
-           db_pool_waiting %d\n"
+           db_pool_waiting %d\n\
+           db_pool_wait_ratio %.3f\n"
           stats.capacity
           stats.in_use
           stats.available
           stats.waiting
+          wait_ratio
       in
       respond_plain_text body
 
