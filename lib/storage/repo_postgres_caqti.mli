@@ -16,5 +16,11 @@ val with_connection :
 val disconnect : t -> unit
 (** Drain the pool and close all connections. *)
 
-val stats : t -> Yojson.Safe.t
-(** Return lightweight stats (currently max pool size) for diagnostics. *)
+type stats = {
+  capacity : int;
+  in_use : int;
+  waiting : int;
+}
+
+val stats : t -> stats
+(** Return pool utilisation statistics. *)

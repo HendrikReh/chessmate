@@ -34,6 +34,10 @@ let or_error label result =
 
 type t = {
   pool : (Blocking.connection, Error.t) Pool.t;
+  capacity : int;
+  stats_mutex : Stdlib.Mutex.t;
+  mutable in_use : int;
+  mutable waiting : int;
 }
 
 let create ?pool_size conninfo =
@@ -46,13 +50,61 @@ let create ?pool_size conninfo =
   let config = pool_config ~pool_size () in
   Blocking.connect_pool ~pool_config:config uri
   |> or_error "Failed to connect to Postgres"
-  |> Or_error.map ~f:(fun pool -> { pool })
+  |> Or_error.map ~f:(fun pool ->
+         { pool; capacity = pool_size; stats_mutex = Stdlib.Mutex.create (); in_use = 0; waiting = 0 })
 
 let with_connection t f =
-  Pool.use f t.pool |> or_error "Postgres query failed"
+  Stdlib.Mutex.lock t.stats_mutex;
+  t.waiting <- t.waiting + 1;
+  Stdlib.Mutex.unlock t.stats_mutex;
+  let ran = ref false in
+  let run conn =
+    ran := true;
+    Stdlib.Mutex.lock t.stats_mutex;
+    t.waiting <- Int.max 0 (t.waiting - 1);
+    t.in_use <- t.in_use + 1;
+    Stdlib.Mutex.unlock t.stats_mutex;
+    match f conn with
+    | Ok value ->
+        Stdlib.Mutex.lock t.stats_mutex;
+        t.in_use <- t.in_use - 1;
+        Stdlib.Mutex.unlock t.stats_mutex;
+        Ok value
+    | Error err ->
+        Stdlib.Mutex.lock t.stats_mutex;
+        t.in_use <- t.in_use - 1;
+        Stdlib.Mutex.unlock t.stats_mutex;
+        Error err
+  in
+  let result = Pool.use run t.pool in
+  if not !ran then (
+    Stdlib.Mutex.lock t.stats_mutex;
+    t.waiting <- Int.max 0 (t.waiting - 1);
+    Stdlib.Mutex.unlock t.stats_mutex);
+  match result with
+  | Ok value -> Or_error.return value
+  | Error err ->
+      Stdlib.Mutex.lock t.stats_mutex;
+      t.waiting <- Int.max 0 (t.waiting - 1);
+      Stdlib.Mutex.unlock t.stats_mutex;
+      let sanitized = sanitize_error err in
+      if !ran then Or_error.errorf "Postgres pool failure: %s" sanitized
+      else Or_error.errorf "Postgres query failed: %s" sanitized
 
 let disconnect t = Pool.drain t.pool
 
+type stats = {
+  capacity : int;
+  in_use : int;
+  waiting : int;
+}
+
 let stats t =
-  let size = Pool.size t.pool in
-  `Assoc [ "max", `Int size ]
+  Stdlib.Mutex.lock t.stats_mutex;
+  let snapshot =
+    { capacity = t.capacity
+    ; in_use = Int.max 0 t.in_use
+    ; waiting = Int.max 0 t.waiting }
+  in
+  Stdlib.Mutex.unlock t.stats_mutex;
+  snapshot
