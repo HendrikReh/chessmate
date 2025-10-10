@@ -1,7 +1,7 @@
 
 # Release Notes
 
-## Unreleased – Caqti Repository Migration
+## 0.6.0 – Caqti Repository Migration
 
 ### Changed
 - Replaced the libpq-backed repository with a fully typed Caqti implementation for all read/write paths.
