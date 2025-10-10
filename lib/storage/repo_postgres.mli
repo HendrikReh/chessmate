@@ -43,7 +43,7 @@ val insert_game :
   (int * int) Or_error.t
 (** Persist a parsed game and its moves. Returns [(game_id, inserted_positions)]. *)
 
-type game_summary = {
+type game_summary = Repo_postgres_caqti.game_summary = {
   id : int;
   white : string;
   black : string;

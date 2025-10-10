@@ -24,8 +24,9 @@ let ( let+ ) t f = Or_error.map t ~f
 module Job = Embedding_job
 module Metadata = Game_metadata
 module Pg = Postgresql
+module Caqti_repo = Repo_postgres_caqti
 
-type game_summary = {
+type game_summary = Caqti_repo.game_summary = {
   id : int;
   white : string;
   black : string;
@@ -46,6 +47,7 @@ type t = {
   capacity : int;
   mutex : Stdlib.Mutex.t;
   cond : Stdlib.Condition.t;
+  caqti : Caqti_repo.t;
 }
 
 type pool_stats = {
@@ -86,14 +88,20 @@ let create conninfo =
     let pool_size = parse_pool_size () in
     match create_connections conninfo pool_size [] with
     | Error err -> Error err
-    | Ok connections ->
-        Or_error.return
-          { available = connections
-          ; in_use = 0
-          ; waiting = 0
-          ; capacity = pool_size
-          ; mutex = Stdlib.Mutex.create ()
-          ; cond = Stdlib.Condition.create () }
+    | Ok connections -> (
+        match Caqti_repo.create ~pool_size conninfo with
+        | Error err ->
+            List.iter connections ~f:finish_connection;
+            Error err
+        | Ok caqti ->
+            Or_error.return
+              { available = connections
+              ; in_use = 0
+              ; waiting = 0
+              ; capacity = pool_size
+              ; mutex = Stdlib.Mutex.create ()
+              ; cond = Stdlib.Condition.create ()
+              ; caqti })
 
 let with_connection t f =
   Stdlib.Mutex.lock t.mutex;
@@ -208,15 +216,6 @@ let fetch_returning_int t query params =
     let value = result#getvalue 0 0 in
     parse_int "id" value
 
-let normalize_eco_code s = String.uppercase (String.strip s)
-
-let eco_filter value =
-  let value = normalize_eco_code value in
-  match String.split value ~on:'-' with
-  | [ start_code; end_code ] when not (String.is_empty start_code) && not (String.is_empty end_code) ->
-      `Range (start_code, end_code)
-  | _ -> `Exact value
-
 let select_player_by_fide t fide_id =
   fetch_optional_int
     t
@@ -325,138 +324,11 @@ let insert_game (repo : t) ~metadata ~pgn ~moves =
     let+ inserted = insert_positions repo game_id move_fens 0 in
     (game_id, inserted))
 
-let option_of_field result row col =
-  if result#getisnull row col then None else Some (result#getvalue row col)
-
-let build_conditions ~filters ~rating =
-  let conditions = ref [] in
-  let params_rev = ref [] in
-  let next_param = ref 1 in
-  let add_param value =
-    let placeholder = "$" ^ Int.to_string !next_param in
-    Int.incr next_param;
-    params_rev := value :: !params_rev;
-    placeholder
-  in
-  let add_string value = add_param (Some value) in
-  let add_int value = add_param (Some (Int.to_string value)) in
-  let sanitize value = String.strip value in
-  let sanitize_lower value = String.lowercase (sanitize value) in
-  let column_of_field = function
-    | "opening" | "opening_slug" -> Some (`Case_insensitive "g.opening_slug")
-    | "event" -> Some (`Case_insensitive "g.event")
-    | "result" -> Some (`Case_sensitive "g.result")
-    | "white" | "white_player" -> Some (`Case_insensitive "w.name")
-    | "black" | "black_player" -> Some (`Case_insensitive "b.name")
-    | _ -> None
-  in
-  List.iter filters ~f:(fun (filter : Query_intent.metadata_filter) ->
-      match String.lowercase (String.strip filter.field) with
-      | "eco_range" -> (
-          match eco_filter filter.value with
-          | `Range (start_code, end_code) ->
-              let start_placeholder = add_string start_code in
-              let end_placeholder = add_string end_code in
-              conditions :=
-                ("g.eco_code BETWEEN " ^ start_placeholder ^ " AND " ^ end_placeholder)
-                :: !conditions
-          | `Exact single ->
-              let placeholder = add_string single in
-              conditions := ("g.eco_code = " ^ placeholder) :: !conditions)
-      | field -> (
-          match column_of_field field with
-          | Some (`Case_insensitive column) ->
-              let placeholder = add_string (sanitize_lower filter.value) in
-              conditions := ("LOWER(" ^ column ^ ") = " ^ placeholder) :: !conditions
-          | Some (`Case_sensitive column) ->
-              let placeholder = add_string (sanitize filter.value) in
-              conditions := (column ^ " = " ^ placeholder) :: !conditions
-          | None -> ()));
-  (match rating.Query_intent.white_min with
-  | Some min ->
-      let placeholder = add_int min in
-      conditions := ("g.white_rating >= " ^ placeholder) :: !conditions
-  | None -> ());
-  (match rating.Query_intent.black_min with
-  | Some min ->
-      let placeholder = add_int min in
-      conditions := ("g.black_rating >= " ^ placeholder) :: !conditions
-  | None -> ());
-  (match rating.Query_intent.max_rating_delta with
-  | Some delta ->
-      let placeholder = add_int delta in
-      conditions :=
-        ( "g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL AND ABS(g.white_rating - g.black_rating) <= "
-        ^ placeholder )
-        :: !conditions
-  | None -> ());
-  let params = List.rev !params_rev in
-  let next_index = !next_param in
-  (List.rev !conditions, params, next_index)
-
 let search_games repo ~filters ~rating ~limit =
-  let limit = Int.max 1 limit in
-  let conditions, params, next_index = build_conditions ~filters ~rating in
-  let where_clause =
-    if List.is_empty conditions then ""
-    else "WHERE " ^ String.concat ~sep:" AND " conditions
-  in
-  let limit_placeholder = "$" ^ Int.to_string next_index in
-  let sql =
-    Printf.sprintf
-      "SELECT g.id,\n              COALESCE(w.name, ''),\n              COALESCE(b.name, ''),\n              g.result,\n              g.event,\n              g.opening_slug,\n              g.opening_name,\n              g.eco_code,\n              g.white_rating,\n              g.black_rating,\n              TO_CHAR(g.played_on, 'YYYY-MM-DD')\n       FROM games g\n       LEFT JOIN players w ON g.white_player_id = w.id\n       LEFT JOIN players b ON g.black_player_id = b.id\n       %s\n       ORDER BY g.played_on DESC NULLS LAST, g.id DESC\n       LIMIT %s"
-      where_clause
-      limit_placeholder
-  in
-  let params = params @ [ Some (Int.to_string limit) ] in
-  let* result = exec_raw repo sql params in
-  let tuples = result#ntuples in
-  let rec build acc row =
-    if row < 0 then acc
-    else
-      let summary =
-        { id = Int.of_string (result#getvalue row 0)
-        ; white = result#getvalue row 1
-        ; black = result#getvalue row 2
-        ; result = option_of_field result row 3
-        ; event = option_of_field result row 4
-        ; opening_slug = option_of_field result row 5
-        ; opening_name = option_of_field result row 6
-        ; eco_code = option_of_field result row 7
-        ; white_rating = Option.bind (option_of_field result row 8) ~f:Int.of_string_opt
-        ; black_rating = Option.bind (option_of_field result row 9) ~f:Int.of_string_opt
-        ; played_on = option_of_field result row 10
-        }
-      in
-      build (summary :: acc) (row - 1)
-  in
-  Or_error.return (build [] (tuples - 1))
+  Caqti_repo.search_games repo.caqti ~filters ~rating ~limit
 
 let fetch_games_with_pgn repo ~ids =
-  let unique_ids = ids |> List.dedup_and_sort ~compare:Int.compare in
-  match unique_ids with
-  | [] -> Or_error.return []
-  | _ ->
-      let placeholders, params =
-        List.foldi unique_ids ~init:([], []) ~f:(fun idx (ph, params) id ->
-            let placeholder = Printf.sprintf "$%d" (idx + 1) in
-            (placeholder :: ph, Some (Int.to_string id) :: params))
-      in
-      let sql =
-        Printf.sprintf
-          "SELECT id, pgn FROM games WHERE id IN (%s)"
-          (String.concat ~sep:"," (List.rev placeholders))
-      in
-      let* result = exec_raw repo sql (List.rev params) in
-      let tuples = result#ntuples in
-      let rec build acc row =
-        if row < 0 then acc
-        else
-          let id = Int.of_string (result#getvalue row 0) in
-          let pgn = result#getvalue row 1 in
-          build ((id, pgn) :: acc) (row - 1)
-      in
-      Or_error.return (build [] (tuples - 1))
+  Caqti_repo.fetch_games_with_pgn repo.caqti ~ids
 
 let parse_job_row result row =
   let value idx = result#getvalue row idx in
@@ -472,18 +344,7 @@ let parse_job_row result row =
   Or_error.return { Job.id; fen; attempts; status; last_error }
 
 let pending_embedding_job_count repo =
-  let* result =
-    exec_raw
-      repo
-      "SELECT COUNT(*) FROM embedding_jobs WHERE status = 'pending'"
-      []
-  in
-  let count =
-    if Int.equal result#ntuples 0 then "0" else result#getvalue 0 0
-  in
-  match Int.of_string_opt count with
-  | Some value -> Or_error.return value
-  | None -> Or_error.errorf "Unexpected count value %s" count
+  Caqti_repo.pending_embedding_job_count repo.caqti
 
 let claim_pending_jobs repo ~limit =
   if Int.(limit <= 0) then Or_error.return []
@@ -649,6 +510,4 @@ let vector_payload_for_job repo ~job_id =
     in
     Or_error.return { position_id; game_id; json })
 
-module Private = struct
-  let build_conditions = build_conditions
-end
+module Private = Caqti_repo.Private
