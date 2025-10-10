@@ -47,7 +47,7 @@
   ## Phase 5 – Validation & Instrumentation
 
   1. Run load tests (scripts/load_test.sh) at previous baselines (e.g., 50 concurrent /query requests).
-  2. Capture metrics before/after to ensure the pool behaves as expected.
+  2. Capture metrics before/after to ensure the pool behaves as expected (check db_pool_wait_ratio plus the raw pool gauges).
   3. Keep TODO items for longer-term instrumentation (logging query durations, etc.).
 
   ———
