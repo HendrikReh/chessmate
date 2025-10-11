@@ -146,13 +146,13 @@ let slug_of_eco eco =
       then Some entry.slug
       else None)
 
-let filters_for_text cleaned_text =
+let filters_for_text text =
+  let normalized_text = sanitize_phrase text in
   let matches =
     all
     |> List.filter ~f:(fun entry ->
            List.exists entry.synonyms ~f:(fun synonym ->
-               String.is_substring cleaned_text
-                 ~substring:(sanitize_phrase synonym)))
+               String.is_substring normalized_text ~substring:synonym))
   in
   let filters =
     matches

@@ -41,6 +41,48 @@ let test_parse_invalid () =
   | Ok _ -> fail "expected parse failure"
   | Error _ -> ()
 
+let test_castle_requires_clear_path () =
+  let pgn =
+    {|
+[Event "Illegal castle"]
+[Site "Testville"]
+[Date "2024.01.01"]
+[Round "1"]
+[White "Alpha"]
+[Black "Beta"]
+[Result "*"]
+
+1. O-O *
+|}
+  in
+  match Pgn_to_fen.fens_of_string pgn with
+  | Ok _ -> fail "expected castling validation failure"
+  | Error err ->
+      let message = Error.to_string_hum err in
+      check bool "mentions castling" true
+        (String.is_substring message ~substring:"cannot castle")
+
+let test_capture_requires_target () =
+  let pgn =
+    {|
+[Event "Illegal capture"]
+[Site "Testville"]
+[Date "2024.01.01"]
+[Round "1"]
+[White "Alpha"]
+[Black "Beta"]
+[Result "*"]
+
+1. exd5 *
+|}
+  in
+  match Pgn_to_fen.fens_of_string pgn with
+  | Ok _ -> fail "expected capture validation failure"
+  | Error err ->
+      let message = Error.to_string_hum err in
+      check bool "mentions expected capture" true
+        (String.is_substring message ~substring:"expected capture on d5")
+
 let test_parse_extended_sample_game () =
   let filename = "extended_sample_game.pgn" in
   match load_fixture filename |> Pgn_parser.parse with
@@ -220,6 +262,8 @@ let suite =
   [
     ("parse sample game", `Quick, test_parse_sample_game);
     ("parse invalid", `Quick, test_parse_invalid);
+    ("illegal castle rejected", `Quick, test_castle_requires_clear_path);
+    ("invalid capture rejected", `Quick, test_capture_requires_target);
     ("parse extended sample game", `Quick, test_parse_extended_sample_game);
     ("metadata extraction", `Quick, test_metadata_from_headers);
     ("sample FEN sequence", `Quick, test_fen_sequence_sample);

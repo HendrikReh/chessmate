@@ -21,6 +21,8 @@
 
 open! Base
 
+let ( let* ) t f = Or_error.bind t ~f
+
 module Color = struct
   type t = White | Black
 
@@ -35,6 +37,14 @@ module Piece_kind = struct
   type t = Pawn | Knight | Bishop | Rook | Queen | King
 
   let equal (a : t) (b : t) = phys_equal a b
+
+  let to_string = function
+    | Pawn -> "pawn"
+    | Knight -> "knight"
+    | Bishop -> "bishop"
+    | Rook -> "rook"
+    | Queen -> "queen"
+    | King -> "king"
 end
 
 module Piece = struct
@@ -386,13 +396,67 @@ let apply_castle state side =
     match state.State.to_move with Color.White -> 0 | Color.Black -> 7
   in
   let king_src = (4, rank) in
-  let king_dst, rook_src, rook_dst =
+  let king_dst, rook_src, rook_dst, path_squares, label =
     match side with
-    | `Kingside -> ((6, rank), Engine.rook_king_src state.to_move, (5, rank))
-    | `Queenside -> ((2, rank), Engine.rook_queen_src state.to_move, (3, rank))
+    | `Kingside ->
+        ( (6, rank),
+          Engine.rook_king_src state.to_move,
+          (5, rank),
+          [ (5, rank); (6, rank) ],
+          "kingside" )
+    | `Queenside ->
+        ( (2, rank),
+          Engine.rook_queen_src state.to_move,
+          (3, rank),
+          [ (1, rank); (2, rank); (3, rank) ],
+          "queenside" )
   in
-  ignore (Board.move state.board ~src:king_src ~dst:king_dst);
-  ignore (Board.move state.board ~src:rook_src ~dst:rook_dst);
+  let has_right =
+    match (state.State.to_move, side) with
+    | Color.White, `Kingside -> state.castling.white_king_side
+    | Color.White, `Queenside -> state.castling.white_queen_side
+    | Color.Black, `Kingside -> state.castling.black_king_side
+    | Color.Black, `Queenside -> state.castling.black_queen_side
+  in
+  let* () =
+    if has_right then Or_error.return ()
+    else Or_error.errorf "cannot castle %s: rights unavailable" label
+  in
+  let board = state.State.board in
+  let* () =
+    match Board.get board king_src with
+    | Some Piece.{ color; kind = Piece_kind.King }
+      when Color.equal color state.to_move ->
+        Or_error.return ()
+    | _ ->
+        Or_error.errorf "king not on starting square %s"
+          (Square.to_string king_src)
+  in
+  let occupied =
+    List.filter path_squares ~f:(fun square ->
+        Option.is_some (Board.get board square))
+  in
+  let* () =
+    match occupied with
+    | [] -> Or_error.return ()
+    | squares ->
+        let squares_str =
+          squares |> List.map ~f:Square.to_string |> String.concat ~sep:", "
+        in
+        Or_error.errorf "cannot castle %s: squares %s occupied" label
+          squares_str
+  in
+  let* () =
+    match Board.get board rook_src with
+    | Some Piece.{ color; kind = Piece_kind.Rook }
+      when Color.equal color state.to_move ->
+        Or_error.return ()
+    | _ ->
+        Or_error.errorf "cannot castle %s: rook missing on %s" label
+          (Square.to_string rook_src)
+  in
+  ignore (Board.move board ~src:king_src ~dst:king_dst);
+  ignore (Board.move board ~src:rook_src ~dst:rook_dst);
   Engine.update_castling_on_king_move state state.to_move;
   state.en_passant <- None;
   state.halfmove_clock <- state.halfmove_clock + 1;
@@ -465,98 +529,146 @@ let find_pawn_sources state color ~capture ~from_file destination =
 
 let apply_piece_move state ~kind ~dis_file ~dis_rank ~capture ~destination
     ~promotion =
-  if Option.is_some promotion then
-    Or_error.error_string "unexpected promotion on piece move"
-  else
-    Or_error.try_with (fun () ->
-        let board = state.State.board in
-        let color = state.to_move in
-        (match (capture, Board.get board destination) with
-        | true, Some Piece.{ color = piece_color; _ }
-          when not (Color.equal piece_color color) ->
-            ()
-        | true, _ -> failwith "capture expected"
-        | false, None -> ()
-        | false, Some Piece.{ color = piece_color; _ }
-          when Color.equal piece_color color ->
-            failwith "destination occupied by own piece"
-        | false, Some _ -> failwith "unexpected capture");
-        let sources =
-          Engine.find_piece_sources board color kind destination dis_file
-            dis_rank
-        in
-        let src =
-          match sources with
-          | [ square ] -> square
-          | [] -> failwith "no source square found"
-          | _ -> failwith "ambiguous SAN (multiple sources)"
-        in
-        Engine.update_castling_on_rook_move state color src;
-        (match kind with
-        | Piece_kind.King -> Engine.update_castling_on_king_move state color
-        | _ -> ());
-        let captured = Board.move board ~src ~dst:destination in
-        (match captured with
-        | Some Piece.{ color = piece_color; kind = piece_kind }
-          when Piece_kind.equal piece_kind Piece_kind.Rook
-               && not (Color.equal piece_color color) ->
-            Engine.remove_castling_rights_on_capture state destination
-        | _ -> ());
-        state.en_passant <- None;
-        state.halfmove_clock <-
-          (match captured with Some _ -> 0 | None -> state.halfmove_clock + 1);
-        Engine.advance_turn state)
+  let* () =
+    match promotion with
+    | None -> Or_error.return ()
+    | Some _ -> Or_error.error_string "unexpected promotion on piece move"
+  in
+  let board = state.State.board in
+  let color = state.to_move in
+  let destination_label = Square.to_string destination in
+  let dest_piece = Board.get board destination in
+  let* () =
+    match (capture, dest_piece) with
+    | true, Some Piece.{ color = piece_color; _ }
+      when not (Color.equal piece_color color) ->
+        Or_error.return ()
+    | true, Some _ ->
+        Or_error.errorf "capture would take own piece on %s" destination_label
+    | true, None ->
+        Or_error.errorf "expected capture on %s but square empty"
+          destination_label
+    | false, Some Piece.{ color = piece_color; _ }
+      when Color.equal piece_color color ->
+        Or_error.errorf "destination %s occupied by friendly piece"
+          destination_label
+    | false, Some _ ->
+        Or_error.errorf "destination %s unexpectedly occupied" destination_label
+    | false, None -> Or_error.return ()
+  in
+  let sources =
+    Engine.find_piece_sources board color kind destination dis_file dis_rank
+  in
+  let* src =
+    match sources with
+    | [ square ] -> Or_error.return square
+    | [] ->
+        Or_error.errorf "no %s can reach %s"
+          (Piece_kind.to_string kind)
+          destination_label
+    | _ ->
+        Or_error.errorf "ambiguous %s move to %s"
+          (Piece_kind.to_string kind)
+          destination_label
+  in
+  Engine.update_castling_on_rook_move state color src;
+  (match kind with
+  | Piece_kind.King -> Engine.update_castling_on_king_move state color
+  | _ -> ());
+  let captured = Board.move board ~src ~dst:destination in
+  (match captured with
+  | Some Piece.{ color = piece_color; kind = piece_kind }
+    when Piece_kind.equal piece_kind Piece_kind.Rook
+         && not (Color.equal piece_color color) ->
+      Engine.remove_castling_rights_on_capture state destination
+  | _ -> ());
+  state.en_passant <- None;
+  state.halfmove_clock <-
+    (match captured with Some _ -> 0 | None -> state.halfmove_clock + 1);
+  Engine.advance_turn state;
+  Or_error.return ()
 
 let apply_pawn_move state ~from_file ~capture ~destination ~promotion =
-  Or_error.try_with (fun () ->
-      let color = state.State.to_move in
-      let board = state.board in
-      let sources =
-        find_pawn_sources state color ~capture ~from_file destination
-      in
-      let src =
-        match sources with
-        | [ square ] -> square
-        | [] -> failwith "no pawn source found"
-        | _ -> failwith "ambiguous pawn move"
-      in
-      let dest_piece = Board.get board destination in
-      let dir = Engine.direction color in
-      let en_passant_capture =
-        capture && Option.is_none dest_piece
-        && Option.exists state.en_passant ~f:(fun sq ->
-               Poly.equal sq destination)
-      in
-      if capture && not en_passant_capture then
+  let color = state.State.to_move in
+  let board = state.board in
+  let dir = Engine.direction color in
+  let dest_piece = Board.get board destination in
+  let destination_label = Square.to_string destination in
+  let promotion_rank = match color with Color.White -> 7 | Color.Black -> 0 in
+  let dest_rank = snd destination in
+  let dest_is_promotion_rank = Int.equal dest_rank promotion_rank in
+  let* promotion_to_apply =
+    match (promotion, dest_is_promotion_rank) with
+    | Some kind, true -> Or_error.return (Some kind)
+    | Some kind, false ->
+        Or_error.errorf "promotion to %s invalid on rank %d"
+          (Piece_kind.to_string kind)
+          (dest_rank + 1)
+    | None, true ->
+        Or_error.errorf "promotion required when pawn reaches %s"
+          destination_label
+    | None, false -> Or_error.return None
+  in
+  let en_passant_capture =
+    capture && Option.is_none dest_piece
+    && Option.exists state.en_passant ~f:(fun sq -> Poly.equal sq destination)
+  in
+  let* () =
+    if capture then
+      if en_passant_capture then Or_error.return ()
+      else
         match dest_piece with
-        | Some Piece.{ color = piece_color; _ }
-          when Color.equal piece_color color ->
-            failwith "capture hitting own piece"
-        | Some _ -> ()
-        | None -> ()
-      else if (not capture) && Option.is_some dest_piece then
-        failwith "pawn move destination occupied";
-      (* Handle en passant capture before move *)
-      (if en_passant_capture then
-         let captured_square = (fst destination, snd destination - dir) in
-         Board.set board captured_square None);
-      ignore (Board.move board ~src ~dst:destination);
-      (match promotion with
-      | Some kind -> Board.set board destination (Some Piece.{ color; kind })
-      | None -> ());
-      (match dest_piece with
-      | Some Piece.{ color = piece_color; kind = piece_kind }
-        when Piece_kind.equal piece_kind Piece_kind.Rook
-             && not (Color.equal piece_color color) ->
-          Engine.remove_castling_rights_on_capture state destination
-      | _ -> ());
-      state.en_passant <-
-        (let src_rank = snd src in
-         if (not capture) && Int.abs (snd destination - src_rank) = 2 then
-           Some (fst destination, src_rank + dir)
-         else None);
-      state.halfmove_clock <- 0;
-      Engine.advance_turn state)
+        | Some Piece.{ color = piece_color; _ } ->
+            if Color.equal piece_color color then
+              Or_error.errorf "capture would take own piece on %s"
+                destination_label
+            else Or_error.return ()
+        | None ->
+            Or_error.errorf "expected capture on %s but square empty"
+              destination_label
+    else
+      match dest_piece with
+      | None -> Or_error.return ()
+      | Some _ ->
+          Or_error.errorf "pawn move destination %s occupied" destination_label
+  in
+  let sources = find_pawn_sources state color ~capture ~from_file destination in
+  let* src =
+    match sources with
+    | [ square ] -> Or_error.return square
+    | [] -> Or_error.errorf "no pawn can reach %s" destination_label
+    | _ -> Or_error.errorf "ambiguous pawn move to %s" destination_label
+  in
+  let* () =
+    if en_passant_capture then
+      let captured_square = (fst destination, snd destination - dir) in
+      match Board.get board captured_square with
+      | Some Piece.{ color = piece_color; kind = Piece_kind.Pawn }
+        when not (Color.equal piece_color color) ->
+          Board.set board captured_square None;
+          Or_error.return ()
+      | _ ->
+          Or_error.errorf "invalid en passant capture on %s" destination_label
+    else Or_error.return ()
+  in
+  ignore (Board.move board ~src ~dst:destination);
+  (match promotion_to_apply with
+  | Some kind -> Board.set board destination (Some Piece.{ color; kind })
+  | None -> ());
+  (match dest_piece with
+  | Some Piece.{ color = piece_color; kind = piece_kind }
+    when Piece_kind.equal piece_kind Piece_kind.Rook
+         && not (Color.equal piece_color color) ->
+      Engine.remove_castling_rights_on_capture state destination
+  | _ -> ());
+  state.en_passant <-
+    (let src_rank = snd src in
+     if (not capture) && Int.abs (snd destination - src_rank) = 2 then
+       Some (fst destination, src_rank + dir)
+     else None);
+  state.halfmove_clock <- 0;
+  Engine.advance_turn state;
+  Or_error.return ()
 
 let apply_san state san =
   match san with
@@ -570,15 +682,20 @@ let apply_san state san =
       apply_pawn_move state ~from_file:move.from_file ~capture:move.capture
         ~destination:move.destination ~promotion:move.promotion
 
-let parse_san token = Or_error.try_with (fun () -> San.parse token)
+let parse_san token =
+  Or_error.try_with (fun () -> San.parse token)
+  |> Or_error.tag ~tag:(Printf.sprintf "SAN %s" token)
 
 let fens_of_moves san_list =
   let state = State.initial () in
   List.fold san_list ~init:(Or_error.return []) ~f:(fun acc san_str ->
-      Or_error.bind acc ~f:(fun acc ->
-          Or_error.bind (parse_san san_str) ~f:(fun san ->
-              Or_error.bind (apply_san state san) ~f:(fun () ->
-                  Or_error.return (Fen.to_string state :: acc)))))
+      let* acc = acc in
+      let* san = parse_san san_str in
+      let* () =
+        apply_san state san
+        |> Or_error.tag ~tag:(Printf.sprintf "apply SAN %s" san_str)
+      in
+      Or_error.return (Fen.to_string state :: acc))
   |> Or_error.map ~f:List.rev
 
 let fens_of_string contents =
