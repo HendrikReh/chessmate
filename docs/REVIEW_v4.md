@@ -1,145 +1,87 @@
-# Chessmate Review & Improvement Plan (v4)
+# Chessmate Roadmap (v4)
 
-_Last revised: 2025-10-10 (post-v0.6.2 rate-limit release)_
+_Last revised: 2025-10-10 (post-v0.6.2 release)_
 
-Chessmate is stable enough for production-style workloads, but a handful of infrastructure gaps are blocking public deployment. This document summarises the current state, highlights outstanding issues, and provides an incremental roadmap for closing them.
+Chessmate is production-capable, but a few infrastructure gaps remain before we can expose the API broadly. This document tracks what’s done, what’s next, and the effort involved.
 
 ---
 
-## 1. Current Snapshot
+## 1. Current State
 
-### Completed in v0.6.2
-- **API rate limiting** via token-bucket middleware (per-IP 429s, Prometheus counters).
-- **Qdrant bootstrap** ensuring the target collection exists at API/worker startup.
-- **Config/Docs refresh** for new rate-limit and Qdrant env vars.
+### Shipped in v0.6.2
+- Token-bucket API rate limiting (per-IP 429s, Prometheus counters).
+- Automatic Qdrant collection bootstrap (API & worker ensure schema on startup).
+- Config/documentation refresh covering rate limits and Qdrant settings.
 
-### Completed in v0.6.1
-- **CLI health checks** run before queries, verifying Postgres, Qdrant, Redis, and the API.
-- **JSON mode** for `chessmate query` supports piping results to tools like `jq`.
-- **Review roadmap refresh** consolidates planning notes and follow-up tasks.
-- **SQL whitespace fix** eliminates the `DESCLIMIT` error in the default query path.
+### Shipped in v0.6.1
+- CLI health checks prior to queries (Postgres, Qdrant, Redis, API).
+- JSON output mode for `chessmate query`.
+- Roadmap/doc rewrites; SQL whitespace fix eliminating `DESCLIMIT` errors.
 
-### Completed in v0.6.0
-- **Database layer** migrated to typed Caqti (no more shelling out to `psql`, parameterised queries throughout).
-- **Embedding worker** uploads vectors to Qdrant with exponential backoff and metadata enrichment.
-- **Secret sanitisation** redacts API keys, Postgres/Redis URLs, and other sensitive strings in logs.
-- **Observability foundations**: `/metrics` exposes Caqti pool gauges; load-test script and documentation updated; sanitiser tests and core integration tests in place.
+### Shipped in v0.6.0
+- Caqti migration (parameterised queries, typed pool).
+- Embedding worker uploads vectors with retry/backoff & metadata enrichment.
+- Secret sanitisation (API keys, database URLs) and basic `/metrics` gauges.
 
-### Major Gaps
+### Remaining Gaps
 | Priority | Issue | Risk |
 | --- | --- | --- |
-| 🔴 Critical | No API rate limiting | Abuse can exhaust quotas and starve the DB |
-| 🔴 Critical | Qdrant collection bootstrap missing | Fresh deployments fail until manually created |
-| 🟡 High | Sparse metrics | No request latency, error rates, or cache visibility |
-| 🟡 High | Shallow health checks | Current `/health` endpoint doesn’t verify dependencies |
-| 🟡 High | Agent evaluation timeout missing | Long-running calls can wedge the request path |
-| 🟡 High | Query pagination absent | Large responses risk OOM |
-
+| 🟢 Resolved | API rate limiting | Abuse was exhausting quotas; now enforced |
+| 🟢 Resolved | Qdrant bootstrap missing | No more manual curl init |
+| 🟡 High | Sparse metrics | No request latency/error tracking |
+| 🟡 High | Shallow health checks | `/health` doesn’t verify dependencies |
+| 🟡 High | Agent evaluation timeout missing | Slow GPT-5 calls wedge requests |
+| 🟡 High | Query pagination absent | Large result sets risk OOM |
 
 ---
 
-## 2. Suggested Roadmap
+## 2. Planned Work
 
-### Phase 1 – Critical Fixes
-1. **API rate limiting**  
-   - Implementation
-     - Add `lib/api/rate_limiter.(ml|mli)` encapsulating a token-bucket algorithm (per IP, configurable via `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE`, default 60/min).  
-     - Expose middleware for Opium that tracks requests by remote address, decrements tokens, and returns HTTP 429 with a `Retry-After` header when the quota is exceeded.
-     - Instrument a Prometheus counter (`api_rate_limited_total{ip}`) and add aggregate metrics (total limited requests, current bucket sizes) under `/metrics`.
-   - Integration
-     - Register the middleware around `query_handler` in `services/api/chessmate_api.ml`.  
-     - Extend `Config.Api` to parse `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` and optional `CHESSMATE_RATE_LIMIT_BUCKET_SIZE` (burst capacity).  
-     - Update `docs/openapi.yaml` with a 429 error schema and mention rate limiting in `docs/OPERATIONS.md` (tuning guidance, dashboards).
-   - Testing
-     - Unit tests for the token bucket (refill timing, burst handling, concurrency safety).  
-     - Integration test hitting the API via cohttp, ensuring the N+1 request returns 429 and respects `Retry-After`.  
-     - Load test scenario validating that legitimate traffic under the limit stays unaffected.
-   - Effort: ~12h.
+### Phase 1 – High Priority
+1. **Prometheus metrics expansion** (ETA: ~14h)
+   - Instrument request latency histograms, error rates, agent cache hits/misses, embedding throughput.
+   - Introduce a metrics helper module so instrumentation stays consistent.
 
-2. **Qdrant collection bootstrap**  
-   - Implementation
-     - Extend `lib/storage/repo_qdrant.(ml|mli)` with helpers to `GET` collection metadata and `PUT` a create request when the collection is missing.  
-     - Define collection parameters via new env vars: `QDRANT_COLLECTION_NAME` (default `positions`), `QDRANT_VECTOR_SIZE` (default 1536 for text-embedding-3-small), `QDRANT_DISTANCE` (default `Cosine`).  
-     - Populate a payload schema for core fields (`game_id`, `fen`, `white`, `black`, `opening_slug`) to ensure consistent types.
-   - Integration
-     - On API startup (after config load, before binding the port) call `Repo_qdrant.ensure_collection`, logging results and aborting on failure.  
-     - Perform the same check in the embedding worker before entering the polling loop.  
-     - Add retry/backoff logic so transient Qdrant outages don’t crash the service (reuse existing Retry module).  
-     - Document bootstrap behaviour in `docs/OPERATIONS.md` (including manual override command) and expose a `/health` indicator once the collection exists.
-   - Testing
-     - Unit/integration test that drops the collection, runs `ensure_collection`, and verifies the schema.  
-     - Idempotency test: second invocation should be a no-op.  
-     - Failure-path test (mock Qdrant returning 500) to ensure errors propagate clearly.  
-   - Effort: ~10h.
+2. **Deep health checks** (ETA: ~8h)
+   - Implement `lib/api/health` with probes for Postgres, Qdrant (`/healthz`), Redis (`PING`), and a lightweight OpenAI sanity check.
+   - `/health` returns structured JSON (status + per-dependency details); worker exposes the same endpoint.
+   - Record probe latency and add `health_dependency_status{service="..."}` metrics.
+   - Unit/integration tests cover success/failure paths; load test triggers degraded alerts.
 
-### Phase 2 – High Priority
-3. **Prometheus metrics (v0.6.x)**  
-   - Instrument request latency, error rates, agent cache hits/misses, embedding throughput.  
-   - Adopt a metrics helper module to keep instrumentation consistent.  
-   - Effort: ~14h.
+3. **Agent evaluation timeout + circuit breaker** (ETA: ~6h)
+   - Add configurable timeout (`AGENT_REQUEST_TIMEOUT_SECONDS`) and wrap GPT-5 calls in `Lwt_unix.with_timeout`.
+   - Circuit breaker: after N consecutive failures/timeouts, disable agent calls for a cool-off window (log `[agent-circuit] open/closed`).
+   - Fallback response includes warnings (`"agent": {"status": "timeout", "fallback": "heuristic"}`) and increments timeout counters.
+   - Tests simulate slow/failed GPT-5 responses and ensure fallback executes.
 
-4. **Deep health checks**  
-   - Implementation
-     - Introduce `lib/api/health.(ml|mli)` providing probe helpers for Postgres, Qdrant (`/healthz`), Redis (`PING`), and a lightweight OpenAI sanity call (or cached token check).  
-     - Return structured JSON from `/health` (e.g., `{ status: "degraded", details: { qdrant: { ok: false, error: ... } } }`).  
-     - Capture probe latency and export gauges/counters via `/metrics` (e.g., `health_dependency_status{service="qdrant"}`), enabling alerting.  
-   - Integration
-     - Extend API startup to register the new health routes and reuse the same module inside the CLI health helper to keep logic consistent.  
-     - Expose a simple `/health` endpoint for the embedding worker (either HTTP or CLI command) reusing the same probe functions.  
-     - Emit degraded-mode logs with remediation hints (e.g., `vector search unavailable - check Qdrant`).  
-   - Testing
-     - Unit tests covering success/failure branches of each probe (mocked Postgres/Qdrant/Redis/OpenAI).  
-     - Integration test verifying the JSON structure and metrics after forcing a dependency down (e.g., simulate 500 or timeout).  
-     - Hook health checks into the load-test script to ensure alerts trigger under failure.  
-   - Effort: ~8h.
+4. **Query pagination** (ETA: ~12h)
+   - Add `limit`/`offset` support to SQL, API schema, CLI options; preserve default limit of 50.
 
-5. **Agent evaluation timeout**  
-   - Implementation
-     - Add configurable timeout (`AGENT_REQUEST_TIMEOUT_SECONDS`) to `Agents_gpt5_client`; wrap Lwt HTTP calls with `Lwt_unix.with_timeout`.  
-     - Introduce a simple circuit breaker: after N consecutive timeouts, temporarily disable agent calls and log a warning, resuming after a cool-off period.  
-     - Ensure fallback path returns heuristic results with a warning in the JSON payload/CLI output (`"agent": {"status": "timeout"}`) and increments a timeout counter in `/metrics`.  
-   - Integration
-     - Surface timeout configuration in `Config.Api`, document it in developer/operations guides, and make CLI health output indicate when the agent path is degraded.  
-     - Optionally add a Redis flag to short-circuit known-bad states until the circuit breaker resets.  
-   - Testing
-     - Unit test forcing the HTTP layer to hang and verifying the timeout triggers and fallback rolls back to heuristic ranking.  
-     - End-to-end test validating the warning and metric increments when the agent is slow.  
-     - Load test scenario ensuring the circuit breaker prevents cascading failures.  
-   - Effort: ~6h.
-
-6. **Query pagination**  
-   - Add `limit`/`offset` parameters to SQL and API schema.  
-   - Preserve default limit of 50; add CLI flags.  
-   - Effort: ~12h.
-
-### Phase 3 – Medium Priority (v0.7+)
-- Enhanced load-test harness with automated thresholds.
-- Snapshot/version embedding collection (support reindexing).
+### Phase 2 – Medium Priority (v0.7+)
+- Enhanced load-test harness with alert thresholds.
+- Snapshot/version embedding collections for reindexing.
 - Workflow to reingest/repair orphaned vectors.
-- CLI telemetry improvements (structured JSON logs, tracing IDs).
-- Sandbox toggle for simulated agent results (useful for demos).
+- CLI telemetry improvements (structured JSON logs, request IDs).
+- Sandbox toggle for simulated agent responses (demo mode).
 
 ---
 
-## 3. Outstanding Investments
-
+## 3. Effort Summary
 | Priority | Tasks | Est. Hours |
 | --- | --- | --- |
-| Critical | 2 | 20–24 |
 | High | 4 | 40–50 |
-| Medium | 6 | 45–60 |
+| Medium | 5 | 45–60 |
 | Low | 4 | 24–32 |
-| **Total** | **16** | **129–166** |
+| **Total** | **13** | **109–142** |
 
-The aim is to close out the critical items before widening API access. Most remaining work is infrastructure-focused; domain logic (parsers, embeddings, agent scoring) is in good shape.
+Focus on the high-priority bucket before widening API access.
 
 ---
 
-## 4. Quick Reference
+## 4. References
+- [ARCHITECTURE.md](ARCHITECTURE.md) – component/data flow diagrams.
+- [DEVELOPER.md](DEVELOPER.md) – setup, CLI usage, configuration knobs.
+- [docs/cli.mld](cli.mld) – odoc-rendered CLI reference.
+- [OPERATIONS.md](OPERATIONS.md) – runbooks, monitoring, incident response.
 
-- `/docs/ARCHITECTURE.md` – detailed diagrams and flow explanations.
-- `/docs/DEVELOPER.md` – setup, CLI usage, agent configuration.
-- `/docs/cli.mld` – odoc-rendered summary of CLI commands, including health-check behaviour.
-- `/docs/OPERATIONS.md` – deployment playbooks, monitoring, and emergency runbooks.
-
-Questions or updates? Append them here or open a tracking issue so we keep the roadmap fresh.
+Questions or contributions? Comment here or open a tracking issue so we keep the roadmap fresh.
