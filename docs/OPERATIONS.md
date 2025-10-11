@@ -1,185 +1,126 @@
-# Operations Playbook
+# Operations Playbook (2025-10-xx)
 
-> Pair this runbook with the [Developer Handbook](DEVELOPER.md), the manual suite in [TESTING.md](TESTING.md), and the failure guide in [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+Pair this runbook with the [Developer Handbook](DEVELOPER.md) for environment setup, the [Testing Plan](TESTING.md) for manual/automated checks, and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for deep dives.
 
-## Service Topology
-- **postgres**: canonical PGN/metadata store, embedding job queue. Volume: `data/postgres`.
-- **qdrant**: vector store for FEN embeddings (integration in progress—see notes below), exposed on 6333/6334. Volume: `data/qdrant`.
-- **chessmate-api**: Opium HTTP service (prototype) for `/query`.
-- **embedding-worker**: OCaml worker polling `embedding_jobs`; today it derives deterministic `vector_id`s and marks jobs complete, with live Qdrant writes scheduled as the next milestone.
-- **redis**: shared cache for agent evaluations (persisted under `data/redis`).
+---
 
-## Bootstrapping Environment
-Copy `.env.sample` to `.env`, adjust the values, and then export or `source` them before running commands.
-Quick start: run `./bootstrap.sh` to automate the steps below; it is safe to re-run when dependencies change.
+## 1. Service Topology
+| Component | Role |
+| --- | --- |
+| **postgres** | Canonical store for PGNs, players/games/positions, embedding jobs (`data/postgres`). |
+| **qdrant** | Vector database for FEN embeddings (`data/qdrant`). API/worker ensure collection on startup. |
+| **redis** | Optional GPT‑5 evaluation cache (`data/redis`). |
+| **chessmate-api** | Opium HTTP service exposing `/query`, `/metrics`, `/openapi.yaml`. Includes per-IP rate limiting and (planned) deep health probes. |
+| **embedding-worker** | Batches embedding jobs, calls OpenAI Embeddings, writes vectors to Qdrant, marks jobs complete. |
+
+---
+
+## 2. Bootstrapping
 ```sh
-# set connection strings for local dev
-export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
-export CHESSMATE_API_URL=http://localhost:8080
-export CHESSMATE_TEST_DATABASE_URL=postgres://chess:chess@localhost:5433/postgres  # integration tests
-# export CHESSMATE_OPENAPI_SPEC=/etc/chessmate/openapi.yaml                            # optional override for spec path
+cp .env.sample .env
+source .env  # or export variables manually
 
-# start core services (first run pulls images)
 docker compose up -d postgres qdrant redis
-
-# apply migrations (idempotent)
 ./scripts/migrate.sh
-
-# seed sample PGNs (optional) - respects CHESSMATE_MAX_PENDING_EMBEDDINGS
-chessmate ingest test/fixtures/extended_sample_game.pgn
 ```
-Cross-check the environment against the [Configuration Reference](DEVELOPER.md#configuration-reference); the services will refuse to boot if a required variable is missing.
+Optional: seed PGNs via `dune exec chessmate -- ingest ...`.
 
-> **First-time setup:** the Docker Compose postgres user (`chess`) does **not** ship with `CREATEDB`. Run:
-> ```sh
-> docker compose exec postgres psql -U chess -c "ALTER ROLE chess WITH CREATEDB;"
-> ```
-> This grants the permission required for the integration suite to create throwaway databases.
+Ensure the Postgres user has `CREATEDB` (required for integration tests):
+```sh
+docker compose exec postgres psql -U chess -c "ALTER ROLE chess WITH CREATEDB;"
+```
 
-### Service Startup
-- Query API (prototype): `dune exec services/api/chessmate_api.exe -- --port 8080`.
-- Embedding worker: `OPENAI_API_KEY=... dune exec services/embedding_worker/embedding_worker.exe -- --workers N` (run multiple loops inside one process; increase `N` gradually when clearing backlogs).
-- CLI queries: `dune exec chessmate -- query "find king's indian games"` (ensure the API is running in another shell).
-- OpenAPI specification: `curl http://localhost:8080/openapi.yaml` (serve an alternate file by exporting `CHESSMATE_OPENAPI_SPEC`).
-- Pool metrics: `curl http://localhost:8080/metrics` exposes `db_pool_*` gauges. Adjust the pool size via `CHESSMATE_DB_POOL_SIZE` (default 10) when tuning throughput.
-- Queue metrics: `scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log` keeps per-status counts, throughput, and ETA.
-- Load testing: `DURATION=60s CONCURRENCY=50 ./scripts/load_test.sh` drives sustained `/query` traffic (requires `oha` or `vegeta`). Capture results and adjust `CHESSMATE_DB_POOL_SIZE` / service replicas as needed.
-- Startup sanity check: both processes emit a `[...][config]` line summarising detected env vars (port, database URL presence, agent/Redis caches). If a variable shows as `missing`, correct it before continuing.
-- High-volume ingest: adjust `CHESSMATE_INGEST_CONCURRENCY` (default 4) to balance CPU throughput vs. Postgres load when parsing large PGN dumps.
-- GPT-5 agent (optional): set `AGENT_API_KEY` (and optionally `AGENT_MODEL`, `AGENT_REASONING_EFFORT`, `AGENT_VERBOSITY`, `AGENT_CACHE_REDIS_URL`) before calling `chessmate query` or starting the API to enable ranking/explanations. If Redis is unavailable, fall back to `AGENT_CACHE_CAPACITY` for the in-process cache.
+---
 
-### Integration Smoke Test
-Use the built-in integration suite to verify ingestion, job processing, and hybrid search end-to-end. The runner creates and drops disposable databases, so the connection string supplied via `CHESSMATE_TEST_DATABASE_URL` must belong to a role with `CREATEDB`.
+## 3. Service Startup
+| Command | Purpose |
+| --- | --- |
+| `dune exec -- services/api/chessmate_api.exe --port 8080` | Start the query API. Logs include rate-limiter quota and Qdrant bootstrap status. |
+| `OPENAI_API_KEY=... dune exec -- embedding_worker -- --workers N --poll-sleep 1.0 --exit-after-empty 3` | Run embedding worker loops. Adjust `N` gradually; monitor queue via `scripts/embedding_metrics.sh --interval 120`. |
+| `dune exec chessmate -- query "..."` | CLI queries; add `--json` for raw payloads. Prints `[health] ...` lines before execution. |
+| `curl http://localhost:8080/metrics` | Inspect Prometheus gauges/counters (Caqti pool, rate limiter, etc.). |
+| `curl http://localhost:8080/openapi.yaml` | Retrieve the OpenAPI spec (override path with `CHESSMATE_OPENAPI_SPEC`). |
 
+Upcoming `/health` JSON endpoint will surface per-dependency status for API and worker.
+
+---
+
+## 4. Integration Smoke Test
 ```sh
 export CHESSMATE_TEST_DATABASE_URL=postgres://chess:chess@localhost:5433/postgres
 eval "$(opam env --set-switch)"
-psql "$CHESSMATE_TEST_DATABASE_URL" -c '\conninfo'               # optional: verify credentials
-dune exec test/test_main.exe -- list                 # optional: inspect suites
-dune exec test/test_main.exe -- test integration     # run only the integration group
+dune exec test/test_main.exe -- test integration
 ```
+Exercises ingest → embedding pipeline → hybrid query. Vector hits are stubbed, so Qdrant/OpenAI aren’t required.
 
-The tests stub Qdrant/OpenAI access, so the suite passes without those services. If the database cannot be reached, Alcotest fails immediately and prints the connection error.
+---
 
-## Runtime Management
-- **Health checks**:
-  - API: `GET /health`.
-  - Postgres: `docker compose exec postgres pg_isready -U chess`.
-  - Qdrant: `curl http://localhost:6333/healthz`.
-- **Degraded mode**: when Qdrant is unavailable or `QDRANT_URL`/bootstrap fails, the API logs `Vector search unavailable (...)` warnings and falls back to metadata-only ranking while the worker/API continue to keep the collection in sync (`Repo_qdrant.ensure_collection`).
-- **Rate limiting**: API rate limiting is enabled via `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` (default 60 per IP) and optional `CHESSMATE_RATE_LIMIT_BUCKET_SIZE` for bursts. 429 responses include `Retry-After`; counters appear under `/metrics`.
-- **Graceful shutdown**: send `SIGTERM`/`SIGINT` to the API (`pkill -TERM -f chessmate_api.exe`) or worker (`pkill -TERM -f embedding_worker.exe`). Both listeners stop accepting new work, finish in-flight jobs, and log a shutdown summary before exiting.
-- **Logs**: `docker compose logs -f <service>`; ship to Loki/ELK once observability stack is wired.
-  - The `/metrics` endpoint currently surfaces database pool utilisation only; extend via Prometheus once more signals are required.
-- **Scaling**: increase `--workers` (or run additional processes) to clear job backlogs; bump concurrency one loop at a time and watch `scripts/embedding_metrics.sh` for throughput and error spikes. Postgres/Qdrant remain single-instance until HA work lands.
-- **Queue hygiene**:
-  - Ingests now enforce `CHESSMATE_MAX_PENDING_EMBEDDINGS` (default 250k). Set a higher limit or `0`/negative to bypass if you intentionally backfill.
-  - Use `scripts/prune_pending_jobs.sh <batch>` to mark pending jobs with existing vectors as completed before re-ingesting.
+## 5. Runtime Operations
+- **Health checks**: `curl /health` (planned structured JSON), `pg_isready`, `curl http://qdrant:6333/healthz`, `redis-cli PING`.
+- **Metrics**: `/metrics` for DB pool usage, rate limits, (future) dependency status and agent timeouts.
+- **Rate limiter**: 429 responses include `Retry-After`. Tune `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` (and optional `..._BUCKET_SIZE`) as needed during load tests.
+- **Embedding queue monitoring**: `scripts/embedding_metrics.sh --interval 120` (processed, pending, ETA). Worker quits automatically if `--exit-after-empty` is set.
+- **Graceful shutdown**: API/worker handle SIGINT/SIGTERM; look for `[shutdown]` logs confirming clean exit.
 
-#### OpenAI Retry Tuning
-- Both the embedding worker and GPT-5 agent client retry transient OpenAI failures with exponential backoff (default: 5 attempts, 200 ms base delay, multiplier 2.0, jitter 20%).
-- Override the defaults via environment:
-  - `OPENAI_RETRY_MAX_ATTEMPTS` — positive integer (shared across worker/API).
-  - `OPENAI_RETRY_BASE_DELAY_MS` — base backoff delay in milliseconds.
-- Each retry emits a log line on stderr prefixed with `[openai-embedding]` or `[openai-agent]`, describing the attempt count, error, and next delay; scrape these in production to monitor rate limiting or outages.
+---
 
-### Embedding Queue Monitoring & Performance
-- **Continuous telemetry:**
-  ```sh
-  DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-    scripts/embedding_metrics.sh --interval 120 --log logs/embedding-metrics.log
-  ```
-  Captures per-status counts, 5/15/60 minute throughput, and ETA. Store the log in source control ignored `logs/` for easy diffing.
-- **Interpreting output:**
-  - `pending` should trend down when workers keep pace; a plateau signals rate limits or stalled workers.
-  - `throughput/min` columns help decide when to scale workers or revisit OpenAI quotas.
-  - `pending ETA` is computed from the 15-minute rate—treat it as a sanity check, not an SLA.
-  - Because vectors are not yet persisted to Qdrant, the worker marks jobs complete after reserving a `vector_id`. Expect Qdrant dashboards to stay quiet until the upload step ships.
-- **Guard tuning:**
-  - `CHESSMATE_MAX_PENDING_EMBEDDINGS=400000` is a good ceiling for local runs; production should tailor it to OpenAI/Qdrant quotas.
-  - Export the variable per shell or bake it into systemd units for ingest jobs.
-- **Scaling strategy:**
-  - Increase `--workers` gradually; if the metrics script shows rising failures (e.g., repeated 429s) roll back concurrency or raise backoff.
-  - When the queue dips below 10k pending, consider dropping back to a single worker to conserve tokens.
+## 6. Degraded Modes & Incident Hints
+| Symptom | Behaviour | Remedy |
+| --- | --- | --- |
+| Qdrant unreachable | API logs `Vector search unavailable`, falls back to metadata-only results. CLI health shows `qdrant error`. | Check Qdrant service (`docker compose ps qdrant`, `/healthz`), restart; ensure config (`QDRANT_URL`). |
+| Rate limiter triggered heavily | `429` responses + `api_rate_limited_total` increases. | Raise per-IP quota for the test window or reduce concurrency; verify legitimate traffic isn’t starved. |
+| GPT‑5 latency/timeouts (future) | Planned: warnings in response (`agent timeout`) + circuit-breaker logs. | Investigate OpenAI limits, fall back to heuristic mode, adjust timeout env (`AGENT_REQUEST_TIMEOUT_SECONDS`). |
+| Postgres saturation | High `db_pool_waiting`, CPU spikes. | Increase `CHESSMATE_DB_POOL_SIZE`, scale Postgres vertically/horizontally, audit slow queries. |
 
-### Bulk Ingestion Runbook
-1. **Prep** – export `DATABASE_URL`, set/confirm `CHESSMATE_MAX_PENDING_EMBEDDINGS`, and start the metrics loop (`--interval 120` works well for 5–10 worker threads).
-2. **Dry-run diagnostics** – run `chessmate twic-precheck <pgn>` or spot-check the file for encoding with the troubleshooting commands below.
-3. **Ingest** – execute `chessmate ingest <file.pgn>`; if the guard trips, either pause to let the queue drain or raise the threshold intentionally.
-4. **Embed** – keep the worker running (`dune exec services/embedding_worker/embedding_worker.exe -- --workers N --poll-sleep 1.0`) and verify completions rise faster than pending. For one-off drains, add the new auto-shutdown flag—e.g. `dune exec services/embedding_worker/embedding_worker.exe -- --workers N --poll-sleep 1.0 --exit-after-empty 3` exits after three empty polls and prints the summary without needing Ctrl-C.
-5. **Prune duplicates** – after re-ingest cycles, call `scripts/prune_pending_jobs.sh <batch>` until it reports `0` to clear leftover vectorized positions.
-6. **Post-run checks** – capture the final metrics snapshot, confirm `pending` is near zero, and archive logs for observability.
+Log details and mitigation in `docs/INCIDENTS/<date>.md` after an incident.
 
-### Agent Operations
-- API and CLI calls automatically include agent insights when `AGENT_API_KEY` is present.
-- Monitor agent warnings returned by the API (e.g., "Agent evaluation failed..." or token usage summaries).
-- Tune `AGENT_REASONING_EFFORT` + `AGENT_VERBOSITY` jointly (high/high for deep audits, medium/medium for balanced responses).
-- Enable caching by pointing `AGENT_CACHE_REDIS_URL` at the shared Redis instance (optionally tune `AGENT_CACHE_REDIS_NAMESPACE` / `AGENT_CACHE_TTL_SECONDS`). Without Redis, set `AGENT_CACHE_CAPACITY=<n>` (e.g. 1000) for the per-process fallback and clear or lower the value if memory pressure appears.
-- Inspect cache contents via the container (host machines may not have `redis-cli`):
-  ```sh
-  docker compose exec redis redis-cli --scan --pattern 'chessmate:agent:*'
-  ```
-  If no keys appear, generate agent traffic (e.g. run a `chessmate query ...` with `AGENT_API_KEY` set) and retry.
-  Spot-check PGN availability without re-ingesting:
-  ```sh
-  docker compose exec postgres psql "$DATABASE_URL" \
-    -c "SELECT id, LENGTH(pgn) FROM games ORDER BY id LIMIT 5;"
-  ```
-  (Any SQL client hitting `DATABASE_URL` works—our services now use the Caqti connection pool, so `psql` is optional.) Non-zero lengths confirm PGNs are intact for agent retrieval.
-- Force Redis snapshots when you expect `data/redis` to populate immediately (default policy `--save 60 1` waits for a write + 60 seconds):
-  ```sh
-  docker compose exec redis redis-cli SAVE    # synchronous
-  docker compose exec redis redis-cli BGSAVE  # background
-  docker compose exec redis ls -l /data       # inspect persisted files
-  ```
-- Flush stale agent entries after prompt/schema tweaks:
-  - Single command (dev-sized datasets):
-    ```sh
-    redis-cli --scan --pattern 'chessmate:agent:*' | xargs -r redis-cli del
-    ```
-    Streams matching keys via `SCAN` and deletes them with `DEL`; adjust the pattern when you override `AGENT_CACHE_REDIS_NAMESPACE`.
-  - Large keysets: avoid long `xargs` invocations by looping:
-    ```sh
-    redis-cli --scan --pattern 'chessmate:agent:*' \
-      | while read -r key; do redis-cli del "$key" >/dev/null; done
-    ```
-  - Quick reset: temporarily change `AGENT_CACHE_REDIS_NAMESPACE` (e.g. append a timestamp), restart the API, and continue working with a fresh namespace.
-  - Full wipe: `redis-cli FLUSHDB` removes the entire database—only use it when no other services share the Redis instance.
-- Telemetry: each agent call logs a `[agent-telemetry]` JSON line with candidate counts, latency, token usage, and optional cost estimates. Configure per-1K token costs via `AGENT_COST_INPUT_PER_1K`, `AGENT_COST_OUTPUT_PER_1K`, and `AGENT_COST_REASONING_PER_1K` to surface USD totals.
-- If GPT-5 is unreachable, results fall back to heuristic scoring and a warning appears in the response; investigate network/API limits before re-enabling.
+---
 
-## Backups & Restore
-- **Postgres**: schedule `pg_dump` + WAL archiving; store artifacts in secure object storage.
-- **Qdrant**: use built-in snapshots (`qdrant snapshot create --path /qdrant/storage/snapshots/<ts>`); sync to external storage.
-- **Restore workflow**: stop services → restore Postgres dump → restore Qdrant snapshot → rerun migrations (if needed) → restart worker/API → re-ingest if deltas are missing.
+## 7. Backups & Restore
+| Component | Strategy |
+| --- | --- |
+| Postgres | Regular `pg_dump` + WAL archiving; store in secure object storage. |
+| Qdrant | Use built-in snapshots (`qdrant snapshot create --path ...`). |
+| Redis | RDB snapshots (`redis-cli SAVE` / `BGSAVE`); consider separate instances per environment. |
 
-## Security & Access
-- Terminate TLS at reverse proxy (nginx/Traefik) in front of API & Qdrant.
-- Protect Qdrant with auth (token/mTLS); rotate credentials regularly.
-- Restrict worker egress to OpenAI hosts via firewall rules.
-- Separate Postgres roles (application vs. admin) and use least privilege.
-- Rotate `OPENAI_API_KEY`, DB passwords, and tokens per incident response policy.
+**Restore order**: stop services → restore Postgres → restore Qdrant snapshot → rerun migrations (if needed) → restart worker/API → re-ingest missing deltas.
 
-## Monitoring & Alerting
-- Track: API latency/p95, query success rate, embedding throughput, job queue depth (via `scripts/embedding_metrics.sh` or SQL), Postgres replication lag, disk usage on `data/` volumes.
-- Alerts: latency > 2s sustained, backlog > 500 jobs, embedding failure rate > 5%/h, disk utilization > 80%, Qdrant/DB down. Hook alerts into the guard limits to warn before ingest halts.
-- Dashboard: combine Postgres exporter, Qdrant metrics, OCaml counters (future Prometheus integration), and log the metrics script output for lightweight visibility.
+---
 
-## Incident Response
-1. Acknowledge alert/page.
-2. Check dashboards/logs for correlated spikes.
-3. If Qdrant down: return 503s quickly, pause worker.
-4. If Postgres degraded: pause ingestion, run read-only mode.
-5. Capture root cause + mitigation in `docs/INCIDENTS/<date>.md`; assign follow-up actions.
+## 9. Maintenance Jobs
+- Schema changes: schedule during low traffic; respond with 503s if maintenance window is required.
+- Mass re-embedding: throttle worker (`--workers` and `--poll-sleep`), watch OpenAI quotas and queue depth.
+- Redis cache maintenance: flush namespace (`redis-cli --scan --pattern 'chessmate:agent:*' | xargs -r redis-cli del`) or bump `AGENT_CACHE_REDIS_NAMESPACE` when prompts change.
 
-## Maintenance Procedures
-- Schema changes: schedule during low traffic; return maintenance responses (503) for API.
-- Re-embedding jobs: throttle worker to stay within OpenAI quota; monitor queue depth/durations and prune completed vectors from the pending queue before re-running (`scripts/prune_pending_jobs.sh`).
-- Upgrades: bump Docker images, apply migrations, run smoke tests (`chessmate query "test"`), restart services.
-- Stack reset: `docker compose down`; remove `data/postgres`, `data/qdrant`; bring services back up, re-run migrations, re-ingest.
+---
 
-## CI/CD Considerations
-- GitHub Actions (`.github/workflows/ci.yml`) runs `dune build` + `dune test` on pushes/PRs.
-- Use pull-request checks as gatekeepers before deploy.
-- For release candidates: document validation commands (`dune build`, `dune runtest`, sample ingest/query run) in PR description.
-- Future hardening: add integration suite hitting `/query` against live Postgres/Qdrant in CI/CD, automate container builds/pushes.
+## 10. Security & Access
+- Terminate TLS at a reverse proxy (nginx/Traefik) in front of API & Qdrant.
+- Protect Qdrant with authentication (token/mTLS); rotate secrets regularly.
+- Restrict worker/API egress to OpenAI endpoints via firewall rules.
+- Use least-privilege Postgres roles; store credentials in a secret manager.
+- Rotate `OPENAI_API_KEY`, DB passwords, Redis credentials per incident response policy.
+
+---
+
+## 11. Monitoring & Alerting (Targets)
+- **Metrics to watch**: `/metrics` latency histograms (once added), DB pool usage, rate limiter counters, embedding throughput, queue depth, GPT‑5 timeout counts.
+- **Alerts**:
+  - API p95 > 2s sustained.
+  - Embedding backlog > 500 jobs for >10 min.
+  - Embedding failure rate > 5%/h.
+  - Disk usage on `data/` volumes > 80%.
+  - Postgres/Qdrant health probe failures.
+- Dashboards: combine Postgres exporter, Qdrant metrics, OCaml counters, and logs from `scripts/embedding_metrics.sh`.
+
+---
+
+## 12. CI/CD Notes
+- GitHub Actions runs `dune build` + `dune runtest`; required checks gate merges.
+- `dune build @fmt` enforces ocamlformat.
+- For releases: document validation commands in the PR (build/test/smoke), ensure the embedding worker/API restart cleanly, publish containers, and announce rollout steps.
+- Future goal: automated integration tests hitting `/query` against live Postgres/Qdrant in CI/CD.
+
+---
+
+Keep this playbook updated alongside system changes. Combine it with the architecture roadmap ([REVIEW_v4.md](REVIEW_v4.md)) to understand what’s changing and why.

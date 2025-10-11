@@ -1,39 +1,96 @@
 # Load Testing Guide
 
-## Goals
-- Measure `/query` throughput and latency under sustained load.
-- Validate Postgres pool sizing (`CHESSMATE_DB_POOL_SIZE`) and monitor queue depth.
-- Capture baseline metrics before tuning.
+Evaluate Chessmate’s `/query` path under sustained load. Use this guide when validating infrastructure changes, tuning connection pools, or establishing performance baselines.
 
-## Prerequisites
-- Docker services running (`docker compose up -d postgres qdrant redis`).
-- API running (`dune exec services/api/chessmate_api.exe -- --port 8080`).
-- Load tool installed: [oha](https://github.com/hatoo/oha) or [vegeta](https://github.com/tsenart/vegeta).
+> Summary of goals: measure throughput/latency, observe resource usage (Postgres/Qdrant/Redis), and confirm the rate limiter/circuit breakers behave sensibly under pressure.
 
-## Quickstart
+---
+
+## 1. Prerequisites
+
+| Requirement | Notes |
+| --- | --- |
+| Services running | `docker compose up -d postgres qdrant redis` |
+| API listening | `dune exec -- services/api/chessmate_api.exe --port 8080` |
+| Data seeded | Ingest a representative PGN corpus before testing |
+| Load tool | [oha](https://github.com/hatoo/oha) (default) or [vegeta](https://github.com/tsenart/vegeta) |
+| opam env | Run `eval "$(opam env --set-switch)"` so `dune` and scripts resolve |
+
+Optional: ensure rate limits (`CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE`) are set high enough for the test window or monitor how often 429s appear.
+
+---
+
+## 2. Quick Start (Scripted)
+
 ```sh
 eval "$(opam env --set-switch)"
 ./scripts/load_test.sh
 ```
-Default settings: `DURATION=60s`, `CONCURRENCY=50`, POST payload stored in `scripts/fixtures/load_test_query.json`.
 
-Override environment variables as needed:
+Defaults:
+- `DURATION=60s`
+- `CONCURRENCY=50`
+- `TARGET_URL=http://localhost:8080/query`
+- Payload located at `scripts/fixtures/load_test_query.json`
+- Tool: `oha`
+
+Override env vars per run:
 ```sh
-CONCURRENCY=80 DURATION=120s TOOL=vegeta ./scripts/load_test.sh
+CONCURRENCY=80 DURATION=120s TOOL=vegeta TARGET_URL=http://localhost:8080/query   ./scripts/load_test.sh
 ```
 
-## Metrics & Observability
-Immediately after the run, the script prints:
-- `/metrics` output (focus on `db_pool_capacity`, `db_pool_in_use`, `db_pool_available`, `db_pool_waiting`).
-- `docker stats` snapshot for Postgres/Qdrant/Redis.
+The script outputs:
+1. Load tool summary (req/s, p50/p95 latency, error counts).
+2. `/metrics` snapshot (DB pool gauges, rate limiter counters, etc.).
+3. `docker stats` snapshot for Postgres, Qdrant, Redis.
 
-Consider capturing `oha`/`vegeta` output for p50/p95 latency, requests/sec, and error rate. Persist results in an internal spreadsheet or this doc as needed.
+Store results (latency, throughput, error rate, metrics snapshot) in an internal log or spreadsheet to track trends over time.
 
-## Tuning Tips
-- Increase `CHESSMATE_DB_POOL_SIZE` when `db_pool_waiting` stays non-zero and CPU headroom remains.
-- Watch Postgres CPU and connection limits when raising the pool size.
-- If OpenAI/Qdrant become bottlenecks, adjust their respective concurrency/timeouts accordingly.
+---
 
-## Next Steps
-- Automate load tests in a CI/CD pipeline (manual trigger) once the baseline is stable.
-- Expand the script to test multiple endpoints or payload variations as features evolve.
+## 3. Manual Invocation (oha example)
+
+```sh
+oha   --duration 60s   --concurrency 50   --header 'Content-Type: application/json'   --body @scripts/fixtures/load_test_query.json   http://localhost:8080/query
+```
+
+For vegeta:
+```sh
+echo "POST http://localhost:8080/query" |   vegeta attack -body scripts/fixtures/load_test_query.json -header "Content-Type: application/json"     -duration=60s -rate=0 -max-workers=50 | vegeta report
+```
+
+---
+
+## 4. What to Watch
+
+| Metric/Signal | Healthy Behaviour | Action if Degraded |
+| --- | --- | --- |
+| `db_pool_waiting` | Near zero | Increase `CHESSMATE_DB_POOL_SIZE` (watch CPU) |
+| `db_pool_in_use` vs capacity | Well below capacity | If saturated, scale Postgres pool or optimise queries |
+| Rate limiter counters (`api_rate_limited_total`) | Zero or expected level | If rising unintentionally, raise quota or reduce load |
+| `/metrics` agent timeout counters (future) | Zero | Investigate GPT‑5 latency; consider fallbacks |
+| `docker stats` CPU/memory | Within resource budget | Increase resources or lower concurrency |
+| HTTP errors (5xx) | None | Inspect API logs, Postgres, Qdrant |
+
+Also review CLI health logs (`[health] ...`) during the run to ensure dependencies remain available.
+
+---
+
+## 5. Common Tuning Steps
+
+1. **Postgres pool** – Increase `CHESSMATE_DB_POOL_SIZE` incrementally (5–10 connections at a time). Monitor `db_pool_waiting`, CPU, and connection limits.
+2. **Rate limiter** – Increase `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` during benchmarking or track how quickly 429s appear.
+3. **Embedding/Qdrant** – If queries see slow vector responses, confirm Qdrant resources (CPU/IO) and adjust worker/API concurrency.
+4. **OpenAI agent** – Disable GPT‑5 re-ranking during raw latency benchmarks if it introduces uncontrolled variance.
+
+Document parameter changes alongside results so future tests can reproduce conditions.
+
+---
+
+## 6. Next Steps
+
+- Automate the script in CI (manual trigger) to produce periodic baselines.
+- Extend the harness with multiple payloads (different queries/opening filters).
+- Add alerting thresholds based on measured latency/error rate so the rate limiter and upcoming circuit breaker don’t hide issues.
+
+Keeping a consistent load-test regimen helps ensure Chessmate remains responsive as data volume and user traffic grow.

@@ -1,185 +1,128 @@
 # Developer Handbook
 
-> Related guides: [Operations Playbook](OPERATIONS.md) for runtime procedures, [Testing Plan](TESTING.md) for manual validation, [Troubleshooting](TROUBLESHOOTING.md) for common issues, [Cookbook](COOKBOOK.md) for quick workflows, and [Collaboration Guidelines](GUIDELINES.md) for team norms.
+This handbook gets you from zero to productive with Chessmate: installing dependencies, understanding
+configuration, and running the core services. For architecture diagrams and reliability plans see
+[ARCHITECTURE.md](ARCHITECTURE.md) and [REVIEW_v4.md](REVIEW_v4.md).
 
-## Onboarding Checklist
-1. Run the automated bootstrap (optional but recommended): `./bootstrap.sh`. Re-run safely to pick up dependency changes; the script is idempotent and skips existing `.env`/switches.
-2. Copy `.env.sample` to `.env` and update the connection strings/API keys you need locally (the script performs this step if `.env` is missing).
-3. Install OCaml 5.1.x and `opam`; create the local switch inside the repo (lives under `_opam/`) and load it per shell with `eval $(opam env --set-switch)`.
-4. Install dependencies: `opam install . --deps-only --with-test`.
-5. Build/test baseline: `dune build`, `dune runtest`, `dune fmt --check`.
-6. Start backing services when needed: `docker compose up -d postgres qdrant redis` (first run downloads images).
-7. Run migrations with a fresh database: `export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate && ./scripts/migrate.sh`.
-8. Launch the prototype query API in its own shell: `dune exec chessmate_api -- --port 8080`.
-9. Ensure Docker (with Compose) and `curl` are available on your `PATH`; set `OPENAI_API_KEY` if you intend to exercise the embedding worker and `AGENT_API_KEY` if you plan to test GPT-5 agent ranking. The services now connect through the bundled Caqti pool, so there’s no direct libpq dependency—`psql` remains optional for ad‑hoc inspection. Both the API and worker log a config summary at startup, so check stdout/stderr to confirm the right variables are detected.
+---
 
-## Configuration Reference
+## 1. Quick Start
 
-The executables validate their environment on startup and exit with a clear error when required values are missing or malformed. Use this table as a quick reference:
+```sh
+./bootstrap.sh
+```
+
+The bootstrap script is idempotent. It:
+- Creates/loads the repo-specific opam switch and installs dependencies.
+- Copies `.env.sample` → `.env` (if missing).
+- Starts Docker services (Postgres, Qdrant, Redis) and runs migrations.
+- Executes `dune build` + `dune runtest`.
+
+If you prefer manual setup, follow the prerequisites below then run the same commands yourself.
+
+---
+
+## 2. Prerequisites
+
+| Requirement | Notes |
+| --- | --- |
+| OCaml 5.1.x + opam | `opam switch create . 5.1.0` (bootstrap does this). |
+| ocamlformat 0.27.0 | `opam install ocamlformat.0.27.0` (matching `.ocamlformat`). |
+| Docker & Docker Compose | Used for Postgres, Qdrant, Redis. |
+| `psql`, `curl`, `redis-cli` | Helpful for troubleshooting. |
+| OpenAI API key (optional) | Required only if you exercise GPT‑5 agent scoring. |
+
+Load the opam environment in each shell:
+```sh
+eval "$(opam env --set-switch)"
+```
+
+---
+
+## 3. Configuration Reference
+
+The executables validate configuration on startup; missing or malformed values result in descriptive errors.
 
 | Variable | Required | Default | Used by | Notes |
 | --- | --- | --- | --- | --- |
 | `DATABASE_URL` | ✅ | — | API, worker, CLI | Postgres connection string. |
-| `CHESSMATE_DB_POOL_SIZE` | ⛏️ | `10` | API, worker | Max Postgres connections in the shared pool. |
-| `QDRANT_URL` | ✅ | — | API, worker (indirect) | Base URL for Qdrant HTTP API. |
-| `CHESSMATE_API_PORT` | ⛏️ | `8080` | API | Port the HTTP server binds to. |
-| `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` | ⛏️ | `60` | API | Per-IP request budget enforced by the rate limiter. |
-| `CHESSMATE_RATE_LIMIT_BUCKET_SIZE` | ⛏️ | `same as requests/min` | API | Optional burst capacity (token bucket size). |
-| `CHESSMATE_API_URL` | ⛏️ | `http://localhost:8080` | CLI | Base URL for `chessmate query`. |
-| `CHESSMATE_MAX_PENDING_EMBEDDINGS` | ⛏️ | `250000` | CLI ingest | Guardrail for queue pressure (`<= 0` disables). |
-| `QDRANT_COLLECTION_NAME` | ⛏️ | `positions` | API, worker | Collection created on startup when missing. |
-| `QDRANT_VECTOR_SIZE` | ⛏️ | `1536` | API, worker | Dimensionality of stored vectors. |
-| `QDRANT_DISTANCE` | ⛏️ | `Cosine` | API, worker | Distance metric used for the collection. |
-| `OPENAI_API_KEY` | ✅ (worker) | — | Embedding worker | Required to call the embeddings endpoint. |
-| `OPENAI_EMBEDDING_ENDPOINT` | ⛏️ | `https://api.openai.com/v1/embeddings` | Embedding worker | Override when proxying OpenAI. |
-| `OPENAI_EMBEDDING_CHUNK_SIZE` | ⛏️ | `2048` | Embedding worker | Max FENs per request; smaller values reduce latency, larger risk hitting API limits. |
-| `OPENAI_EMBEDDING_MAX_CHARS` | ⛏️ | `120000` | Embedding worker | Char guard per chunk to approximate token limits. |
-| `CHESSMATE_INGEST_CONCURRENCY` | ⛏️ | `4` | CLI ingest | Max parallel parses when streaming PGNs. |
-| `AGENT_API_KEY` | ⛏️ | — | API | Enable GPT-5 agent re-ranking when present. |
-| `AGENT_ENDPOINT` | ⛏️ | `https://api.openai.com/v1/responses` | API | Endpoint for GPT-5 responses. |
-| `AGENT_MODEL` | ⛏️ | provider default | API | Override GPT-5 model (e.g., `gpt-5`). |
-| `AGENT_REASONING_EFFORT` | ⛏️ | `medium` | API | Parsed via `Agents_gpt5_client.Effort.of_string`. |
-| `AGENT_VERBOSITY` | ⛏️ | `medium` | API | Parsed via `Agents_gpt5_client.Verbosity.of_string`. |
-| `AGENT_CACHE_REDIS_URL` | ⛏️ | — | API | Enable Redis cache (`redis://...`). Requires optional namespace/TTL. |
-| `AGENT_CACHE_REDIS_NAMESPACE` | ⛏️ | `chessmate:agent:` | API | Optional when Redis cache enabled. |
-| `AGENT_CACHE_TTL_SECONDS` | ⛏️ | disabled | API | Positive integer TTL for Redis cache entries. |
-| `AGENT_CACHE_CAPACITY` | ⛏️ | — | API | Enable in-memory cache when Redis is not configured. |
+| `QDRANT_URL` | ✅ | — | API, worker | Base URL for Qdrant. |
+| `CHESSMATE_API_PORT` | ⛏️ | `8080` | API | HTTP port. |
+| `CHESSMATE_API_URL` | ⛏️ | `http://localhost:8080` | CLI | Location of the query API. |
+| `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` | ⛏️ | `60` | API | Per-IP quota for the rate limiter. |
+| `CHESSMATE_RATE_LIMIT_BUCKET_SIZE` | ⛏️ | same as requests/min | API | Optional burst capacity. |
+| `QDRANT_COLLECTION_NAME` | ⛏️ | `positions` | API, worker | Collection ensured at startup. |
+| `QDRANT_VECTOR_SIZE` | ⛏️ | `1536` | API, worker | Embedding dimension. |
+| `QDRANT_DISTANCE` | ⛏️ | `Cosine` | API, worker | Distance metric. |
+| `CHESSMATE_MAX_PENDING_EMBEDDINGS` | ⛏️ | `250000` | CLI ingest | Queue guard for ingestion; `<=0` disables. |
+| `CHESSMATE_INGEST_CONCURRENCY` | ⛏️ | `4` | CLI ingest | Parallel PGN parsing. |
+| `OPENAI_API_KEY` | ✅ (worker) | — | Embedding worker | Required for embeddings. |
+| `AGENT_API_KEY` | ⛏️ | — | API | Enables GPT‑5 re-ranking. |
+| `AGENT_REASONING_EFFORT`, `AGENT_VERBOSITY` | ⛏️ | `medium` | API | Tune GPT‑5 calls. |
+| `AGENT_CACHE_REDIS_URL` | ⛏️ | — | API | Redis-backed agent cache. |
 
-✅ = required, ⛏️ = optional. Empty strings are treated as unset. On startup the API and worker print a `[...][config]` line summarising detected values—this is the quickest way to verify your environment before running anything heavy.
+✅ = required · ⛏️ = optional.
 
-## Repository Layout (Top Level)
-- `lib/chess/`: PGN/FEN parsing, metadata helpers, ECO catalogue, FEN tooling.
-- `lib/storage/`, `lib/embedding/`, `lib/query/`, `lib/cli/`: persistence, embedding clients, query planner, shared CLI modules.
-- `bin/`: CLI entry points (`chessmate`).
-- `services/`: long-running executables (embedding worker, query API prototype).
-- `scripts/`: migrations/seeding helpers.
-- `docs/`: architecture, operations, developer, contribution guides.
-- `test/`: Alcotest suites + fixtures (`test/fixtures/`).
-- `data/`: Docker volumes (`data/postgres`, `data/qdrant`, `data/redis`).
+---
 
-## Database & Services
-```sh
-# bring services up
-export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
-CHESSMATE_API_URL=http://localhost:8080
+## 4. Everyday Workflow
 
-docker compose up -d postgres qdrant redis
-./scripts/migrate.sh
-```
-For day-to-day service operations, scaling, and cache management, refer to the [Operations Playbook](OPERATIONS.md).
-- Drop/reset by removing `data/postgres` and re-running migrations (the script is idempotent).
-- Inspect data with your preferred SQL client (e.g., `psql`, DBeaver, TablePlus) using `DATABASE_URL`—the OCaml services use Caqti under the hood, so any Postgres client will do.
+1. **Format & test before commit**
+   ```sh
+   dune fmt
+   dune build
+   dune runtest
+   ```
+   CI runs `dune build @fmt` to enforce formatting (profile `conventional`, version `0.27.0`).
 
-## Build & Test Workflow
-- Formatting: `dune fmt` (run before commits; CI runs `dune build @fmt` to verify formatting). The repo ships with `.ocamlformat` (profile `conventional`, version `0.27.0`) so everyone formats code identically—use `opam install ocamlformat.0.27.0` if the version is missing locally.
-- Unit tests: `dune build && dune runtest`.
-- Watch mode: `WATCH=1 dune runtest` (re-runs changed suites).
-- Stream test output: `dune runtest --no-buffer` (useful for verbose parsers).
-- Integration passes: ensure Docker services are running, then `dune runtest --force`.
-- For manual verification flows, follow the checklist in [TESTING.md](TESTING.md).
-- Before opening a PR: capture `dune build && dune runtest` output in the PR template.
+2. **Run the embedding worker**
+   ```sh
+   OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate      dune exec -- embedding_worker -- --workers 2 --poll-sleep 1.0 --exit-after-empty 3
+   ```
+   Monitors: `scripts/embedding_metrics.sh --interval 120`.
 
-### CLI Usage Cheatsheet
-```sh
-# Ingest a PGN (requires DATABASE_URL). Adjust or disable the queue guard via
-# CHESSMATE_MAX_PENDING_EMBEDDINGS before bulk imports.
-chessmate ingest test/fixtures/extended_sample_game.pgn
+3. **Run the query API**
+   ```sh
+   dune exec -- services/api/chessmate_api.exe --port 8080
+   ```
+   Logs include rate-limiter configuration and Qdrant bootstrap status.
 
-# Query prototype API (ensure server runs on localhost:8080). The CLI prints a
-# service health summary before returning results.
-chessmate query "Show French Defense draws with queenside majority"
+4. **Query from the CLI**
+   ```sh
+   CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query --json "Show 5 random games"
+   ```
+   Output includes dependency health, rate-limit responses, and JSON payloads when `--json` is used.
 
-# Raw JSON output (suitable for jq)
-chessmate query --json "Show 5 random games" | jq '.'
+5. **Integration smoke test**
+   ```sh
+   export CHESSMATE_TEST_DATABASE_URL=postgres://chess:chess@localhost:5433/postgres
+   dune exec test/test_main.exe -- test integration
+   ```
+   Stubs Qdrant/OpenAI but exercises ingest → query flows.
 
-# Embedding worker loop (replace OPENAI_API_KEY for real runs)
-OPENAI_API_KEY=dummy chessmate embedding-worker --workers 4 --poll-sleep 1.0
+More recipes live in [COOKBOOK.md](COOKBOOK.md).
 
-# Watch queue depth & throughput every two minutes
-DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-  scripts/embedding_metrics.sh --interval 120
+---
 
-# Prune stale pending jobs after re-ingest
-DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
-  scripts/prune_pending_jobs.sh 2000
+## 5. Observability & Health
 
-# FEN diagnostics
-chessmate fen test/fixtures/sample_game.pgn | head -n 5
+- `/metrics` exposes Caqti pool gauges, rate-limiter counters, and (soon) per-dependency health/timeouts.
+- CLI prints `[health] postgres/qdrant/redis/api` lines before executing queries.
+- Planned `/health` JSON endpoint will report dependency status and probe latency for both API and worker.
+- Use `scripts/embedding_metrics.sh` to monitor queue depth; rate limiter increments appear under `api_rate_limited_total`.
 
-# Enable GPT-5 agent ranking (optional)
-AGENT_API_KEY=test-key AGENT_REASONING_EFFORT=low AGENT_CACHE_REDIS_URL=redis://localhost:6379/0 \
-  chessmate query "Explain Najdorf exchange sacrifices"
-```
+---
 
-### Bulk Ingestion Tips
-- Keep `CHESSMATE_MAX_PENDING_EMBEDDINGS` conservative in development (≤ 400k) so runaway queues fail fast.
-- Metrics script cadence: 60–120 seconds works well for 5–10 worker loops; shorten to 30 seconds while tuning.
-- When throughput plateaus, lower `--workers` or increase `--poll-sleep` before OpenAI throttling kicks in.
-- Always prune pending jobs with populated `vector_id`s before re-ingesting the same PGN to avoid duplicates.
-- Agent evaluations are optional; unset `AGENT_API_KEY` when running tests offline or use `AGENT_REASONING_EFFORT=low` to reduce cost/latency during development.
+## 6. Troubleshooting Tips
 
-- Keep `CHESSMATE_MAX_PENDING_EMBEDDINGS` conservative in development (≤ 400k) so runaway queues fail fast.
-- Metrics script cadence: 60–120 seconds works well for 5–10 worker loops; shorten to 30 seconds while tuning.
-- When throughput plateaus, lower `--workers` or increase `--poll-sleep` before OpenAI throttling kicks in.
-- Always prune pending jobs with populated `vector_id`s before re-ingesting the same PGN to avoid duplicates.
+| Symptom | Likely Cause | Next Steps |
+| --- | --- | --- |
+| `Rate limit exceeded` (429) | Per-IP quota hit | Check `CHESSMATE_RATE_LIMIT_*` env vars; inspect `/metrics`. |
+| Qdrant errors on ingest | Collection missing | Confirm bootstrap logs (`qdrant collection ensured`); check `QDRANT_URL`. |
+| Slow/blocked queries | GPT‑5 latency | Watch logs for `[agent-timeout]`; upcoming circuit breaker will auto-fallback. |
+| Integration test fails immediately | DB permissions | Ensure `CHESSMATE_TEST_DATABASE_URL` user has `CREATEDB`. |
+| Agent cache misses unexpectedly | Redis not configured | Set `AGENT_CACHE_REDIS_URL` or fall back to in-memory cache. |
 
-### Parsing PGNs Programmatically
-```ocaml
-# let raw = Stdio.In_channel.read_all "game.pgn";;
-val raw : string = "..."
-# match Chessmate.Pgn_parser.parse raw with
-  | Ok game -> List.take game.moves 3
-  | Error err -> raise_s [%sexp "parse failure", (err : Error.t)]
-;;
-- : Chessmate.Pgn_parser.move list = [ ... ]
+For fuller debugging guidance see [TROUBLESHOOTING.md](TROUBLESHOOTING.md) and [Operations Playbook](OPERATIONS.md).
 
-# match Chessmate.Pgn_parser.parse_file "game.pgn" with
-  | Ok game -> Chessmate.Game_metadata.of_headers game.headers
-  | Error err -> raise_s [%sexp "parse-file failure", (err : Error.t)]
-;;
-- : Chessmate.Game_metadata.t = { ... }
-```
-
-## Coding Standards
-- Adopt `open! Base`; expose only required signatures via `.mli`.
-- Keep pure logic under `lib/chess`; place side-effects (database, network) in `lib/storage` or service modules.
-- Prefer pattern matching, avoid partial functions, return `Or_error.t` for recoverable failures.
-- Avoid ad-hoc `printf` in long-lived services—use logging macros once wired in.
-
-## How to Autogenerate Documentation
-- Write documentation comments inside `.ml`/`.mli` files using the odoc form `(** ... *)`, focusing on public types and functions so interfaces stay discoverable.
-- Generate HTML docs via `opam exec -- dune build @doc`; the existing Dune configuration already wires odoc into the build graph.
-- Add optional `.mld` pages when you want curated narratives; remember to extend the relevant `documentation` stanzas in your `dune` files so odoc renders them.
-- Open `_build/default/_doc/_html/index.html` (or a specific module page) in a browser to review the generated site.
-
-## Git Workflow
-1. `git checkout -b feature/<descriptor>`.
-2. Keep commits focused/imperative (e.g., `feat: add opening catalogue`).
-3. Rebase on `main` before pushing; resolve conflicts locally.
-4. Open PR with summary, test evidence, rollout notes; request review.
-
-## IDE & Tooling Tips
-- Source the opam switch in new shells: `eval $(opam env --set-switch)`.
-- Recommended: VS Code + OCaml Platform, or Emacs + merlin; enable ocamlformat-on-save.
-- Optional Git hooks under `scripts/` can enforce formatting/tests pre-push.
-
-## Troubleshooting
-- Connection errors to Postgres: ensure `docker compose ps` shows containers healthy; confirm `DATABASE_URL`.
-- Embedding rate limits: mock `Embedding_client` or throttle job polling; capture fixtures for deterministic tests.
-- Qdrant schema mismatches: rerun migrations or wipe `data/qdrant` if working with disposable dev data.
-- CLI query returning curated results only: API is still prototype—planner stubs curated data until Qdrant/Postgres integration lands.
-
-## Continuous Integration
-- GitHub Actions workflow [`ci.yml`](../.github/workflows/ci.yml) runs on pushes/PRs (build + tests).
-- No remote caching: expect full builds; keep dependencies minimal.
-- Re-run CI from GitHub Actions tab after rebases/flaky failures; log flakes in an issue.
-- Local dry-run (optional): `HOME=$PWD act -j build-and-test -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --container-architecture linux/amd64` (some GitHub services unavailable locally).
-
-## Related Documentation
-
-- [Chessmate for Dummies](CHESSMATE_FOR_DUMMIES.md) - Complete ingestion and search flow explanation
-- [Architecture](ARCHITECTURE.md) - System design, components, and data flow diagrams
-- [Operations](OPERATIONS.md) - Deployment, monitoring, and backup procedures
-- [LLM Prompts](PROMPTS.md) - Useful prompts for chess analysis and data augmentation
-- [Troubleshooting](TROUBLESHOOTING.md) - Common issues and solutions
-- [Guidelines](GUIDELINES.md) - Collaboration standards and PR checklist
+Happy hacking! Chessmate keeps ingestion, vector search, and LLM scoring under your control—run the smoke test often and keep the guardrails tight.
