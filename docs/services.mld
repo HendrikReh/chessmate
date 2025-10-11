@@ -1,0 +1,40 @@
+{0 Services}
+
+Chessmate ships two long-running executables: an Opium HTTP API for querying
+and an embedding worker that drains the vector backlog. Both reuse the shared
+modules documented elsewhere in this guide.
+
+{1 Query API}
+
+- Implemented in `services/api/chessmate_api.ml`, the service exposes `/query`
+  and orchestrates intent analysis, hybrid planning, Postgres/Qdrant access,
+  optional GPT-5 agent evaluation, and JSON formatting.
+- Configuration is derived from `Config.Api.load`, covering Postgres URLs,
+  optional agent credentials, and cache modes (Redis or in-memory).
+- Structured logs tagged `[chessmate-api]` include configuration summaries,
+  cache status, and agent failures—use them for operational debugging.
+- Planned enhancements (see `docs/ARCHITECTURE.md`) include richer metrics and
+  tighter integration with Qdrant for live hybrid search.
+
+{1 Embedding Worker}
+
+- Implemented in `services/embedding_worker/embedding_worker.ml`, this daemon
+  polls `embedding_jobs`, batches FENs, calls OpenAI embeddings, and upserts
+  vectors into Qdrant, marking job status transitions along the way.
+- Retry logic is encapsulated via `Chessmate.Retry.with_backoff`, providing
+  jittered exponential backoff with helpful log messages.
+- Signals (`SIGINT`, `SIGTERM`) trigger graceful shutdowns, allowing the worker
+  to finish current batches before exiting.
+- Operational flags such as `--workers`, `--poll-sleep`, and optional exit
+  streak limits make scaling and batching predictable across environments.
+
+{1 Deploying Services}
+
+- Use `dune exec services/api/chessmate_api.exe -- --port 8080` for local runs;
+  production deployments typically wrap the executable in systemd or container
+  manifests.
+- The worker starts via `dune exec -- embedding_worker -- --workers <n>`.
+  Ensure `OPENAI_API_KEY`, `DATABASE_URL`, and `QDRANT_URL` are exported
+  beforehand.
+- Docker Compose (`docker compose up postgres qdrant redis`) supplies the
+  backing services required by both processes in development.

@@ -1,0 +1,34 @@
+{0 Query Pipeline}
+
+The query pipeline transforms natural-language questions into ranked chess game
+results by blending deterministic filters, optional vector search, and
+LLM-based scoring.
+
+{1 Stages}
+
+- `lib/query/query_intent.ml` normalises the question, extracts keywords,
+  detects ECO/opening filters, and builds rating bounds.
+- `lib/query/hybrid_planner.ml` converts the plan into SQL predicates and
+  optional Qdrant payload filters while supplying deterministic query vectors.
+- `lib/query/hybrid_executor.ml` fetches candidate games from Postgres, merges
+  vector hits (when enabled), and accumulates weighted scores.
+- `lib/query/agent_cache.ml` and `lib/query/agent_evaluator.ml` add GPT-5
+  scores and explanations, backed by Redis or in-process caches.
+- `lib/query/result_formatter.ml` combines metadata, heuristic scores, and
+  agent annotations into CLI/API responses.
+
+{1 Service Integration}
+
+- The Opium service in `services/api/chessmate_api.ml` exposes `/query`, wiring
+  request parsing, planning, execution, and JSON formatting together.
+- The CLI command in `lib/cli/search_command.ml` posts questions to the HTTP API
+  and renders tabular summaries for quick local exploration.
+
+{1 Extending the Pipeline}
+
+- Replace the placeholder query vectors with real embeddings once available by
+  updating `Hybrid_planner.query_vector`.
+- Add metadata filters by extending `Query_intent.metadata_filter` and updating
+  the planner’s conversion logic.
+- Expand telemetry or cost reporting in `lib/query/agent_telemetry.ml` to match
+  your observability needs.

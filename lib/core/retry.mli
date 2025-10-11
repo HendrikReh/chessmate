@@ -26,4 +26,4 @@ val with_backoff :
     (optionally jittered) before trying again, multiplying the delay by
     [multiplier] after each attempt and capping it at [max_delay].
 
-    @raise Invalid_argument if [max_attempts < 1]. *)
+    Raises [Invalid_argument] if [max_attempts < 1]. *)

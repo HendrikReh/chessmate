@@ -1,0 +1,3 @@
+(documentation
+ (package chessmate)
+ (mld_files index pipeline query embedding cli services))

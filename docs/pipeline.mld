@@ -1,0 +1,38 @@
+{0 Ingestion Pipeline}
+
+The ingestion pipeline turns raw PGN data into structured records stored in
+PostgreSQL and queued for embedding.
+
+{1 High-Level Flow}
+
+- `dune exec -- chessmate -- ingest <file.pgn>` kicks off the CLI command from
+  `lib/cli/ingest_command.ml`.
+- Games are parsed incrementally via `lib/chess/pgn_parser.ml`, which streams
+  headers and SAN moves.
+- Per-ply FEN snapshots are derived with `lib/chess/pgn_to_fen.ml`, leveraging
+  deterministic move application.
+- Metadata and positions are persisted by `lib/storage/repo_postgres.ml`,
+  which inserts players, games, and `embedding_jobs` rows.
+- Queue pressure is monitored through `Config.Cli.pending_guard_limit`,
+  aborting ingestion if `CHESSMATE_MAX_PENDING_EMBEDDINGS` is exceeded.
+
+{1 Key Modules}
+
+- `Ingest_command`: orchestrates file IO, Lwt-based concurrency, and guard rails
+  before touching storage.
+- `Pgn_parser`: parses PGN headers/SAN while capturing line numbers for precise
+  error reporting.
+- `Pgn_to_fen`: converts SAN moves into FEN states used later by the embedding
+  worker and diagnostics CLI.
+- `Repo_postgres`: transaction-friendly API for inserting games, positions, and
+  embedding jobs.
+- `Ingestion_queue`: lightweight test helper used to stage embedding jobs
+  without hitting Postgres.
+
+{1 Operational Tips}
+
+- Tune `CHESSMATE_INGEST_CONCURRENCY` when ingesting large PGN archives on
+  multi-core machines.
+- Use `dune exec -- chessmate -- fen` to spot-check FEN output for tricky games.
+- Monitoring columns like `embedding_jobs.status` helps diagnose ingestion
+  failures before they reach the worker.

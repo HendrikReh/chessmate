@@ -137,6 +137,12 @@ val raw : string = "..."
 - Prefer pattern matching, avoid partial functions, return `Or_error.t` for recoverable failures.
 - Avoid ad-hoc `printf` in long-lived services—use logging macros once wired in.
 
+## How to Autogenerate Documentation
+- Write documentation comments inside `.ml`/`.mli` files using the odoc form `(** ... *)`, focusing on public types and functions so interfaces stay discoverable.
+- Generate HTML docs via `opam exec -- dune build @doc`; the existing Dune configuration already wires odoc into the build graph.
+- Add optional `.mld` pages when you want curated narratives; remember to extend the relevant `documentation` stanzas in your `dune` files so odoc renders them.
+- Open `_build/default/_doc/_html/index.html` (or a specific module page) in a browser to review the generated site.
+
 ## Git Workflow
 1. `git checkout -b feature/<descriptor>`.
 2. Keep commits focused/imperative (e.g., `feat: add opening catalogue`).

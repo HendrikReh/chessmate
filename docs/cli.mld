@@ -1,0 +1,68 @@
+{0 Command-Line Interface}
+
+The Chessmate CLI wraps ingestion, querying, and diagnostic workflows behind a
+Cmdliner-based executable (`dune exec -- chessmate -- ...`).
+
+{1 Shared Infrastructure}
+
+- `lib/cli/cli_common.ml` resolves environment variables (`DATABASE_URL`,
+  `CHESSMATE_API_URL`) and provides consistent error handling.
+- Commands return `unit Or_error.t`, allowing the main binary to surface
+  actionable messages while preserving non-zero exit codes on failure.
+
+{1 Primary Commands}
+
+- `lib/cli/ingest_command.ml`: parses PGNs, enforces embedding queue guard
+  rails, and persists games plus positions.
+- `lib/cli/search_command.ml`: posts questions to the `/query` service and
+  prints summaries, filters, and candidate scores.
+- `lib/cli/pgn_to_fen_command.ml`: converts PGNs to FEN snapshots either on
+  stdout or into a file, useful for debugging or creating fixtures.
+- `lib/cli/twic_precheck_command.ml`: scans TWIC drops (or any PGN batch) for
+  malformed headers before they hit the main ingestion loop.
+
+{1 Usage Tips}
+
+{2 Ingest}
+- Set `CHESSMATE_MAX_PENDING_EMBEDDINGS` to halt ingestion when the queue
+  outpaces available embedding workers.
+- Adjust `CHESSMATE_INGEST_CONCURRENCY` to match your CPU when streaming large
+  PGN archives.
+
+{2 Query}
+- The CLI prints a human-friendly summary; use the HTTP API directly when you
+  need JSON.
+- Point `CHESSMATE_API_URL` at the correct environment (local/staging/prod)
+  before issuing queries.
+
+{2 FEN}
+- Combine `chessmate fen` with `head`, `tail`, or `sed -n '<n>p'` to inspect
+  specific positions without saving to disk.
+
+{2 TWIC Precheck}
+- Use the precheck before long ingests to surface malformed headers and
+  missing metadata early.
+
+{1 Usage Examples}
+
+{2 Ingest}
+- Single PGN: `DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+  dune exec -- chessmate -- ingest test/fixtures/sample_game.pgn`
+- Batch loop: `for pgn in fixtures/*.pgn; do dune exec -- chessmate -- ingest "$pgn"; done`
+
+{2 Query}
+- Default output: `CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query "Find King's Indian games where White is 2500"`
+- JSON via API:
+  {v
+  curl -s -X POST http://localhost:8080/query \
+    -H "Content-Type: application/json" \
+    -d '{"question":"Show French Defense draws"}' \
+    | jq '.'
+  v}
+
+{2 FEN}
+- stdout preview: `dune exec -- chessmate -- fen test/fixtures/sample_game.pgn`
+- File export: `dune exec -- chessmate -- fen test/fixtures/sample_game.pgn /tmp/fens.txt`
+
+{2 TWIC Precheck}
+- Health check: `dune exec -- chessmate -- twic-precheck downloads/twic2025.pgn`

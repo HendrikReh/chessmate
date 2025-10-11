@@ -1,0 +1,37 @@
+{0 Embedding Infrastructure}
+
+Embedding jobs translate FEN positions into dense vectors stored in Qdrant so
+the query pipeline can incorporate semantic clues.
+
+{1 Workflow}
+
+- Ingestion inserts pending jobs into the `embedding_jobs` table through
+  `lib/storage/repo_postgres.ml`.
+- The long-running worker in `services/embedding_worker/embedding_worker.ml`
+  polls for batches of jobs, respecting guard rails like `--workers` and
+  `--poll-sleep`.
+- `lib/embedding/embedding_client.ml` batches FEN strings, enforces chunk
+  limits, and handles retries against the OpenAI Embeddings API.
+- Successful calls produce vectors that are enriched with metadata using
+  `lib/embedding/vector_payload.ml` before being upserted into Qdrant via
+  `lib/storage/repo_qdrant.ml`.
+- Job states move through `lib/embedding/embedding_job.ml`, enabling retries,
+  metrics, and housekeeping.
+
+{1 Supporting Modules}
+
+- `Embedding_job`: shared record type plus helper transitions used by both the
+  worker and the storage layer.
+- `Embeddings_cache`: optional in-memory cache to short-circuit duplicate
+  embedding requests during development or tests.
+- `Repo_qdrant`: minimal HTTP client that upserts vectors and, in future, will
+  power hybrid retrieval.
+
+{1 Operations}
+
+- Configure the worker via environment variables documented in
+  `docs/DEVELOPER.md` (e.g., `OPENAI_API_KEY`, `OPENAI_EMBEDDING_CHUNK_SIZE`).
+- Use `scripts/embedding_metrics.sh` to monitor queue depth, throughput, and
+  estimated completion times.
+- Worker logs prefixed with `[worker:*]` describe job lifecycle events and retry
+  behaviour—grep them to diagnose production issues quickly.
