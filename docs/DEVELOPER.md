@@ -27,6 +27,9 @@ The executables validate their environment on startup and exit with a clear erro
 | `CHESSMATE_RATE_LIMIT_BUCKET_SIZE` | ⛏️ | `same as requests/min` | API | Optional burst capacity (token bucket size). |
 | `CHESSMATE_API_URL` | ⛏️ | `http://localhost:8080` | CLI | Base URL for `chessmate query`. |
 | `CHESSMATE_MAX_PENDING_EMBEDDINGS` | ⛏️ | `250000` | CLI ingest | Guardrail for queue pressure (`<= 0` disables). |
+| `QDRANT_COLLECTION_NAME` | ⛏️ | `positions` | API, worker | Collection created on startup when missing. |
+| `QDRANT_VECTOR_SIZE` | ⛏️ | `1536` | API, worker | Dimensionality of stored vectors. |
+| `QDRANT_DISTANCE` | ⛏️ | `Cosine` | API, worker | Distance metric used for the collection. |
 | `OPENAI_API_KEY` | ✅ (worker) | — | Embedding worker | Required to call the embeddings endpoint. |
 | `OPENAI_EMBEDDING_ENDPOINT` | ⛏️ | `https://api.openai.com/v1/embeddings` | Embedding worker | Override when proxying OpenAI. |
 | `OPENAI_EMBEDDING_CHUNK_SIZE` | ⛏️ | `2048` | Embedding worker | Max FENs per request; smaller values reduce latency, larger risk hitting API limits. |

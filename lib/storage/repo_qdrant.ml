@@ -70,6 +70,14 @@ let http_post ~path ~body =
   let uri = Config.url path |> Uri.of_string in
   Cohttp_lwt_unix.Client.post ~headers ~body:(Cohttp_lwt.Body.of_string body) uri
 
+let http_get ~path =
+  let uri = Config.url path |> Uri.of_string in
+  Cohttp_lwt_unix.Client.get uri
+
+let http_put ~path ~body =
+  let uri = Config.url path |> Uri.of_string in
+  Cohttp_lwt_unix.Client.put ~headers ~body:(Cohttp_lwt.Body.of_string body) uri
+
 let with_lwt_result f =
   let wrapped =
     Lwt.catch
@@ -156,3 +164,43 @@ let vector_search ~vector ~filters ~limit =
   match !test_hooks_ref with
   | Some hooks -> hooks.search ~vector ~filters ~limit
   | None -> run_request (vector_search_request ~vector ~filters ~limit)
+
+let ensure_collection_request ~name ~vector_size ~distance =
+  let open Lwt.Syntax in
+  let path = Printf.sprintf "/collections/%s" name in
+  let* response, body = http_get ~path in
+  let status = Cohttp.Response.status response in
+  let code = Cohttp.Code.code_of_status status in
+  if Int.equal code 200 then Lwt.return (Ok ())
+  else
+    let* body_string = Cohttp_lwt.Body.to_string body in
+    if Int.equal code 404 then (
+      let payload =
+        `Assoc
+          [ "vectors"
+            , `Assoc
+                [ "size", `Int vector_size
+                ; "distance", `String distance ]
+          ; "payload_schema"
+            , `Assoc
+                [ "game_id", `Assoc [ "type", `String "integer" ]
+                ; "fen", `Assoc [ "type", `String "keyword" ]
+                ; "white", `Assoc [ "type", `String "keyword" ]
+                ; "black", `Assoc [ "type", `String "keyword" ]
+                ; "opening_slug", `Assoc [ "type", `String "keyword" ] ]
+          ]
+        |> Yojson.Safe.to_string
+      in
+      let* response, body = http_put ~path ~body:payload in
+      let status = Cohttp.Response.status response in
+      let code = Cohttp.Code.code_of_status status in
+      if code = 200 || code = 201 || code = 202 then Lwt.return (Ok ())
+      else
+        let* body_string = Cohttp_lwt.Body.to_string body in
+        Lwt.return (Error (Printf.sprintf "Failed to create collection: %s" body_string)))
+    else Lwt.return (Error (Printf.sprintf "Unexpected status %d: %s" code body_string))
+
+let ensure_collection ~name ~vector_size ~distance =
+  match !test_hooks_ref with
+  | Some _ -> Or_error.return ()
+  | None -> run_request (ensure_collection_request ~name ~vector_size ~distance)

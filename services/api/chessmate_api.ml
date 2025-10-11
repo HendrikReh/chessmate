@@ -250,6 +250,18 @@ let rate_limit_middleware : Rock.Middleware.t option Lazy.t =
     | Some limiter ->
         Some (Rock.Middleware.create ~name:"rate-limiter" ~filter:(filter_of_limiter limiter)))
 
+let () =
+  match api_config.Config.Api.qdrant_collection with
+  | None -> ()
+  | Some { Config.Api.Qdrant.name; vector_size; distance } -> (
+      match Repo_qdrant.ensure_collection ~name ~vector_size ~distance with
+      | Ok () ->
+          Stdio.eprintf "[chessmate-api][config] qdrant collection ensured (name=%s)\n%!" name
+      | Error err ->
+          Stdio.eprintf "[chessmate-api][fatal] qdrant collection ensure failed: %s\n%!"
+            (Error.to_string_hum err);
+          Stdlib.exit 1)
+
 let plan_to_json (plan : Query_intent.plan) =
   `Assoc
     [ "cleaned_text", `String plan.cleaned_text

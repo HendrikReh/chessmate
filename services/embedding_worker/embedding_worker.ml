@@ -231,6 +231,21 @@ let worker_config : Config.Worker.t =
       Stdlib.exit 1
 
 let () =
+  match Config.Api.load () with
+  | Ok api_config -> (
+      match api_config.Config.Api.qdrant_collection with
+      | None -> ()
+      | Some { Config.Api.Qdrant.name; vector_size; distance } -> (
+          match Repo_qdrant.ensure_collection ~name ~vector_size ~distance with
+          | Ok () ->
+              eprintf "[worker][config] qdrant collection ensured (name=%s)\n%!" name
+          | Error err ->
+              eprintf "[worker][fatal] qdrant collection ensure failed: %s\n%!"
+                (Sanitizer.sanitize_error err);
+              Stdlib.exit 1))
+  | Error _ -> ()
+
+let () =
   let speclist =
     [ ( "--poll-sleep"
       , Stdlib.Arg.Set_float poll_sleep

@@ -42,6 +42,13 @@ val vector_search :
   scored_point list Or_error.t
 (** Perform a vector search returning scored points with payloads. *)
 
+val ensure_collection :
+  name:string ->
+  vector_size:int ->
+  distance:string -> unit Or_error.t
+(** Ensure the target collection exists, creating it with the provided
+    parameters if necessary. Idempotent. *)
+
 type test_hooks = {
   upsert : point list -> unit Or_error.t;
   search :

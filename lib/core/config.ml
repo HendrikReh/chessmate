@@ -39,6 +39,14 @@ module Api = struct
     }
   end
 
+  module Qdrant = struct
+    type collection = {
+      name : string;
+      vector_size : int;
+      distance : string;
+    }
+  end
+
   module Agent_cache = struct
     type t =
       | Redis of {
@@ -67,10 +75,14 @@ module Api = struct
     port : int;
     agent : agent;
     rate_limit : Rate_limit.t option;
+    qdrant_collection : Qdrant.collection option;
   }
 
   let default_port = 8080
   let default_agent_endpoint = "https://api.openai.com/v1/responses"
+  let default_collection_name = "positions"
+  let default_vector_size = 1536
+  let default_distance = "Cosine"
 
   let load_port () =
     match Helpers.optional "CHESSMATE_API_PORT" with
@@ -152,6 +164,37 @@ module Api = struct
               | Ok bucket_size -> Ok (Some { Rate_limit.requests_per_minute; bucket_size }))
         end
 
+  let load_qdrant_collection () =
+    let name_result =
+      match Helpers.optional "QDRANT_COLLECTION_NAME" with
+      | None -> Ok default_collection_name
+      | Some raw when String.is_empty raw -> Ok default_collection_name
+      | Some raw -> Ok raw
+    in
+    match name_result with
+    | Error err -> Error err
+    | Ok name -> (
+        match Helpers.optional "QDRANT_VECTOR_SIZE" with
+        | Some raw -> (
+            match Helpers.parse_positive_int "QDRANT_VECTOR_SIZE" raw with
+            | Error err -> Error err
+            | Ok vector_size ->
+                let distance =
+                  match Helpers.optional "QDRANT_DISTANCE" with
+                  | None -> default_distance
+                  | Some raw when String.is_empty raw -> default_distance
+                  | Some raw -> String.capitalize (String.strip raw)
+                in
+                Ok (Some Qdrant.{ name; vector_size; distance }))
+        | None ->
+            let distance =
+              match Helpers.optional "QDRANT_DISTANCE" with
+              | None -> default_distance
+              | Some raw when String.is_empty raw -> default_distance
+              | Some raw -> String.capitalize (String.strip raw)
+            in
+            Ok (Some Qdrant.{ name; vector_size = default_vector_size; distance }))
+
   let load () =
     match Helpers.require "DATABASE_URL" with
     | Error err -> Error err
@@ -167,7 +210,11 @@ module Api = struct
                 | Ok agent -> (
                     match load_rate_limit () with
                     | Error err -> Error err
-                    | Ok rate_limit -> Or_error.return { database_url; qdrant_url; port; agent; rate_limit }))) )
+                    | Ok rate_limit -> (
+                        match load_qdrant_collection () with
+                        | Error err -> Error err
+                        | Ok qdrant_collection ->
+                            Or_error.return { database_url; qdrant_url; port; agent; rate_limit; qdrant_collection })))) )
 end
 
 module Worker = struct

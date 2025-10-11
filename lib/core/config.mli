@@ -18,6 +18,14 @@ module Api : sig
     }
   end
 
+  module Qdrant : sig
+    type collection = {
+      name : string;
+      vector_size : int;
+      distance : string;
+    }
+  end
+
   module Agent_cache : sig
     type t =
       | Redis of {
@@ -46,6 +54,7 @@ module Api : sig
     port : int;
     agent : agent;
     rate_limit : Rate_limit.t option;
+    qdrant_collection : Qdrant.collection option;
   }
 
   val load : unit -> t Or_error.t
