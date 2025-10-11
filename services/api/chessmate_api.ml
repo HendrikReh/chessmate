@@ -226,7 +226,7 @@ let rate_limiter : Rate_limiter.t option Lazy.t =
         in
         Some
           (Rate_limiter.create ~tokens_per_minute:settings.requests_per_minute
-             ~bucket_size))
+             ~bucket_size ()))
 
 let rate_limit_middleware : Rock.Middleware.t option Lazy.t =
   let filter_of_limiter limiter handler req =
