@@ -27,3 +27,19 @@ let with_db_url f =
   | Error err -> Error err
 
 let api_base_url () = Config.Cli.api_base_url ()
+
+let positive_int_from_env ~name ~default =
+  match Config.Helpers.optional name with
+  | None -> Or_error.return default
+  | Some raw -> Config.Helpers.parse_positive_int name raw
+
+let positive_float_from_env ~name ~default =
+  match Config.Helpers.optional name with
+  | None -> Or_error.return default
+  | Some raw -> (
+      match Float.of_string raw with
+      | exception _ ->
+          Config.Helpers.invalid name raw "expected a positive floating value"
+      | value when Float.(value > 0.) -> Or_error.return value
+      | _ ->
+          Config.Helpers.invalid name raw "expected a positive floating value")

@@ -4,8 +4,10 @@
 open! Base
 open Stdio
 
+let ( let* ) t f = Or_error.bind t ~f
+
 module Http = struct
-  let get url =
+  let get ?(timeout = 5.) url =
     let open Lwt.Syntax in
     let request =
       Lwt.catch
@@ -19,7 +21,15 @@ module Http = struct
           Lwt.return (Ok (status, body_text)))
         (fun exn -> Lwt.return (Error (Exn.to_string exn)))
     in
-    try Lwt_main.run request with exn -> Error (Exn.to_string exn)
+    let timeout_promise =
+      let* () = Lwt_unix.sleep timeout in
+      Lwt.return
+        (Error
+           (Printf.sprintf "request timed out after %.1fs when calling %s"
+              timeout url))
+    in
+    try Lwt_main.run (Lwt.pick [ request; timeout_promise ])
+    with exn -> Error (Exn.to_string exn)
 end
 
 type availability =
@@ -42,16 +52,11 @@ let status_line status =
   Printf.sprintf "[health] %-13s %s%s" status.name label detail
 
 let print_status status = eprintf "%s\n%!" (status_line status)
-
-let trim_env name =
-  Stdlib.Sys.getenv_opt name |> Option.map ~f:String.strip
-  |> Option.filter ~f:(fun value -> not (String.is_empty value))
-
 let normalize_base url = String.rstrip (String.strip url) ~drop:(Char.equal '/')
 
 let check_postgres () =
   let name = "postgres" in
-  match trim_env "DATABASE_URL" with
+  match Config.Helpers.optional "DATABASE_URL" with
   | None ->
       { name; availability = Skipped "DATABASE_URL not set"; fatal = false }
   | Some url -> (
@@ -78,9 +83,9 @@ let check_postgres () =
                 fatal = true;
               }))
 
-let check_qdrant () =
+let check_qdrant ~timeout =
   let name = "qdrant" in
-  match trim_env "QDRANT_URL" with
+  match Config.Helpers.optional "QDRANT_URL" with
   | None -> { name; availability = Skipped "QDRANT_URL not set"; fatal = false }
   | Some base ->
       let base = normalize_base base in
@@ -92,7 +97,7 @@ let check_qdrant () =
             in
             { name; availability = Unavailable (sanitize reason); fatal = true }
         | path :: rest -> (
-            match Http.get (base ^ path) with
+            match Http.get ~timeout (base ^ path) with
             | Ok (200, _) ->
                 {
                   name;
@@ -110,7 +115,7 @@ let check_qdrant () =
       attempt None endpoints
 
 let parse_ttl () =
-  match trim_env "AGENT_CACHE_TTL_SECONDS" with
+  match Config.Helpers.optional "AGENT_CACHE_TTL_SECONDS" with
   | None -> Or_error.return None
   | Some raw -> (
       match Config.Helpers.parse_positive_int "AGENT_CACHE_TTL_SECONDS" raw with
@@ -119,7 +124,7 @@ let parse_ttl () =
 
 let check_redis () =
   let name = "redis" in
-  match trim_env "AGENT_CACHE_REDIS_URL" with
+  match Config.Helpers.optional "AGENT_CACHE_REDIS_URL" with
   | None ->
       {
         name;
@@ -135,7 +140,9 @@ let check_redis () =
             fatal = true;
           }
       | Ok ttl_seconds -> (
-          let namespace = trim_env "AGENT_CACHE_REDIS_NAMESPACE" in
+          let namespace =
+            Config.Helpers.optional "AGENT_CACHE_REDIS_NAMESPACE"
+          in
           match Agent_cache.create_redis ?namespace ?ttl_seconds url with
           | Error err ->
               {
@@ -157,11 +164,11 @@ let check_redis () =
                     fatal = true;
                   })))
 
-let check_api () =
+let check_api ~timeout =
   let name = "chessmate-api" in
   let base = normalize_base (Config.Cli.api_base_url ()) in
   let url = base ^ "/health" in
-  match Http.get url with
+  match Http.get ~timeout url with
   | Ok (200, _) -> { name; availability = Available None; fatal = true }
   | Ok (status, body) ->
       let snippet = String.prefix (sanitize body) 120 in
@@ -173,13 +180,19 @@ let check_api () =
   | Error err ->
       { name; availability = Unavailable (sanitize err); fatal = true }
 
-let check_all () =
-  [ check_postgres (); check_qdrant (); check_redis (); check_api () ]
+let check_all ~timeout =
+  [
+    check_postgres (); check_qdrant ~timeout; check_redis (); check_api ~timeout;
+  ]
 
 let report statuses = List.iter statuses ~f:print_status
 
 let ensure_all () =
-  let statuses = check_all () in
+  let* timeout =
+    Cli_common.positive_float_from_env ~name:"CHESSMATE_HEALTH_TIMEOUT_SECONDS"
+      ~default:5.0
+  in
+  let statuses = check_all ~timeout in
   report statuses;
   match
     List.find statuses ~f:(function

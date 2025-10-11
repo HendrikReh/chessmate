@@ -150,7 +150,7 @@ let parse_success body =
     in
     Or_error.return (String.concat ~sep:"\n" (summary_bits @ results_block))
   with Yojson.Json_error msg | Type_error (msg, _) ->
-    Or_error.error_string msg
+    Or_error.errorf "Malformed response from query API: %s" msg
 
 let parse_response status body =
   if Int.equal status 200 then parse_success body
@@ -158,7 +158,8 @@ let parse_response status body =
     let open Yojson.Safe.Util in
     match Yojson.Safe.from_string body with
     | (exception Yojson.Json_error _) | (exception Type_error (_, _)) ->
-        Or_error.errorf "query API responded with status %d" status
+        Or_error.errorf "query API responded with status %d and unreadable body"
+          status
     | json -> (
         match json |> member "error" |> to_string_option with
         | Some message -> Or_error.error_string message

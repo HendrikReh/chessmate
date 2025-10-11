@@ -64,13 +64,9 @@ let run path =
     Or_error.errorf "PGN file %s does not exist" path
   else
     let contents = In_channel.read_all path in
-    let concurrency =
-      match Stdlib.Sys.getenv_opt "CHESSMATE_INGEST_CONCURRENCY" with
-      | Some raw -> (
-          match Int.of_string_opt (String.strip raw) with
-          | Some n when n > 0 -> n
-          | _ -> default_worker_count)
-      | None -> default_worker_count
+    let* concurrency =
+      Cli_common.positive_int_from_env ~name:"CHESSMATE_INGEST_CONCURRENCY"
+        ~default:default_worker_count
     in
     pending_guard_limit ()
     |> Or_error.bind ~f:(fun guard ->
@@ -79,6 +75,7 @@ let run path =
                let* () = enforce_pending_guard repo guard in
                let stats = ref empty_stats in
                let mutex = Lwt_mutex.create () in
+               eprintf "Using ingest concurrency %d\n%!" concurrency;
                let on_error ~index ~raw err =
                  Lwt_mutex.with_lock mutex (fun () ->
                      log_skip index (Error.to_string_hum err) raw;
@@ -86,7 +83,7 @@ let run path =
                      Lwt.return ())
                in
                let queue =
-                 Lwt_pool.create concurrency (fun () -> Lwt.return ())
+                 Lwt_pool.create concurrency (fun () -> Lwt.return_unit)
                in
                let process_game ~index ~raw game =
                  Lwt_pool.use queue (fun () ->
@@ -104,7 +101,7 @@ let run path =
                                game_id index position_count;
                              stats :=
                                { !stats with inserted = !stats.inserted + 1 };
-                             Lwt.return ())
+                             Lwt.return_unit)
                      | Error err -> on_error ~index ~raw err)
                in
                Lwt_main.run
