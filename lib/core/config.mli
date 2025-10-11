@@ -11,6 +11,13 @@ module Helpers : sig
 end
 
 module Api : sig
+  module Rate_limit : sig
+    type t = {
+      requests_per_minute : int;
+      bucket_size : int option;
+    }
+  end
+
   module Agent_cache : sig
     type t =
       | Redis of {
@@ -38,6 +45,7 @@ module Api : sig
     qdrant_url : string;
     port : int;
     agent : agent;
+    rate_limit : Rate_limit.t option;
   }
 
   val load : unit -> t Or_error.t

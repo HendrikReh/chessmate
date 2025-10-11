@@ -131,11 +131,19 @@ let api_config : Config.Api.t =
         | Config.Api.Agent_cache.Memory _ -> "memory"
         | Config.Api.Agent_cache.Disabled -> "disabled"
       in
+      let rate_limit_mode =
+        match config.Config.Api.rate_limit with
+        | None -> "disabled"
+        | Some { Config.Api.Rate_limit.requests_per_minute; bucket_size } ->
+            let burst = Option.value_map bucket_size ~default:"default" ~f:Int.to_string in
+            Printf.sprintf "%d/min (burst=%s)" requests_per_minute burst
+      in
       Stdio.eprintf
-        "[chessmate-api][config] port=%d database=present qdrant=present agent=%s cache=%s\n%!"
+        "[chessmate-api][config] port=%d database=present qdrant=present agent=%s cache=%s rate_limit=%s\n%!"
         config.port
         agent_mode
-        cache_mode;
+        cache_mode
+        rate_limit_mode;
       config
   | Error err ->
       Stdio.eprintf "[chessmate-api][fatal] %s\n%!" (Error.to_string_hum err);
@@ -188,6 +196,59 @@ let agent_cache : Agent_cache.t option Lazy.t =
             Stdio.eprintf "[chessmate-api] redis agent cache disabled: %s\n%!"
               (Error.to_string_hum err);
             None))
+
+let rate_limiter : Rate_limiter.t option Lazy.t =
+  lazy
+    (match api_config.Config.Api.rate_limit with
+    | None -> None
+    | Some settings ->
+        let bucket_size = Option.value settings.bucket_size ~default:settings.requests_per_minute in
+        Some
+          (Rate_limiter.create
+             ~tokens_per_minute:settings.requests_per_minute
+             ~bucket_size))
+
+let rate_limit_middleware : Rock.Middleware.t option Lazy.t =
+  let filter_of_limiter limiter handler req =
+    let ip_of_request req =
+      let header_ip name =
+        Cohttp.Header.get (Request.headers req) name
+        |> Option.bind ~f:(fun value ->
+               value
+               |> String.split ~on:','
+               |> List.hd
+               |> Option.map ~f:String.strip)
+        |> Option.filter ~f:(fun value -> not (String.is_empty value))
+      in
+      match header_ip "x-forwarded-for" with
+      | Some ip -> ip
+      | None -> (match header_ip "x-real-ip" with Some ip -> ip | None -> "unknown")
+    in
+    match Rate_limiter.check limiter ~remote_addr:(ip_of_request req) with
+    | Rate_limiter.Allowed _ -> handler req
+    | Rate_limiter.Limited { retry_after; _ } ->
+        let retry_after_seconds =
+          retry_after
+          |> Float.max 0.
+          |> Float.round_up
+          |> Int.of_float
+          |> Int.max 1
+        in
+        let headers =
+          Cohttp.Header.init ()
+          |> fun h -> Cohttp.Header.add h "Content-Type" "text/plain; charset=utf-8"
+          |> fun h -> Cohttp.Header.add h "Retry-After" (Int.to_string retry_after_seconds)
+        in
+        let body =
+          Printf.sprintf "Rate limit exceeded. Retry after %d seconds." retry_after_seconds
+        in
+        App.respond' ~code:`Too_many_requests ~headers (`String body)
+  in
+  lazy
+    (match Lazy.force rate_limiter with
+    | None -> None
+    | Some limiter ->
+        Some (Rock.Middleware.create ~name:"rate-limiter" ~filter:(filter_of_limiter limiter)))
 
 let plan_to_json (plan : Query_intent.plan) =
   `Assoc
@@ -286,19 +347,20 @@ let metrics_handler _req =
         if Int.(stats.capacity <= 0) then 0.0
         else Float.of_int stats.waiting /. Float.of_int stats.capacity
       in
-      let body =
-        Printf.sprintf
-          "db_pool_capacity %d\n\
-           db_pool_in_use %d\n\
-           db_pool_available %d\n\
-           db_pool_waiting %d\n\
-           db_pool_wait_ratio %.3f\n"
-          stats.capacity
-          stats.in_use
-          stats.available
-          stats.waiting
-          wait_ratio
+      let base_metrics =
+        [ Printf.sprintf "db_pool_capacity %d" stats.capacity
+        ; Printf.sprintf "db_pool_in_use %d" stats.in_use
+        ; Printf.sprintf "db_pool_available %d" stats.available
+        ; Printf.sprintf "db_pool_waiting %d" stats.waiting
+        ; Printf.sprintf "db_pool_wait_ratio %.3f" wait_ratio
+        ]
       in
+      let all_metrics =
+        match Lazy.force rate_limiter with
+        | None -> base_metrics
+        | Some limiter -> base_metrics @ Rate_limiter.metrics limiter
+      in
+      let body = String.concat ~sep:"\n" all_metrics ^ "\n" in
       respond_plain_text body
 
 let extract_question req =
@@ -375,7 +437,13 @@ let query_handler req =
           respond_json payload)
 
 let routes =
-  App.empty
+  let base = App.empty in
+  let base =
+    match Lazy.force rate_limit_middleware with
+    | Some middleware -> App.middleware middleware base
+    | None -> base
+  in
+  base
   |> App.get "/health" health_handler
   |> App.get "/metrics" metrics_handler
   |> App.get "/openapi.yaml" openapi_handler

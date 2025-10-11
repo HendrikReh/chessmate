@@ -32,6 +32,13 @@ module Helpers = struct
 end
 
 module Api = struct
+  module Rate_limit = struct
+    type t = {
+      requests_per_minute : int;
+      bucket_size : int option;
+    }
+  end
+
   module Agent_cache = struct
     type t =
       | Redis of {
@@ -59,6 +66,7 @@ module Api = struct
     qdrant_url : string;
     port : int;
     agent : agent;
+    rate_limit : Rate_limit.t option;
   }
 
   let default_port = 8080
@@ -122,6 +130,28 @@ module Api = struct
             | Error err -> Error err
             | Ok cache -> Or_error.return { api_key; endpoint; model; reasoning_effort; verbosity; cache }))
 
+  let load_rate_limit () =
+    match Helpers.optional "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE" with
+    | None -> Or_error.return None
+    | Some raw when String.is_empty raw -> Or_error.return None
+    | Some raw ->
+        begin
+          match Helpers.parse_positive_int "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE" raw with
+          | Error err -> Error err
+          | Ok requests_per_minute ->
+              let bucket_size =
+                match Helpers.optional "CHESSMATE_RATE_LIMIT_BUCKET_SIZE" with
+                | None -> Ok None
+                | Some raw_bucket when String.is_empty raw_bucket -> Ok None
+                | Some raw_bucket ->
+                    Helpers.parse_positive_int "CHESSMATE_RATE_LIMIT_BUCKET_SIZE" raw_bucket
+                    |> Or_error.map ~f:Option.some
+              in
+              (match bucket_size with
+              | Error err -> Error err
+              | Ok bucket_size -> Ok (Some { Rate_limit.requests_per_minute; bucket_size }))
+        end
+
   let load () =
     match Helpers.require "DATABASE_URL" with
     | Error err -> Error err
@@ -134,7 +164,10 @@ module Api = struct
             | Ok port -> (
                 match load_agent () with
                 | Error err -> Error err
-                | Ok agent -> Or_error.return { database_url; qdrant_url; port; agent })) )
+                | Ok agent -> (
+                    match load_rate_limit () with
+                    | Error err -> Error err
+                    | Ok rate_limit -> Or_error.return { database_url; qdrant_url; port; agent; rate_limit }))) )
 end
 
 module Worker = struct

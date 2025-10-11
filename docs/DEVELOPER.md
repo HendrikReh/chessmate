@@ -23,6 +23,8 @@ The executables validate their environment on startup and exit with a clear erro
 | `CHESSMATE_DB_POOL_SIZE` | ⛏️ | `10` | API, worker | Max Postgres connections in the shared pool. |
 | `QDRANT_URL` | ✅ | — | API, worker (indirect) | Base URL for Qdrant HTTP API. |
 | `CHESSMATE_API_PORT` | ⛏️ | `8080` | API | Port the HTTP server binds to. |
+| `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` | ⛏️ | `60` | API | Per-IP request budget enforced by the rate limiter. |
+| `CHESSMATE_RATE_LIMIT_BUCKET_SIZE` | ⛏️ | `same as requests/min` | API | Optional burst capacity (token bucket size). |
 | `CHESSMATE_API_URL` | ⛏️ | `http://localhost:8080` | CLI | Base URL for `chessmate query`. |
 | `CHESSMATE_MAX_PENDING_EMBEDDINGS` | ⛏️ | `250000` | CLI ingest | Guardrail for queue pressure (`<= 0` disables). |
 | `OPENAI_API_KEY` | ✅ (worker) | — | Embedding worker | Required to call the embeddings endpoint. |
