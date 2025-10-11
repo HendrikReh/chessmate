@@ -45,6 +45,16 @@ Cmdliner-based executable (`dune exec -- chessmate -- ...`).
 - Use the precheck before long ingests to surface malformed headers and
   missing metadata early.
 
+{2 Health Check Output}
+- `chessmate query` prints `[health] …` lines before executing, summarising the
+  availability of Postgres, Qdrant, Redis (optional), and the Chessmate API.
+- Optional dependencies (for example Redis when the agent cache is disabled)
+  appear as `skipped`; required services reported as `error` prevent the query
+  from running.
+- The Redis entry is treated as optional—missing credentials simply yield a
+  `skipped` status, while connection issues with configured credentials surface
+  as errors for easier debugging.
+
 {1 Usage Examples}
 
 {2 Ingest}

@@ -80,8 +80,12 @@ For day-to-day service operations, scaling, and cache management, refer to the [
 # CHESSMATE_MAX_PENDING_EMBEDDINGS before bulk imports.
 chessmate ingest test/fixtures/extended_sample_game.pgn
 
-# Query prototype API (ensure server runs on localhost:8080)
+# Query prototype API (ensure server runs on localhost:8080). The CLI prints a
+# service health summary before returning results.
 chessmate query "Show French Defense draws with queenside majority"
+
+# Raw JSON output (suitable for jq)
+chessmate query --json "Show 5 random games" | jq '.'
 
 # Embedding worker loop (replace OPENAI_API_KEY for real runs)
 OPENAI_API_KEY=dummy chessmate embedding-worker --workers 4 --poll-sleep 1.0
