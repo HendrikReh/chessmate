@@ -154,14 +154,20 @@ let parse_response status body =
         | Some message -> Or_error.error_string message
         | None -> Or_error.errorf "query API responded with status %d" status)
 
-let run query =
+let run ?(as_json = false) query =
   if String.is_empty (String.strip query) then Or_error.error_string "query cannot be empty"
   else
     let uri = build_uri () in
     (* Run the Lwt promise to completion; capture the HTTP status and response body. *)
     match Lwt_main.run (perform_request uri (request_body query)) with
     | status, body ->
-        Result.map (parse_response status body) ~f:(fun output ->
-            Stdio.printf "%s\n" output;
-            ())
+        if as_json then
+          if Int.equal status 200 then (
+            Stdio.printf "%s\n" body;
+            Or_error.return ())
+          else Or_error.map (parse_response status body) ~f:(fun _ -> ())
+        else
+          Result.map (parse_response status body) ~f:(fun output ->
+              Stdio.printf "%s\n" output;
+              ())
     | exception exn -> Or_error.of_exn exn

@@ -30,8 +30,10 @@ Cmdliner-based executable (`dune exec -- chessmate -- ...`).
   PGN archives.
 
 {2 Query}
-- The CLI prints a human-friendly summary; use the HTTP API directly when you
-  need JSON.
+- Use `--json` to print the raw service response; otherwise the CLI emits a
+  human-readable summary.
+- The command performs a pre-flight availability check (Postgres, Qdrant,
+  Redis, API) and aborts when required services are unreachable.
 - Point `CHESSMATE_API_URL` at the correct environment (local/staging/prod)
   before issuing queries.
 
@@ -52,13 +54,7 @@ Cmdliner-based executable (`dune exec -- chessmate -- ...`).
 
 {2 Query}
 - Default output: `CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query "Find King's Indian games where White is 2500"`
-- JSON via API:
-  {v
-  curl -s -X POST http://localhost:8080/query \
-    -H "Content-Type: application/json" \
-    -d '{"question":"Show French Defense draws"}' \
-    | jq '.'
-  v}
+- Raw JSON: `CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query --json "Show French Defense draws"`
 
 {2 FEN}
 - stdout preview: `dune exec -- chessmate -- fen test/fixtures/sample_game.pgn`

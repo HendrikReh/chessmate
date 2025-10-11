@@ -237,9 +237,10 @@ type vector_payload = {
 let search_games repo ~filters ~rating ~limit =
   let limit = Int.max 1 limit in
   let build_result = build_conditions_internal ~filters ~rating in
-  let where_clause =
-    if List.is_empty build_result.conditions then ""
-    else "WHERE " ^ String.concat ~sep:" AND " build_result.conditions
+  let where_clause_line =
+    match build_result.conditions with
+    | [] -> ""
+    | conditions -> Printf.sprintf "WHERE %s\n" (String.concat ~sep:" AND " conditions)
   in
   let params = build_result.parameters @ [ Param_int limit ] in
   let params_pack =
@@ -263,25 +264,24 @@ let search_games repo ~filters ~rating ~limit =
       (Std.option Std.string)
   in
   let sql =
-    Printf.sprintf
-      "SELECT g.id,\
-              COALESCE(w.name, ''),\
-              COALESCE(b.name, ''),\
-              g.result,\
-              g.event,\
-              g.opening_slug,\
-              g.opening_name,\
-              g.eco_code,\
-              g.white_rating,\
-              g.black_rating,\
-              TO_CHAR(g.played_on, 'YYYY-MM-DD')\
-       FROM games g\
-       LEFT JOIN players w ON g.white_player_id = w.id\
-       LEFT JOIN players b ON g.black_player_id = b.id\
-       %s\
-       ORDER BY g.played_on DESC NULLS LAST, g.id DESC\
-       LIMIT ?"
-      where_clause
+    String.concat
+      [ "SELECT g.id,\n"
+      ; "       COALESCE(w.name, ''),\n"
+      ; "       COALESCE(b.name, ''),\n"
+      ; "       g.result,\n"
+      ; "       g.event,\n"
+      ; "       g.opening_slug,\n"
+      ; "       g.opening_name,\n"
+      ; "       g.eco_code,\n"
+      ; "       g.white_rating,\n"
+      ; "       g.black_rating,\n"
+      ; "       TO_CHAR(g.played_on, 'YYYY-MM-DD')\n"
+      ; "FROM games g\n"
+      ; "LEFT JOIN players w ON g.white_player_id = w.id\n"
+      ; "LEFT JOIN players b ON g.black_player_id = b.id\n"
+      ; where_clause_line
+      ; "ORDER BY g.played_on DESC NULLS LAST, g.id DESC\n"
+      ; "LIMIT ?" ]
   in
   let request = Request.(param_type ->* row_type) ~oneshot:true sql in
   with_connection repo (fun conn ->
