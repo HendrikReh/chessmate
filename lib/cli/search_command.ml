@@ -29,13 +29,15 @@ let build_uri () =
   Uri.of_string (normalised ^ "/query")
 
 let request_body query =
-  `Assoc [ "question", `String query ] |> Yojson.Safe.to_string
+  `Assoc [ ("question", `String query) ] |> Yojson.Safe.to_string
 
 let perform_request uri body =
   let open Lwt.Syntax in
   let headers = Cohttp.Header.init_with "Content-Type" "application/json" in
   let* response, body_stream =
-    Cohttp_lwt_unix.Client.post ~headers ~body:(Cohttp_lwt.Body.of_string body) uri
+    Cohttp_lwt_unix.Client.post ~headers
+      ~body:(Cohttp_lwt.Body.of_string body)
+      uri
   in
   let* body_string = Cohttp_lwt.Body.to_string body_stream in
   let status = Cohttp.Response.status response |> Cohttp.Code.code_of_status in
@@ -49,13 +51,11 @@ let parse_success body =
     let plan = json |> member "plan" in
     let limit = plan |> member "limit" |> to_int in
     let filters =
-      plan
-      |> member "filters"
-      |> to_list
+      plan |> member "filters" |> to_list
       |> List.map ~f:(fun filter ->
              let field = filter |> member "field" |> to_string in
              let value = filter |> member "value" |> to_string in
-             field, value)
+             (field, value))
     in
     let rating = plan |> member "rating" in
     let rating_line field =
@@ -65,9 +65,16 @@ let parse_success body =
           match json_value with
           | `Int value -> Some (Printf.sprintf "%s=%d" field value)
           | `Float value -> Some (Printf.sprintf "%s=%.2f" field value)
-          | _ -> Some (Printf.sprintf "%s=%s" field (Yojson.Safe.to_string json_value)))
+          | _ ->
+              Some
+                (Printf.sprintf "%s=%s" field
+                   (Yojson.Safe.to_string json_value)))
     in
-    let rating_bits = List.filter_map [ "white_min"; "black_min"; "max_rating_delta" ] ~f:rating_line in
+    let rating_bits =
+      List.filter_map
+        [ "white_min"; "black_min"; "max_rating_delta" ]
+        ~f:rating_line
+    in
     let results = json |> member "results" |> to_list in
     let result_lines =
       List.mapi results ~f:(fun index item ->
@@ -85,12 +92,13 @@ let parse_success body =
           in
           let synopsis = item |> member "synopsis" |> to_string in
           let agent_score = member "agent_score" item |> to_float_option in
-          let agent_explanation = member "agent_explanation" item |> to_string_option in
+          let agent_explanation =
+            member "agent_explanation" item |> to_string_option
+          in
           let agent_themes =
-            member "agent_themes" item
-            |> (function
-                 | `Null -> []
-                 | json -> json |> to_list |> List.filter_map ~f:to_string_option)
+            member "agent_themes" item |> function
+            | `Null -> []
+            | json -> json |> to_list |> List.filter_map ~f:to_string_option
           in
           let agent_line =
             match agent_score with
@@ -98,64 +106,67 @@ let parse_success body =
                 let theme_suffix =
                   match agent_themes with
                   | [] -> ""
-                  | themes -> Printf.sprintf " (themes: %s)" (String.concat ~sep:", " themes)
+                  | themes ->
+                      Printf.sprintf " (themes: %s)"
+                        (String.concat ~sep:", " themes)
                 in
                 let explanation_suffix =
                   match agent_explanation with
                   | Some explanation -> Printf.sprintf " — %s" explanation
                   | None -> ""
                 in
-                Printf.sprintf "Agent score %.2f%s%s" agent theme_suffix explanation_suffix
+                Printf.sprintf "Agent score %.2f%s%s" agent theme_suffix
+                  explanation_suffix
             | _ -> ""
           in
           let details =
-            if String.is_empty agent_line then synopsis else synopsis ^ "\n       " ^ agent_line
+            if String.is_empty agent_line then synopsis
+            else synopsis ^ "\n       " ^ agent_line
           in
-          Printf.sprintf
-            "%d. #%d %s vs %s [%s] score %.2f\n       %s"
-            (index + 1)
-            game_id
-            white
-            black
-            opening
-            score
-            details)
+          Printf.sprintf "%d. #%d %s vs %s [%s] score %.2f\n       %s"
+            (index + 1) game_id white black opening score details)
     in
     let filters_line =
       if List.is_empty filters then "No structured filters detected"
       else
         filters
-        |> List.map ~f:(fun (field, value) -> Printf.sprintf "%s=%s" field value)
+        |> List.map ~f:(fun (field, value) ->
+               Printf.sprintf "%s=%s" field value)
         |> String.concat ~sep:", "
     in
     let summary_bits =
-      [ Printf.sprintf "Summary: %s" summary
-      ; Printf.sprintf "Limit: %d" limit
-      ; Printf.sprintf "Filters: %s" filters_line
-      ; (match rating_bits with
+      [
+        Printf.sprintf "Summary: %s" summary;
+        Printf.sprintf "Limit: %d" limit;
+        Printf.sprintf "Filters: %s" filters_line;
+        (match rating_bits with
         | [] -> "Ratings: none"
-        | bits -> Printf.sprintf "Ratings: %s" (String.concat ~sep:", " bits)) ]
+        | bits -> Printf.sprintf "Ratings: %s" (String.concat ~sep:", " bits));
+      ]
     in
     let results_block =
-      if List.is_empty result_lines then [ "No matching games found" ] else "Results:" :: result_lines
+      if List.is_empty result_lines then [ "No matching games found" ]
+      else "Results:" :: result_lines
     in
     Or_error.return (String.concat ~sep:"\n" (summary_bits @ results_block))
-  with
-  | Yojson.Json_error msg | Type_error (msg, _) -> Or_error.error_string msg
+  with Yojson.Json_error msg | Type_error (msg, _) ->
+    Or_error.error_string msg
 
 let parse_response status body =
   if Int.equal status 200 then parse_success body
   else
     let open Yojson.Safe.Util in
     match Yojson.Safe.from_string body with
-    | exception Yojson.Json_error _ | exception Type_error (_, _) -> Or_error.errorf "query API responded with status %d" status
+    | (exception Yojson.Json_error _) | (exception Type_error (_, _)) ->
+        Or_error.errorf "query API responded with status %d" status
     | json -> (
         match json |> member "error" |> to_string_option with
         | Some message -> Or_error.error_string message
         | None -> Or_error.errorf "query API responded with status %d" status)
 
 let run ?(as_json = false) query =
-  if String.is_empty (String.strip query) then Or_error.error_string "query cannot be empty"
+  if String.is_empty (String.strip query) then
+    Or_error.error_string "query cannot be empty"
   else
     let uri = build_uri () in
     (* Run the Lwt promise to completion; capture the HTTP status and response body. *)

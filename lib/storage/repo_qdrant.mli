@@ -20,11 +20,7 @@
 
 open! Base
 
-type point = {
-  id : string;
-  vector : float list;
-  payload : Yojson.Safe.t;
-}
+type point = { id : string; vector : float list; payload : Yojson.Safe.t }
 
 type scored_point = {
   id : string;
@@ -43,9 +39,7 @@ val vector_search :
 (** Perform a vector search returning scored points with payloads. *)
 
 val ensure_collection :
-  name:string ->
-  vector_size:int ->
-  distance:string -> unit Or_error.t
+  name:string -> vector_size:int -> distance:string -> unit Or_error.t
 (** Ensure the target collection exists, creating it with the provided
     parameters if necessary. Idempotent. *)
 
@@ -59,4 +53,5 @@ type test_hooks = {
 }
 
 val with_test_hooks : test_hooks -> (unit -> 'a) -> 'a
-(** Execute [f] with custom hooks for unit testing. Restores the previous hooks afterwards. *)
+(** Execute [f] with custom hooks for unit testing. Restores the previous hooks
+    afterwards. *)

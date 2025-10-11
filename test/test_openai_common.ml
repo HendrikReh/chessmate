@@ -10,18 +10,25 @@ let test_should_retry_status () =
 let test_should_retry_error_json () =
   let rate_limit =
     `Assoc
-      [ "type", `String "rate_limit_error"
-      ; "message", `String "Rate limit exceeded" ]
+      [
+        ("type", `String "rate_limit_error");
+        ("message", `String "Rate limit exceeded");
+      ]
   in
   let invalid =
     `Assoc
-      [ "type", `String "invalid_request_error"
-      ; "message", `String "Invalid parameters" ]
+      [
+        ("type", `String "invalid_request_error");
+        ("message", `String "Invalid parameters");
+      ]
   in
-  check bool "rate limit" true (Openai_common.should_retry_error_json rate_limit);
-  check bool "invalid request" false (Openai_common.should_retry_error_json invalid)
+  check bool "rate limit" true
+    (Openai_common.should_retry_error_json rate_limit);
+  check bool "invalid request" false
+    (Openai_common.should_retry_error_json invalid)
 
 let suite =
-  [ test_case "retry status classification" `Quick test_should_retry_status
-  ; test_case "retry error classification" `Quick test_should_retry_error_json
+  [
+    test_case "retry status classification" `Quick test_should_retry_status;
+    test_case "retry error classification" `Quick test_should_retry_error_json;
   ]

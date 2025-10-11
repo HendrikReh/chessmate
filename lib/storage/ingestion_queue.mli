@@ -21,11 +21,7 @@
 
 open! Base
 
-type job = {
-  fen : string;
-  metadata : (string * string) list;
-}
-
+type job = { fen : string; metadata : (string * string) list }
 type t
 
 val create : unit -> t

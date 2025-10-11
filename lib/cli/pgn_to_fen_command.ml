@@ -24,7 +24,9 @@ open Stdio
 
 (* Writes each FEN on its own line to the provided channel. *)
 let write_fens channel fens =
-  List.iter fens ~f:(fun fen -> Out_channel.output_string channel fen; Out_channel.newline channel)
+  List.iter fens ~f:(fun fen ->
+      Out_channel.output_string channel fen;
+      Out_channel.newline channel)
 
 let run ~input ~output =
   match Pgn_to_fen.fens_of_file input with
@@ -32,5 +34,6 @@ let run ~input ~output =
   | Ok fens ->
       (match output with
       | None -> write_fens Out_channel.stdout fens
-      | Some path -> Out_channel.with_file path ~f:(fun oc -> write_fens oc fens));
+      | Some path ->
+          Out_channel.with_file path ~f:(fun oc -> write_fens oc fens));
       Or_error.return ()

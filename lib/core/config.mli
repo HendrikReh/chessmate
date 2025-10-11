@@ -12,18 +12,11 @@ end
 
 module Api : sig
   module Rate_limit : sig
-    type t = {
-      requests_per_minute : int;
-      bucket_size : int option;
-    }
+    type t = { requests_per_minute : int; bucket_size : int option }
   end
 
   module Qdrant : sig
-    type collection = {
-      name : string;
-      vector_size : int;
-      distance : string;
-    }
+    type collection = { name : string; vector_size : int; distance : string }
   end
 
   module Agent_cache : sig
@@ -33,9 +26,7 @@ module Api : sig
           namespace : string option;
           ttl_seconds : int option;
         }
-      | Memory of {
-          capacity : int option;
-        }
+      | Memory of { capacity : int option }
       | Disabled
   end
 

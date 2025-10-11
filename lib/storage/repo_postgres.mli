@@ -22,7 +22,8 @@
 open! Base
 
 type t
-(** Thin wrapper around {!Repo_postgres_caqti.t} kept for backwards compatibility. *)
+(** Thin wrapper around {!Repo_postgres_caqti.t} kept for backwards
+    compatibility. *)
 
 val create : string -> t Or_error.t
 (** Create the shared repository state used by CLI/worker/API. *)
@@ -43,7 +44,8 @@ val insert_game :
   pgn:string ->
   moves:Pgn_parser.move list ->
   (int * int) Or_error.t
-(** Persist a parsed game and its moves. Returns [(game_id, inserted_positions)]. *)
+(** Persist a parsed game and its moves. Returns
+    [(game_id, inserted_positions)]. *)
 
 type game_summary = Repo_postgres_caqti.game_summary = {
   id : int;
@@ -72,11 +74,7 @@ val claim_pending_jobs : t -> limit:int -> Embedding_job.t list Or_error.t
 val mark_job_completed : t -> job_id:int -> vector_id:string -> unit Or_error.t
 val mark_job_failed : t -> job_id:int -> error:string -> unit Or_error.t
 
-type vector_payload = {
-  position_id : int;
-  game_id : int;
-  json : Yojson.Safe.t;
-}
+type vector_payload = { position_id : int; game_id : int; json : Yojson.Safe.t }
 
 val vector_payload_for_job : t -> job_id:int -> vector_payload Or_error.t
 

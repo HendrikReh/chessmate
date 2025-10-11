@@ -21,7 +21,8 @@
 open! Base
 
 val with_db_url : (string -> 'a Or_error.t) -> 'a Or_error.t
-(** Fetch [DATABASE_URL] via {!Config.Cli.database_url} and apply the provided function. *)
+(** Fetch [DATABASE_URL] via {!Config.Cli.database_url} and apply the provided
+    function. *)
 
 val api_base_url : unit -> string
 (** Resolve the query API base URL via {!Config.Cli.api_base_url}. *)

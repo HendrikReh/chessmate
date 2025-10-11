@@ -25,17 +25,10 @@ module Color = struct
   type t = White | Black
 
   let equal a b =
-    match a, b with
-    | White, White | Black, Black -> true
-    | _ -> false
+    match (a, b) with White, White | Black, Black -> true | _ -> false
 
-  let opposite = function
-    | White -> Black
-    | Black -> White
-
-  let to_fen = function
-    | White -> "w"
-    | Black -> "b"
+  let opposite = function White -> Black | Black -> White
+  let to_fen = function White -> "w" | Black -> "b"
 end
 
 module Piece_kind = struct
@@ -64,7 +57,8 @@ module Board = struct
 
   let create () = Array.make_matrix ~dimx:8 ~dimy:8 None
 
-  let get t (file, rank) = if Square.on_board (file, rank) then t.(rank).(file) else None
+  let get t (file, rank) =
+    if Square.on_board (file, rank) then t.(rank).(file) else None
 
   let set t (file, rank) piece = t.(rank).(file) <- piece
 
@@ -76,18 +70,19 @@ module Board = struct
 end
 
 module Castling = struct
-  type t =
-    { mutable white_king_side : bool
-    ; mutable white_queen_side : bool
-    ; mutable black_king_side : bool
-    ; mutable black_queen_side : bool
-    }
+  type t = {
+    mutable white_king_side : bool;
+    mutable white_queen_side : bool;
+    mutable black_king_side : bool;
+    mutable black_queen_side : bool;
+  }
 
   let initial () =
-    { white_king_side = true
-    ; white_queen_side = true
-    ; black_king_side = true
-    ; black_queen_side = true
+    {
+      white_king_side = true;
+      white_queen_side = true;
+      black_king_side = true;
+      black_queen_side = true;
     }
 
   let to_fen t =
@@ -96,20 +91,18 @@ module Castling = struct
     if t.white_queen_side then Buffer.add_char buf 'Q';
     if t.black_king_side then Buffer.add_char buf 'k';
     if t.black_queen_side then Buffer.add_char buf 'q';
-    match Buffer.contents buf with
-    | "" -> "-"
-    | s -> s
+    match Buffer.contents buf with "" -> "-" | s -> s
 end
 
 module State = struct
-  type t =
-    { board : Board.t
-    ; castling : Castling.t
-    ; mutable to_move : Color.t
-    ; mutable en_passant : Square.t option
-    ; mutable halfmove_clock : int
-    ; mutable fullmove_number : int
-    }
+  type t = {
+    board : Board.t;
+    castling : Castling.t;
+    mutable to_move : Color.t;
+    mutable en_passant : Square.t option;
+    mutable halfmove_clock : int;
+    mutable fullmove_number : int;
+  }
 
   let initial () =
     let board = Board.create () in
@@ -119,21 +112,25 @@ module State = struct
         [| Rook; Knight; Bishop; Queen; King; Bishop; Knight; Rook |]
       in
       for file = 0 to 7 do
-        Board.set board (file, rank) (Some Piece.{ color; kind = file_to_piece.(file) })
+        Board.set board (file, rank)
+          (Some Piece.{ color; kind = file_to_piece.(file) })
       done
     in
     for file = 0 to 7 do
-      Board.set board (file, 1) (Some Piece.{ color = Color.White; kind = Piece_kind.Pawn });
-      Board.set board (file, 6) (Some Piece.{ color = Color.Black; kind = Piece_kind.Pawn })
+      Board.set board (file, 1)
+        (Some Piece.{ color = Color.White; kind = Piece_kind.Pawn });
+      Board.set board (file, 6)
+        (Some Piece.{ color = Color.Black; kind = Piece_kind.Pawn })
     done;
     place_back_rank Color.White 0;
     place_back_rank Color.Black 7;
-    { board
-    ; castling = Castling.initial ()
-    ; to_move = Color.White
-    ; en_passant = None
-    ; halfmove_clock = 0
-    ; fullmove_number = 1
+    {
+      board;
+      castling = Castling.initial ();
+      to_move = Color.White;
+      en_passant = None;
+      halfmove_clock = 0;
+      fullmove_number = 1;
     }
 end
 
@@ -160,11 +157,10 @@ module Fen = struct
         match Board.get board (file, rank) with
         | None -> empty := !empty + 1
         | Some piece ->
-          if !empty > 0 then begin
-            Buffer.add_string buf (Int.to_string !empty);
-            empty := 0
-          end;
-          Buffer.add_char buf (piece_char piece)
+            if !empty > 0 then (
+              Buffer.add_string buf (Int.to_string !empty);
+              empty := 0);
+            Buffer.add_char buf (piece_char piece)
       done;
       if !empty > 0 then Buffer.add_string buf (Int.to_string !empty);
       if rank > 0 then Buffer.add_char buf '/'
@@ -173,12 +169,15 @@ module Fen = struct
 
   let to_string (state : State.t) =
     String.concat ~sep:" "
-      [ placement state.board
-      ; Color.to_fen state.to_move
-      ; Castling.to_fen state.castling
-      ; (match state.en_passant with None -> "-" | Some sq -> Square.to_string sq)
-      ; Int.to_string state.halfmove_clock
-      ; Int.to_string state.fullmove_number
+      [
+        placement state.board;
+        Color.to_fen state.to_move;
+        Castling.to_fen state.castling;
+        (match state.en_passant with
+        | None -> "-"
+        | Some sq -> Square.to_string sq);
+        Int.to_string state.halfmove_clock;
+        Int.to_string state.fullmove_number;
       ]
 end
 
@@ -186,24 +185,23 @@ module San = struct
   type t =
     | Castle_kingside
     | Castle_queenside
-    | Piece of
-        { kind : Piece_kind.t
-        ; disambig_file : int option
-        ; disambig_rank : int option
-        ; capture : bool
-        ; destination : Square.t
-        ; promotion : Piece_kind.t option
-        }
-    | Pawn of
-        { from_file : int option
-        ; capture : bool
-        ; destination : Square.t
-        ; promotion : Piece_kind.t option
-        }
+    | Piece of {
+        kind : Piece_kind.t;
+        disambig_file : int option;
+        disambig_rank : int option;
+        capture : bool;
+        destination : Square.t;
+        promotion : Piece_kind.t option;
+      }
+    | Pawn of {
+        from_file : int option;
+        capture : bool;
+        destination : Square.t;
+        promotion : Piece_kind.t option;
+      }
 
   let is_file c = Char.(c >= 'a' && c <= 'h')
   let is_rank c = Char.(c >= '1' && c <= '8')
-
   let file_of_char c = Char.to_int c - Char.to_int 'a'
   let rank_of_char c = Char.to_int c - Char.to_int '1'
 
@@ -225,7 +223,10 @@ module San = struct
   let strip_suffixes token =
     let len = String.length token in
     let rec drop idx =
-      if idx > 0 && ((Stdlib.Char.equal token.[idx - 1] '+') || (Stdlib.Char.equal token.[idx - 1] '#'))
+      if
+        idx > 0
+        && (Stdlib.Char.equal token.[idx - 1] '+'
+           || Stdlib.Char.equal token.[idx - 1] '#')
       then drop (idx - 1)
       else idx
     in
@@ -244,42 +245,56 @@ module San = struct
       let promotion, body =
         try
           let eq = String.index tok '=' in
-          promotion_kind tok.[eq + 1], String.sub tok 0 eq
-        with Not_found -> None, tok
+          (promotion_kind tok.[eq + 1], String.sub tok 0 eq)
+        with Not_found -> (None, tok)
       in
       let body_len = String.length body in
       if body_len < 2 then failwith ("SAN too short: " ^ token);
       let dest = coords (String.sub body (body_len - 2) 2) in
       let first = body.[0] in
-      if Stdlib.Char.uppercase_ascii first = first && not (is_file first) then begin
+      if Stdlib.Char.uppercase_ascii first = first && not (is_file first) then (
         let kind = piece_kind_of_char first in
         let core = String.sub body 1 (body_len - 3) in
         let dis_file = ref None in
         let dis_rank = ref None in
-        let capture = Base.String.exists tok ~f:(fun c -> Stdlib.Char.equal c 'x') in
+        let capture =
+          Base.String.exists tok ~f:(fun c -> Stdlib.Char.equal c 'x')
+        in
         String.iter
           (fun c ->
             if is_file c then dis_file := Some (file_of_char c)
             else if is_rank c then dis_rank := Some (rank_of_char c)
             else if Stdlib.(c = 'x') then ())
           core;
-        Piece { kind; disambig_file = !dis_file; disambig_rank = !dis_rank; capture; destination = dest; promotion }
-      end else begin
-        let capture = Base.String.exists body ~f:(fun c -> Stdlib.Char.equal c 'x') in
-        let from_file = if capture then Some (file_of_char body.[0]) else None in
+        Piece
+          {
+            kind;
+            disambig_file = !dis_file;
+            disambig_rank = !dis_rank;
+            capture;
+            destination = dest;
+            promotion;
+          })
+      else
+        let capture =
+          Base.String.exists body ~f:(fun c -> Stdlib.Char.equal c 'x')
+        in
+        let from_file =
+          if capture then Some (file_of_char body.[0]) else None
+        in
         Pawn { from_file; capture; destination = dest; promotion }
-      end
 end
 
 module Engine = struct
-  let direction = function
-    | Color.White -> 1
-    | Color.Black -> -1
+  let direction = function Color.White -> 1 | Color.Black -> -1
 
-  let rook_king_src color = match color with Color.White -> (7, 0) | Color.Black -> (7, 7)
-  let rook_queen_src color = match color with Color.White -> (0, 0) | Color.Black -> (0, 7)
+  let rook_king_src color =
+    match color with Color.White -> (7, 0) | Color.Black -> (7, 7)
+
+  let rook_queen_src color =
+    match color with Color.White -> (0, 0) | Color.Black -> (0, 7)
+
   let home_rank color = match color with Color.White -> 1 | Color.Black -> 6
-
   let step delta = if delta = 0 then 0 else if delta > 0 then 1 else -1
 
   let path_clear board (sf, sr) (df, dr) =
@@ -296,12 +311,14 @@ module Engine = struct
     if sf = df && sr = dr then true else loop (sf, sr)
 
   let squares =
-    List.init 8 ~f:(fun file -> List.init 8 ~f:(fun rank -> (file, rank))) |> List.concat
+    List.init 8 ~f:(fun file -> List.init 8 ~f:(fun rank -> (file, rank)))
+    |> List.concat
 
   let piece_matches board color kind square =
     match Board.get board square with
     | Some Piece.{ color = piece_color; kind = piece_kind }
-      when Color.equal piece_color color && Piece_kind.equal piece_kind kind -> true
+      when Color.equal piece_color color && Piece_kind.equal piece_kind kind ->
+        true
     | _ -> false
 
   let piece_can_move board kind src dst =
@@ -309,21 +326,20 @@ module Engine = struct
     let df, dr = dst in
     match kind with
     | Piece_kind.Knight ->
-      let df_abs = Int.abs (df - sf) in
-      let dr_abs = Int.abs (dr - sr) in
-      (df_abs = 1 && dr_abs = 2) || (df_abs = 2 && dr_abs = 1)
+        let df_abs = Int.abs (df - sf) in
+        let dr_abs = Int.abs (dr - sr) in
+        (df_abs = 1 && dr_abs = 2) || (df_abs = 2 && dr_abs = 1)
     | Bishop ->
-      let df_abs = Int.abs (df - sf) in
-      let dr_abs = Int.abs (dr - sr) in
-      df_abs = dr_abs && path_clear board src dst
-    | Rook ->
-      (sf = df || sr = dr) && path_clear board src dst
-    | Queen ->
-      if sf = df || sr = dr then path_clear board src dst
-      else
         let df_abs = Int.abs (df - sf) in
         let dr_abs = Int.abs (dr - sr) in
         df_abs = dr_abs && path_clear board src dst
+    | Rook -> (sf = df || sr = dr) && path_clear board src dst
+    | Queen ->
+        if sf = df || sr = dr then path_clear board src dst
+        else
+          let df_abs = Int.abs (df - sf) in
+          let dr_abs = Int.abs (dr - sr) in
+          df_abs = dr_abs && path_clear board src dst
     | King -> Int.abs (df - sf) <= 1 && Int.abs (dr - sr) <= 1
     | Pawn -> false
 
@@ -335,7 +351,7 @@ module Engine = struct
         && piece_can_move board kind square destination)
 
   let update_castling_on_rook_move (state : State.t) color square =
-    match color, square with
+    match (color, square) with
     | Color.White, (0, 0) -> state.castling.white_queen_side <- false
     | Color.White, (7, 0) -> state.castling.white_king_side <- false
     | Color.Black, (0, 7) -> state.castling.black_queen_side <- false
@@ -345,28 +361,30 @@ module Engine = struct
   let update_castling_on_king_move (state : State.t) color =
     match color with
     | Color.White ->
-      state.castling.white_king_side <- false;
-      state.castling.white_queen_side <- false
+        state.castling.white_king_side <- false;
+        state.castling.white_queen_side <- false
     | Color.Black ->
-      state.castling.black_king_side <- false;
-      state.castling.black_queen_side <- false
+        state.castling.black_king_side <- false;
+        state.castling.black_queen_side <- false
 
   let remove_castling_rights_on_capture (state : State.t) = function
-    | (0, 0) -> state.castling.white_queen_side <- false
-    | (7, 0) -> state.castling.white_king_side <- false
-    | (0, 7) -> state.castling.black_queen_side <- false
-    | (7, 7) -> state.castling.black_king_side <- false
+    | 0, 0 -> state.castling.white_queen_side <- false
+    | 7, 0 -> state.castling.white_king_side <- false
+    | 0, 7 -> state.castling.black_queen_side <- false
+    | 7, 7 -> state.castling.black_king_side <- false
     | _ -> ()
 
   let advance_turn (state : State.t) =
     (match state.to_move with
-     | Color.Black -> state.fullmove_number <- state.fullmove_number + 1
-     | Color.White -> ());
+    | Color.Black -> state.fullmove_number <- state.fullmove_number + 1
+    | Color.White -> ());
     state.to_move <- Color.opposite state.to_move
 end
 
 let apply_castle state side =
-  let rank = match state.State.to_move with Color.White -> 0 | Color.Black -> 7 in
+  let rank =
+    match state.State.to_move with Color.White -> 0 | Color.Black -> 7
+  in
   let king_src = (4, rank) in
   let king_dst, rook_src, rook_dst =
     match side with
@@ -388,16 +406,21 @@ let find_pawn_sources state color ~capture ~from_file destination =
   let candidate_files =
     match from_file with
     | Some f -> [ f ]
-    | None -> if capture then [ dest_file - 1; dest_file + 1 ] else [ dest_file ]
+    | None ->
+        if capture then [ dest_file - 1; dest_file + 1 ] else [ dest_file ]
   in
-  let candidate_files = List.filter candidate_files ~f:(fun f -> f >= 0 && f < 8) in
+  let candidate_files =
+    List.filter candidate_files ~f:(fun f -> f >= 0 && f < 8)
+  in
   let dest_piece = Board.get board destination in
   let en_passant_target = state.en_passant in
   let home_rank = Engine.home_rank color in
   let square_has_pawn square =
     match Board.get board square with
     | Some Piece.{ color = piece_color; kind = piece_kind }
-      when Color.equal piece_color color && Piece_kind.equal piece_kind Piece_kind.Pawn -> true
+      when Color.equal piece_color color
+           && Piece_kind.equal piece_kind Piece_kind.Pawn ->
+        true
     | _ -> false
   in
   let one_step file = (file, dest_rank - dir) in
@@ -405,55 +428,63 @@ let find_pawn_sources state color ~capture ~from_file destination =
   List.filter_map candidate_files ~f:(fun file ->
       let one = one_step file in
       let two = two_step file in
-      if capture then begin
-        match dest_piece, en_passant_target with
-        | (Some Piece.{ color = piece_color; _ }, _) when not (Color.equal piece_color color) ->
-          if square_has_pawn one then Some one else None
-        | (None, Some ep) when Poly.equal ep destination ->
-          let captured_square = (dest_file, dest_rank - dir) in
-          (match Board.get board captured_square with
-           | Some Piece.{ color = piece_color; kind = piece_kind }
-             when not (Color.equal piece_color color) && Piece_kind.equal piece_kind Piece_kind.Pawn ->
-             if square_has_pawn one then Some one else None
-           | _ -> None)
+      if capture then
+        match (dest_piece, en_passant_target) with
+        | Some Piece.{ color = piece_color; _ }, _
+          when not (Color.equal piece_color color) ->
+            if square_has_pawn one then Some one else None
+        | None, Some ep when Poly.equal ep destination -> (
+            let captured_square = (dest_file, dest_rank - dir) in
+            match Board.get board captured_square with
+            | Some Piece.{ color = piece_color; kind = piece_kind }
+              when (not (Color.equal piece_color color))
+                   && Piece_kind.equal piece_kind Piece_kind.Pawn ->
+                if square_has_pawn one then Some one else None
+            | _ -> None)
         | _ -> None
-      end else begin
+      else
         match dest_piece with
         | Some _ -> None
-        | None ->
-          let res = ref [] in
-          if Square.on_board one then begin
-            match Board.get board one with
-            | Some Piece.{ color = piece_color; kind = piece_kind }
-              when Color.equal piece_color color && Piece_kind.equal piece_kind Piece_kind.Pawn ->
-              res := one :: !res
-            | _ -> ()
-          end;
-          if dest_rank = home_rank + (2 * dir) then begin
-            match Board.get board one, Board.get board two with
-            | None, Some Piece.{ color = piece_color; kind = piece_kind }
-              when Color.equal piece_color color && Piece_kind.equal piece_kind Piece_kind.Pawn ->
-              res := two :: !res
-            | _ -> ()
-          end;
-          match !res with
-          | [] -> None
-          | src :: _ -> Some src
-      end)
+        | None -> (
+            let res = ref [] in
+            (if Square.on_board one then
+               match Board.get board one with
+               | Some Piece.{ color = piece_color; kind = piece_kind }
+                 when Color.equal piece_color color
+                      && Piece_kind.equal piece_kind Piece_kind.Pawn ->
+                   res := one :: !res
+               | _ -> ());
+            (if dest_rank = home_rank + (2 * dir) then
+               match (Board.get board one, Board.get board two) with
+               | None, Some Piece.{ color = piece_color; kind = piece_kind }
+                 when Color.equal piece_color color
+                      && Piece_kind.equal piece_kind Piece_kind.Pawn ->
+                   res := two :: !res
+               | _ -> ());
+            match !res with [] -> None | src :: _ -> Some src))
 
-let apply_piece_move state ~kind ~dis_file ~dis_rank ~capture ~destination ~promotion =
-  if Option.is_some promotion then Or_error.error_string "unexpected promotion on piece move"
+let apply_piece_move state ~kind ~dis_file ~dis_rank ~capture ~destination
+    ~promotion =
+  if Option.is_some promotion then
+    Or_error.error_string "unexpected promotion on piece move"
   else
     Or_error.try_with (fun () ->
         let board = state.State.board in
         let color = state.to_move in
-        (match capture, Board.get board destination with
-         | true, (Some Piece.{ color = piece_color; _ }) when not (Color.equal piece_color color) -> ()
-         | true, _ -> failwith "capture expected"
-         | false, None -> ()
-         | false, (Some Piece.{ color = piece_color; _ }) when Color.equal piece_color color -> failwith "destination occupied by own piece"
-         | false, Some _ -> failwith "unexpected capture");
-        let sources = Engine.find_piece_sources board color kind destination dis_file dis_rank in
+        (match (capture, Board.get board destination) with
+        | true, Some Piece.{ color = piece_color; _ }
+          when not (Color.equal piece_color color) ->
+            ()
+        | true, _ -> failwith "capture expected"
+        | false, None -> ()
+        | false, Some Piece.{ color = piece_color; _ }
+          when Color.equal piece_color color ->
+            failwith "destination occupied by own piece"
+        | false, Some _ -> failwith "unexpected capture");
+        let sources =
+          Engine.find_piece_sources board color kind destination dis_file
+            dis_rank
+        in
         let src =
           match sources with
           | [ square ] -> square
@@ -461,22 +492,28 @@ let apply_piece_move state ~kind ~dis_file ~dis_rank ~capture ~destination ~prom
           | _ -> failwith "ambiguous SAN (multiple sources)"
         in
         Engine.update_castling_on_rook_move state color src;
-        (match kind with Piece_kind.King -> Engine.update_castling_on_king_move state color | _ -> ());
+        (match kind with
+        | Piece_kind.King -> Engine.update_castling_on_king_move state color
+        | _ -> ());
         let captured = Board.move board ~src ~dst:destination in
         (match captured with
-         | Some Piece.{ color = piece_color; kind = piece_kind }
-           when Piece_kind.equal piece_kind Piece_kind.Rook && not (Color.equal piece_color color) ->
-             Engine.remove_castling_rights_on_capture state destination
-         | _ -> ());
+        | Some Piece.{ color = piece_color; kind = piece_kind }
+          when Piece_kind.equal piece_kind Piece_kind.Rook
+               && not (Color.equal piece_color color) ->
+            Engine.remove_castling_rights_on_capture state destination
+        | _ -> ());
         state.en_passant <- None;
-        state.halfmove_clock <- (match captured with Some _ -> 0 | None -> state.halfmove_clock + 1);
+        state.halfmove_clock <-
+          (match captured with Some _ -> 0 | None -> state.halfmove_clock + 1);
         Engine.advance_turn state)
 
 let apply_pawn_move state ~from_file ~capture ~destination ~promotion =
   Or_error.try_with (fun () ->
       let color = state.State.to_move in
       let board = state.board in
-      let sources = find_pawn_sources state color ~capture ~from_file destination in
+      let sources =
+        find_pawn_sources state color ~capture ~from_file destination
+      in
       let src =
         match sources with
         | [ square ] -> square
@@ -486,34 +523,36 @@ let apply_pawn_move state ~from_file ~capture ~destination ~promotion =
       let dest_piece = Board.get board destination in
       let dir = Engine.direction color in
       let en_passant_capture =
-        capture
-        && Option.is_none dest_piece
-        && Option.exists state.en_passant ~f:(fun sq -> Poly.equal sq destination)
+        capture && Option.is_none dest_piece
+        && Option.exists state.en_passant ~f:(fun sq ->
+               Poly.equal sq destination)
       in
       if capture && not en_passant_capture then
         match dest_piece with
-        | Some Piece.{ color = piece_color; _ } when Color.equal piece_color color -> failwith "capture hitting own piece"
+        | Some Piece.{ color = piece_color; _ }
+          when Color.equal piece_color color ->
+            failwith "capture hitting own piece"
         | Some _ -> ()
         | None -> ()
-      else if not capture && Option.is_some dest_piece then
+      else if (not capture) && Option.is_some dest_piece then
         failwith "pawn move destination occupied";
       (* Handle en passant capture before move *)
-      if en_passant_capture then begin
-        let captured_square = (fst destination, snd destination - dir) in
-        Board.set board captured_square None
-      end;
+      (if en_passant_capture then
+         let captured_square = (fst destination, snd destination - dir) in
+         Board.set board captured_square None);
       ignore (Board.move board ~src ~dst:destination);
       (match promotion with
-       | Some kind -> Board.set board destination (Some Piece.{ color; kind })
-       | None -> ());
+      | Some kind -> Board.set board destination (Some Piece.{ color; kind })
+      | None -> ());
       (match dest_piece with
-       | Some Piece.{ color = piece_color; kind = piece_kind }
-         when Piece_kind.equal piece_kind Piece_kind.Rook && not (Color.equal piece_color color) ->
-         Engine.remove_castling_rights_on_capture state destination
-       | _ -> ());
+      | Some Piece.{ color = piece_color; kind = piece_kind }
+        when Piece_kind.equal piece_kind Piece_kind.Rook
+             && not (Color.equal piece_color color) ->
+          Engine.remove_castling_rights_on_capture state destination
+      | _ -> ());
       state.en_passant <-
         (let src_rank = snd src in
-         if not capture && Int.abs (snd destination - src_rank) = 2 then
+         if (not capture) && Int.abs (snd destination - src_rank) = 2 then
            Some (fst destination, src_rank + dir)
          else None);
       state.halfmove_clock <- 0;
@@ -524,10 +563,12 @@ let apply_san state san =
   | San.Castle_kingside -> apply_castle state `Kingside
   | San.Castle_queenside -> apply_castle state `Queenside
   | San.Piece move ->
-      apply_piece_move state ~kind:move.kind ~dis_file:move.disambig_file ~dis_rank:move.disambig_rank
-        ~capture:move.capture ~destination:move.destination ~promotion:move.promotion
+      apply_piece_move state ~kind:move.kind ~dis_file:move.disambig_file
+        ~dis_rank:move.disambig_rank ~capture:move.capture
+        ~destination:move.destination ~promotion:move.promotion
   | San.Pawn move ->
-      apply_pawn_move state ~from_file:move.from_file ~capture:move.capture ~destination:move.destination ~promotion:move.promotion
+      apply_pawn_move state ~from_file:move.from_file ~capture:move.capture
+        ~destination:move.destination ~promotion:move.promotion
 
 let parse_san token = Or_error.try_with (fun () -> San.parse token)
 
@@ -546,7 +587,9 @@ let fens_of_string contents =
       fens_of_moves sans)
 
 let fens_of_file path =
-  Or_error.bind (Or_error.try_with (fun () -> Stdio.In_channel.read_all path)) ~f:fens_of_string
+  Or_error.bind
+    (Or_error.try_with (fun () -> Stdio.In_channel.read_all path))
+    ~f:fens_of_string
 
 let fen_after_move pgn ~color ~move_number =
   if move_number <= 0 then Or_error.error_string "move_number must be positive"
@@ -555,13 +598,12 @@ let fen_after_move pgn ~color ~move_number =
         let sans = List.map parsed.moves ~f:(fun move -> move.san) in
         Or_error.bind (fens_of_moves sans) ~f:(fun fens ->
             let base = (move_number - 1) * 2 in
-            let idx =
-              match color with
-              | `White -> base
-              | `Black -> base + 1
-            in
+            let idx = match color with `White -> base | `Black -> base + 1 in
             match List.nth fens idx with
             | Some fen -> Or_error.return fen
             | None ->
-                let player = match color with `White -> "White" | `Black -> "Black" in
-                Or_error.errorf "PGN does not contain move %d for %s" move_number player))
+                let player =
+                  match color with `White -> "White" | `Black -> "Black"
+                in
+                Or_error.errorf "PGN does not contain move %d for %s"
+                  move_number player))

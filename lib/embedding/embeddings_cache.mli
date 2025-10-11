@@ -22,8 +22,7 @@
 type t
 (** Simple in-memory cache keyed by FEN. *)
 
-val create : unit -> t
-[@@ocaml.doc "Initialise an empty cache."]
+val create : unit -> t [@@ocaml.doc "Initialise an empty cache."]
 
 val find : t -> string -> float array option
 [@@ocaml.doc "Retrieve a cached embedding (keyed by FEN)."]

@@ -43,20 +43,35 @@ let effort_for_plan (plan : Query_intent.plan) =
     List.exists plan.Query_intent.filters ~f:(fun filter ->
         String.equal (String.lowercase filter.Query_intent.field) "theme")
   in
-  if has_theme_filter || List.length plan.Query_intent.keywords >= 4 then Effort.High else Effort.Medium
+  if has_theme_filter || List.length plan.Query_intent.keywords >= 4 then
+    Effort.High
+  else Effort.Medium
 
 let verbosity_for_plan (plan : Query_intent.plan) =
-  if List.length plan.Query_intent.filters <= 1 && List.length plan.Query_intent.keywords <= 2 then Some Verbosity.Low
+  if
+    List.length plan.Query_intent.filters <= 1
+    && List.length plan.Query_intent.keywords <= 2
+  then Some Verbosity.Low
   else Some Verbosity.Medium
 
 let build_candidate_block (summary : Repo_postgres.game_summary) pgn =
   let result = Option.value summary.Repo_postgres.result ~default:"*" in
-  let played_on = Option.value summary.Repo_postgres.played_on ~default:"Unknown date" in
-  let eco = Option.value summary.Repo_postgres.eco_code ~default:"Unknown ECO" in
-  let opening = Option.value summary.Repo_postgres.opening_name ~default:"Unknown opening" in
-  let rating rating_opt = Option.value_map rating_opt ~default:"?" ~f:Int.to_string in
+  let played_on =
+    Option.value summary.Repo_postgres.played_on ~default:"Unknown date"
+  in
+  let eco =
+    Option.value summary.Repo_postgres.eco_code ~default:"Unknown ECO"
+  in
+  let opening =
+    Option.value summary.Repo_postgres.opening_name ~default:"Unknown opening"
+  in
+  let rating rating_opt =
+    Option.value_map rating_opt ~default:"?" ~f:Int.to_string
+  in
   let ratings =
-    Printf.sprintf "%s vs %s" (rating summary.Repo_postgres.white_rating) (rating summary.Repo_postgres.black_rating)
+    Printf.sprintf "%s vs %s"
+      (rating summary.Repo_postgres.white_rating)
+      (rating summary.Repo_postgres.black_rating)
   in
   Printf.sprintf
     {|Game ID: %d
@@ -68,14 +83,8 @@ Played on: %s
 Ratings (White | Black): %s
 PGN:
 %s|}
-    summary.Repo_postgres.id
-    summary.Repo_postgres.white
-    summary.Repo_postgres.black
-    result
-    opening
-    eco
-    played_on
-    ratings
+    summary.Repo_postgres.id summary.Repo_postgres.white
+    summary.Repo_postgres.black result opening eco played_on ratings
     (truncate_pgn pgn)
 
 let build_user_message (plan : Query_intent.plan) candidates =
@@ -92,7 +101,8 @@ User question: |}
     |> List.map ~f:(fun (summary, pgn) -> build_candidate_block summary pgn)
     |> String.concat ~sep:"\n\n---\n\n"
   in
-  Printf.sprintf "%s%s\n\nCandidates:\n\n%s" instructions question_line candidate_blocks
+  Printf.sprintf "%s%s\n\nCandidates:\n\n%s" instructions question_line
+    candidate_blocks
 
 let response_schema =
   Yojson.Safe.from_string
@@ -124,7 +134,6 @@ let response_schema =
         }
       }|}
 
-
 let evaluate ~client ~plan ~candidates =
   let limited_candidates = List.take candidates max_candidates in
   if List.is_empty limited_candidates then Or_error.return []
@@ -135,21 +144,25 @@ let evaluate ~client ~plan ~candidates =
     let started_at = Unix.gettimeofday () in
     let system_message =
       Message.
-        { role = Role.System
-        ; content =
-            "You are a chess analyst. Score each candidate game for relevance to the user's question. Provide concise, factual explanations referencing the moves or strategic ideas (e.g., queenside pawn majority)." }
+        {
+          role = Role.System;
+          content =
+            "You are a chess analyst. Score each candidate game for relevance \
+             to the user's question. Provide concise, factual explanations \
+             referencing the moves or strategic ideas (e.g., queenside pawn \
+             majority).";
+        }
     in
     let user_message =
       Message.
-        { role = Role.User
-        ; content = build_user_message plan limited_candidates }
+        {
+          role = Role.User;
+          content = build_user_message plan limited_candidates;
+        }
     in
     let response_format = Response_format.Json_schema response_schema in
     let* response =
-      Agents_gpt5_client.generate
-        client
-        ~reasoning_effort:effort
-        ?verbosity
+      Agents_gpt5_client.generate client ~reasoning_effort:effort ?verbosity
         ~response_format
         [ system_message; user_message ]
     in
@@ -157,18 +170,15 @@ let evaluate ~client ~plan ~candidates =
     let* parsed = Response_items.parse response.Response.content in
     let evaluations =
       List.map parsed ~f:(fun item ->
-          { game_id = item.Response_items.game_id
-          ; score = Float.clamp_exn ~min:0.0 ~max:1.0 item.Response_items.score
-          ; explanation = item.Response_items.explanation
-          ; themes = item.Response_items.themes
-          ; reasoning_effort = effort
-          ; usage = Some response.Response.usage })
+          {
+            game_id = item.Response_items.game_id;
+            score = Float.clamp_exn ~min:0.0 ~max:1.0 item.Response_items.score;
+            explanation = item.Response_items.explanation;
+            themes = item.Response_items.themes;
+            reasoning_effort = effort;
+            usage = Some response.Response.usage;
+          })
     in
-    Telemetry.log
-      ~plan
-      ~candidate_count
-      ~evaluated:(List.length evaluations)
-      ~effort
-      ~latency_ms
-      ~usage:response.Response.usage;
+    Telemetry.log ~plan ~candidate_count ~evaluated:(List.length evaluations)
+      ~effort ~latency_ms ~usage:response.Response.usage;
     Or_error.return evaluations

@@ -16,9 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(** Translate natural-language questions into structured filters that the
-    hybrid planner can execute. The intent analysis is deliberately
-    deterministic—no LLM involvement—so behaviour is stable and easy to test. *)
+(** Translate natural-language questions into structured filters that the hybrid
+    planner can execute. The intent analysis is deliberately deterministic—no
+    LLM involvement—so behaviour is stable and easy to test. *)
 
 type rating_filter = {
   white_min : int option;
@@ -26,19 +26,15 @@ type rating_filter = {
   max_rating_delta : int option;
 }
 (** Rating constraints extracted from phrases such as "white 2700", "players
-    within 100 points", etc. [None] means the user did not request that bound. *)
+    within 100 points", etc. [None] means the user did not request that bound.
+*)
 
 (** Metadata filter aligned with payload fields stored in Postgres/Qdrant. *)
-type metadata_filter = {
-  field : string;
-  value : string;
-}
+type metadata_filter = { field : string; value : string }
 (** Each filter is a concrete predicate the storage layer understands—for
     example [{ field = "opening"; value = "kings_indian_defense" }]. *)
 
-type request = {
-  text : string;
-}
+type request = { text : string }
 (** Raw user input. The planner currently accepts only the free-text field. *)
 
 type plan = {
@@ -50,13 +46,13 @@ type plan = {
   limit : int;
 }
 (** Parsed representation of a question. [cleaned_text] lowercases and removes
-    punctuation; [keywords] drives fallback scoring; [filters]/[rating] feed
-    SQL and vector payload predicates; [limit] caps the number of results. *)
+    punctuation; [keywords] drives fallback scoring; [filters]/[rating] feed SQL
+    and vector payload predicates; [limit] caps the number of results. *)
 
 val default_limit : int
 (** Default result cap when the user does not specify one (currently 50). *)
 
 val analyse : request -> plan
 (** [analyse request] normalises the question, extracts openings/ECO ranges,
-    rating bounds, keywords, and an optional limit. The output feeds the
-    hybrid planner and ultimately the API response. *)
+    rating bounds, keywords, and an optional limit. The output feeds the hybrid
+    planner and ultimately the API response. *)

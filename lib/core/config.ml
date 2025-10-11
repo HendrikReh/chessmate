@@ -2,15 +2,16 @@ open! Base
 
 module Helpers = struct
   let trimmed_env name =
-    Stdlib.Sys.getenv_opt name
-    |> Option.map ~f:String.strip
+    Stdlib.Sys.getenv_opt name |> Option.map ~f:String.strip
     |> Option.filter ~f:(fun value -> not (String.is_empty value))
 
   let missing name =
-    Or_error.errorf "Configuration error: %s environment variable is required" name
+    Or_error.errorf "Configuration error: %s environment variable is required"
+      name
 
   let invalid name value message =
-    Or_error.errorf "Configuration error: %s=%s is invalid (%s)" name value message
+    Or_error.errorf "Configuration error: %s=%s is invalid (%s)" name value
+      message
 
   let require name =
     match trimmed_env name with
@@ -33,18 +34,11 @@ end
 
 module Api = struct
   module Rate_limit = struct
-    type t = {
-      requests_per_minute : int;
-      bucket_size : int option;
-    }
+    type t = { requests_per_minute : int; bucket_size : int option }
   end
 
   module Qdrant = struct
-    type collection = {
-      name : string;
-      vector_size : int;
-      distance : string;
-    }
+    type collection = { name : string; vector_size : int; distance : string }
   end
 
   module Agent_cache = struct
@@ -54,9 +48,7 @@ module Api = struct
           namespace : string option;
           ttl_seconds : int option;
         }
-      | Memory of {
-          capacity : int option;
-        }
+      | Memory of { capacity : int option }
       | Disabled
   end
 
@@ -90,7 +82,9 @@ module Api = struct
     | Some raw -> (
         match Helpers.parse_int "CHESSMATE_API_PORT" raw with
         | Ok parsed when parsed > 0 -> Or_error.return parsed
-        | Ok _ -> Helpers.invalid "CHESSMATE_API_PORT" raw "expected a positive integer"
+        | Ok _ ->
+            Helpers.invalid "CHESSMATE_API_PORT" raw
+              "expected a positive integer"
         | Error err -> Error err)
 
   let load_reasoning_effort () =
@@ -102,67 +96,89 @@ module Api = struct
     match Helpers.optional "AGENT_VERBOSITY" with
     | None -> Or_error.return None
     | Some raw ->
-        Agents_gpt5_client.Verbosity.of_string raw |> Or_error.map ~f:Option.some
+        Agents_gpt5_client.Verbosity.of_string raw
+        |> Or_error.map ~f:Option.some
 
   let load_agent_cache () =
     match Helpers.optional "AGENT_CACHE_REDIS_URL" with
-    | Some url ->
+    | Some url -> (
         let namespace = Helpers.optional "AGENT_CACHE_REDIS_NAMESPACE" in
         let ttl_seconds =
           match Helpers.optional "AGENT_CACHE_TTL_SECONDS" with
           | None -> Ok None
           | Some raw -> (
-              match Helpers.parse_positive_int "AGENT_CACHE_TTL_SECONDS" raw with
+              match
+                Helpers.parse_positive_int "AGENT_CACHE_TTL_SECONDS" raw
+              with
               | Ok ttl -> Ok (Some ttl)
               | Error err -> Error err)
         in
-        (match ttl_seconds with
+        match ttl_seconds with
         | Ok ttl -> Ok (Agent_cache.Redis { url; namespace; ttl_seconds = ttl })
         | Error err -> Error err)
     | None -> (
         match Helpers.optional "AGENT_CACHE_CAPACITY" with
         | None -> Or_error.return Agent_cache.Disabled
-        | Some raw when String.is_empty raw -> Or_error.return Agent_cache.Disabled
+        | Some raw when String.is_empty raw ->
+            Or_error.return Agent_cache.Disabled
         | Some raw -> (
             match Helpers.parse_positive_int "AGENT_CACHE_CAPACITY" raw with
-            | Ok capacity -> Or_error.return (Agent_cache.Memory { capacity = Some capacity })
-            | Error err -> Error err ))
+            | Ok capacity ->
+                Or_error.return
+                  (Agent_cache.Memory { capacity = Some capacity })
+            | Error err -> Error err))
 
   let load_agent () =
     let api_key = Helpers.optional "AGENT_API_KEY" in
-    let endpoint = Option.value (Helpers.optional "AGENT_ENDPOINT") ~default:default_agent_endpoint in
+    let endpoint =
+      Option.value
+        (Helpers.optional "AGENT_ENDPOINT")
+        ~default:default_agent_endpoint
+    in
     let model = Helpers.optional "AGENT_MODEL" in
     match load_reasoning_effort () with
     | Error err -> Error err
-    | Ok reasoning_effort ->
-        (match load_verbosity () with
+    | Ok reasoning_effort -> (
+        match load_verbosity () with
         | Error err -> Error err
-        | Ok verbosity ->
-            (match load_agent_cache () with
+        | Ok verbosity -> (
+            match load_agent_cache () with
             | Error err -> Error err
-            | Ok cache -> Or_error.return { api_key; endpoint; model; reasoning_effort; verbosity; cache }))
+            | Ok cache ->
+                Or_error.return
+                  {
+                    api_key;
+                    endpoint;
+                    model;
+                    reasoning_effort;
+                    verbosity;
+                    cache;
+                  }))
 
   let load_rate_limit () =
     match Helpers.optional "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE" with
     | None -> Or_error.return None
     | Some raw when String.is_empty raw -> Or_error.return None
-    | Some raw ->
-        begin
-          match Helpers.parse_positive_int "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE" raw with
-          | Error err -> Error err
-          | Ok requests_per_minute ->
-              let bucket_size =
-                match Helpers.optional "CHESSMATE_RATE_LIMIT_BUCKET_SIZE" with
-                | None -> Ok None
-                | Some raw_bucket when String.is_empty raw_bucket -> Ok None
-                | Some raw_bucket ->
-                    Helpers.parse_positive_int "CHESSMATE_RATE_LIMIT_BUCKET_SIZE" raw_bucket
-                    |> Or_error.map ~f:Option.some
-              in
-              (match bucket_size with
-              | Error err -> Error err
-              | Ok bucket_size -> Ok (Some { Rate_limit.requests_per_minute; bucket_size }))
-        end
+    | Some raw -> (
+        match
+          Helpers.parse_positive_int "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE"
+            raw
+        with
+        | Error err -> Error err
+        | Ok requests_per_minute -> (
+            let bucket_size =
+              match Helpers.optional "CHESSMATE_RATE_LIMIT_BUCKET_SIZE" with
+              | None -> Ok None
+              | Some raw_bucket when String.is_empty raw_bucket -> Ok None
+              | Some raw_bucket ->
+                  Helpers.parse_positive_int "CHESSMATE_RATE_LIMIT_BUCKET_SIZE"
+                    raw_bucket
+                  |> Or_error.map ~f:Option.some
+            in
+            match bucket_size with
+            | Error err -> Error err
+            | Ok bucket_size ->
+                Ok (Some { Rate_limit.requests_per_minute; bucket_size })))
 
   let load_qdrant_collection () =
     let name_result =
@@ -193,7 +209,9 @@ module Api = struct
               | Some raw when String.is_empty raw -> default_distance
               | Some raw -> String.capitalize (String.strip raw)
             in
-            Ok (Some Qdrant.{ name; vector_size = default_vector_size; distance }))
+            Ok
+              (Some Qdrant.{ name; vector_size = default_vector_size; distance })
+        )
 
   let load () =
     match Helpers.require "DATABASE_URL" with
@@ -214,7 +232,15 @@ module Api = struct
                         match load_qdrant_collection () with
                         | Error err -> Error err
                         | Ok qdrant_collection ->
-                            Or_error.return { database_url; qdrant_url; port; agent; rate_limit; qdrant_collection })))) )
+                            Or_error.return
+                              {
+                                database_url;
+                                qdrant_url;
+                                port;
+                                agent;
+                                rate_limit;
+                                qdrant_collection;
+                              })))))
 end
 
 module Worker = struct
@@ -229,12 +255,14 @@ module Worker = struct
   let load () =
     match Helpers.require "DATABASE_URL" with
     | Error err -> Error err
-    | Ok database_url ->
-        (match Helpers.require "OPENAI_API_KEY" with
+    | Ok database_url -> (
+        match Helpers.require "OPENAI_API_KEY" with
         | Error err -> Error err
         | Ok openai_api_key ->
             let openai_endpoint =
-              Option.value (Helpers.optional "OPENAI_EMBEDDING_ENDPOINT") ~default:default_endpoint
+              Option.value
+                (Helpers.optional "OPENAI_EMBEDDING_ENDPOINT")
+                ~default:default_endpoint
             in
             Or_error.return { database_url; openai_api_key; openai_endpoint })
 end
@@ -243,7 +271,9 @@ module Cli = struct
   let database_url () = Helpers.require "DATABASE_URL"
 
   let api_base_url () =
-    Option.value (Helpers.optional "CHESSMATE_API_URL") ~default:"http://localhost:8080"
+    Option.value
+      (Helpers.optional "CHESSMATE_API_URL")
+      ~default:"http://localhost:8080"
 
   let pending_guard_limit ~default =
     match Helpers.optional "CHESSMATE_MAX_PENDING_EMBEDDINGS" with

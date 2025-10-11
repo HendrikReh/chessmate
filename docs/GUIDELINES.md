@@ -19,6 +19,7 @@
 - CLI/services: centralize side effects in `lib/storage` modules, keep `lib/chess` pure.
 - Use pattern matching, avoid partial functions, add concise comments for non-obvious logic.
 - Apply `dune fmt` before commits; ensure `dune build` and `dune test` pass locally.
+- Apply `dune fmt` before commits; ensure `dune build` and `dune test` pass locally. The repository pins `.ocamlformat` (profile `conventional`, version `0.27.0`); install `ocamlformat.0.27.0` in your opam switch so formatting is consistent. CI runs `dune build @fmt`.
 - Keep GPL notice headers at the top of every source/interface file; copy the template from existing modules when adding new files.
 
 ## Testing Expectations

@@ -10,6 +10,6 @@ val log :
   latency_ms:float ->
   usage:Agents_gpt5_client.Usage.t ->
   unit
-(** Emit structured telemetry for an agent evaluation round. The log contains the
-    question, candidate counts, reasoning effort, latency, token usage, and optional cost
-    estimates derived from environment configuration. *)
+(** Emit structured telemetry for an agent evaluation round. The log contains
+    the question, candidate counts, reasoning effort, latency, token usage, and
+    optional cost estimates derived from environment configuration. *)

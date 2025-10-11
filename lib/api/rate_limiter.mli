@@ -3,13 +3,8 @@ open! Base
 type t
 
 type decision =
-  | Allowed of {
-      remaining : float;
-    }
-  | Limited of {
-      retry_after : float;
-      remaining : float;
-    }
+  | Allowed of { remaining : float }
+  | Limited of { retry_after : float; remaining : float }
 
 val create : tokens_per_minute:int -> bucket_size:int -> t
 (** [create ~tokens_per_minute ~bucket_size] builds a token-bucket rate limiter.
@@ -20,4 +15,5 @@ val check : t -> remote_addr:string -> decision
     otherwise [Limited] with the suggested retry-after interval in seconds. *)
 
 val metrics : t -> string list
-(** Render Prometheus-style metrics lines describing total and per-IP throttles. *)
+(** Render Prometheus-style metrics lines describing total and per-IP throttles.
+*)

@@ -71,7 +71,7 @@ For day-to-day service operations, scaling, and cache management, refer to the [
 - Inspect data with your preferred SQL client (e.g., `psql`, DBeaver, TablePlus) using `DATABASE_URL`—the OCaml services use Caqti under the hood, so any Postgres client will do.
 
 ## Build & Test Workflow
-- Formatting: `dune fmt` (run before commits; CI enforces `dune fmt --check`).
+- Formatting: `dune fmt` (run before commits; CI runs `dune build @fmt` to verify formatting). The repo ships with `.ocamlformat` (profile `conventional`, version `0.27.0`) so everyone formats code identically—use `opam install ocamlformat.0.27.0` if the version is missing locally.
 - Unit tests: `dune build && dune runtest`.
 - Watch mode: `WATCH=1 dune runtest` (re-runs changed suites).
 - Stream test output: `dune runtest --no-buffer` (useful for verbose parsers).

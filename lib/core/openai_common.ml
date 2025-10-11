@@ -3,7 +3,6 @@
 
 open! Base
 open Stdio
-
 module Util = Yojson.Safe.Util
 
 type retry_config = {
@@ -34,9 +33,13 @@ let parse_env_float_ms name ~default =
       | _ -> default)
 
 let load_retry_config () =
-  let max_attempts = parse_env_int "OPENAI_RETRY_MAX_ATTEMPTS" ~default:default_retry_config.max_attempts in
+  let max_attempts =
+    parse_env_int "OPENAI_RETRY_MAX_ATTEMPTS"
+      ~default:default_retry_config.max_attempts
+  in
   let initial_delay =
-    parse_env_float_ms "OPENAI_RETRY_BASE_DELAY_MS" ~default:default_retry_config.initial_delay
+    parse_env_float_ms "OPENAI_RETRY_BASE_DELAY_MS"
+      ~default:default_retry_config.initial_delay
   in
   { default_retry_config with max_attempts; initial_delay }
 
@@ -49,24 +52,31 @@ let should_retry_status status =
 
 let truncate_body body =
   let max_len = 256 in
-  if String.length body <= max_len then body else String.prefix body max_len ^ "…"
+  if String.length body <= max_len then body
+  else String.prefix body max_len ^ "…"
 
 let should_retry_error_json json =
   let error_type =
-    Util.member "type" json |> Util.to_string_option |> Option.map ~f:String.lowercase
+    Util.member "type" json |> Util.to_string_option
+    |> Option.map ~f:String.lowercase
   in
   match error_type with
-  | Some ("server_error" | "timeout" | "rate_limit_error" | "overloaded") -> true
+  | Some ("server_error" | "timeout" | "rate_limit_error" | "overloaded") ->
+      true
   | Some "invalid_request_error" -> false
   | _ ->
-      Util.member "code" json
-      |> Util.to_string_option
+      Util.member "code" json |> Util.to_string_option
       |> Option.value_map ~default:false ~f:(fun code ->
              let code = String.lowercase code in
-             String.equal code "rate_limit_exceeded" || String.equal code "server_error")
+             String.equal code "rate_limit_exceeded"
+             || String.equal code "server_error")
 
 let log_retry ~label ~attempt ~max_attempts ~delay error =
   let next_attempt = attempt + 1 in
   eprintf
-    "[%s] transient error on attempt %d/%d: %s; retrying in %.2fs before attempt %d\n%!"
-    label attempt max_attempts (Error.to_string_hum error) delay next_attempt
+    "[%s] transient error on attempt %d/%d: %s; retrying in %.2fs before \
+     attempt %d\n\
+     %!"
+    label attempt max_attempts
+    (Error.to_string_hum error)
+    delay next_attempt

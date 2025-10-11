@@ -18,22 +18,26 @@ let check_limited_and_metrics () =
   | Rate_limiter.Limited { retry_after; remaining } ->
       check bool "retry-after positive" true Float.(retry_after >= 0.);
       check bool "remaining non-negative" true Float.(remaining >= 0.)
-  | Rate_limiter.Allowed _ -> fail "expected limiter to trigger"
-  );
+  | Rate_limiter.Allowed _ -> fail "expected limiter to trigger");
   let metrics = Rate_limiter.metrics limiter in
   let total_line =
-    List.find metrics ~f:(fun line -> String.is_prefix line ~prefix:"api_rate_limited_total ")
+    List.find metrics ~f:(fun line ->
+        String.is_prefix line ~prefix:"api_rate_limited_total ")
   in
   (match total_line with
   | Some line -> check string "total limited" "api_rate_limited_total 1" line
   | None -> fail "expected total metric line");
   let ip_line =
-    List.find metrics ~f:(fun line -> String.is_substring line ~substring:"ip=\"10.0.0.5\"")
+    List.find metrics ~f:(fun line ->
+        String.is_substring line ~substring:"ip=\"10.0.0.5\"")
   in
-  (match ip_line with
-  | Some line -> check bool "ip metric count" true (String.is_suffix line ~suffix:" 1")
-  | None -> fail "expected per-ip metric line")
+  match ip_line with
+  | Some line ->
+      check bool "ip metric count" true (String.is_suffix line ~suffix:" 1")
+  | None -> fail "expected per-ip metric line"
 
 let suite =
-  [ "allows request under budget", `Quick, check_allowed
-  ; "limits when tokens exhausted", `Quick, check_limited_and_metrics ]
+  [
+    ("allows request under budget", `Quick, check_allowed);
+    ("limits when tokens exhausted", `Quick, check_limited_and_metrics);
+  ]

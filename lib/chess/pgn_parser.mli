@@ -23,17 +23,10 @@ open! Base
 val default_valid_results : string list
 (** Valid tokens permitted in the [Result] tag. *)
 
-type move = {
-  san : string;
-  turn : int;
-  ply : int;
-}
+type move = { san : string; turn : int; ply : int }
 
+type t = { headers : (string * string) list; moves : move list }
 (** Parsed PGN artifact with metadata headers and SAN moves. *)
-type t = {
-  headers : (string * string) list;
-  moves : move list;
-}
 
 val parse : string -> t Or_error.t
 (** [parse raw_pgn] returns headers and moves extracted from a PGN string. *)
@@ -47,11 +40,12 @@ val fold_games :
   init:'a ->
   f:('a -> index:int -> raw:string -> t -> 'a Or_error.t) ->
   'a Or_error.t
-(** Iterate through every game contained in a PGN blob without loading the entire
-    result set eagerly. The folding function receives the 1-based [index], the
-    original [raw] PGN text for that game, and the parsed representation. When
-    [on_error] is supplied, parsing failures are reported to the handler and
-    iteration continues; otherwise parsing failures abort the fold. *)
+(** Iterate through every game contained in a PGN blob without loading the
+    entire result set eagerly. The folding function receives the 1-based
+    [index], the original [raw] PGN text for that game, and the parsed
+    representation. When [on_error] is supplied, parsing failures are reported
+    to the handler and iteration continues; otherwise parsing failures abort the
+    fold. *)
 
 val stream_games :
   ?on_error:(index:int -> raw:string -> Error.t -> unit Lwt.t) ->

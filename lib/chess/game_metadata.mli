@@ -18,11 +18,7 @@
 
 (** Types summarizing chess game metadata. *)
 
-type player = {
-  name : string;
-  fide_id : string option;
-  rating : int option;
-}
+type player = { name : string; fide_id : string option; rating : int option }
 
 type t = {
   event : string option;

@@ -1,8 +1,8 @@
 open! Base
 open Stdio
 
-(** Cache GPT-5 agent evaluations behind in-memory LRU or Redis backends so repeat
-    queries reuse previous scoring work. *)
+(** Cache GPT-5 agent evaluations behind in-memory LRU or Redis backends so
+    repeat queries reuse previous scoring work. *)
 
 let ( let* ) t f = Or_error.bind t ~f
 
@@ -17,22 +17,25 @@ module Key = struct
   let of_plan ~plan ~summary ~pgn =
     let digest_source =
       String.concat ~sep:"\n"
-        [ plan.Query_intent.cleaned_text
-        ; String.concat ~sep:"," plan.Query_intent.keywords
-        ; Int.to_string plan.Query_intent.limit
-        ; Option.value plan.Query_intent.rating.white_min ~default:(-1) |> Int.to_string
-        ; Option.value plan.Query_intent.rating.black_min ~default:(-1) |> Int.to_string
-        ; Option.value plan.Query_intent.rating.max_rating_delta ~default:(-1) |> Int.to_string
-        ; Option.value summary.Repo_postgres.opening_slug ~default:""
-        ; Option.value summary.Repo_postgres.result ~default:""
-        ; pgn
+        [
+          plan.Query_intent.cleaned_text;
+          String.concat ~sep:"," plan.Query_intent.keywords;
+          Int.to_string plan.Query_intent.limit;
+          Option.value plan.Query_intent.rating.white_min ~default:(-1)
+          |> Int.to_string;
+          Option.value plan.Query_intent.rating.black_min ~default:(-1)
+          |> Int.to_string;
+          Option.value plan.Query_intent.rating.max_rating_delta ~default:(-1)
+          |> Int.to_string;
+          Option.value summary.Repo_postgres.opening_slug ~default:"";
+          Option.value summary.Repo_postgres.result ~default:"";
+          pgn;
         ]
     in
     Stdlib.Digest.string digest_source |> Stdlib.Digest.to_hex
 end
 
 type key = Key.t
-
 type entry = Evaluation.evaluation
 
 type memory_cache = {
@@ -50,10 +53,7 @@ type redis_cache = {
   ttl_seconds : int option;
 }
 
-type backend =
-  | Memory of memory_cache
-  | Redis of redis_cache
-
+type backend = Memory of memory_cache | Redis of redis_cache
 type t = backend
 
 let default_namespace = "chessmate:agent:"
@@ -61,15 +61,19 @@ let default_namespace = "chessmate:agent:"
 let ensure_namespace namespace =
   let trimmed = String.strip namespace in
   if String.is_empty trimmed then default_namespace
-  else if String.is_suffix trimmed ~suffix:":" then trimmed else trimmed ^ ":"
+  else if String.is_suffix trimmed ~suffix:":" then trimmed
+  else trimmed ^ ":"
 
-let sanitize_ttl = function
-  | Some ttl when ttl > 0 -> Some ttl
-  | _ -> None
+let sanitize_ttl = function Some ttl when ttl > 0 -> Some ttl | _ -> None
 
 let create_memory_cache capacity =
   let capacity = Int.max 1 capacity in
-  Memory { capacity; table = Hashtbl.create (module String); order = Queue.create () }
+  Memory
+    {
+      capacity;
+      table = Hashtbl.create (module String);
+      order = Queue.create ();
+    }
 
 let create ~capacity = create_memory_cache capacity
 
@@ -87,29 +91,38 @@ let parse_db path =
     match Int.of_string_opt cleaned with
     | Some db when db >= 0 -> Some db
     | _ ->
-        eprintf "[agent-cache] ignoring redis database path %S (expected non-negative integer)\n%!" cleaned;
+        eprintf
+          "[agent-cache] ignoring redis database path %S (expected \
+           non-negative integer)\n\
+           %!"
+          cleaned;
         None
 
 let parse_redis_url ~namespace ~ttl_seconds url =
   match Or_error.try_with (fun () -> Uri.of_string url) with
-  | Error err -> Or_error.errorf "invalid redis url %s (%s)" url (Error.to_string_hum err)
+  | Error err ->
+      Or_error.errorf "invalid redis url %s (%s)" url (Error.to_string_hum err)
   | Ok uri -> (
       match Uri.scheme uri with
-      | Some scheme when String.equal (String.lowercase scheme) "redis" ->
-          (match Uri.host uri with
+      | Some scheme when String.equal (String.lowercase scheme) "redis" -> (
+          match Uri.host uri with
           | None -> Or_error.errorf "redis url %s missing host" url
           | Some host ->
               let port = Option.value (Uri.port uri) ~default:6379 in
               let password = Option.bind (Uri.userinfo uri) ~f:parse_password in
               let db = parse_db (Uri.path uri) in
               Or_error.return
-                { host
-                ; port
-                ; password
-                ; db
-                ; namespace = ensure_namespace namespace
-                ; ttl_seconds = sanitize_ttl ttl_seconds })
-      | Some other -> Or_error.errorf "redis url %s must use redis:// scheme (got %s)" url other
+                {
+                  host;
+                  port;
+                  password;
+                  db;
+                  namespace = ensure_namespace namespace;
+                  ttl_seconds = sanitize_ttl ttl_seconds;
+                })
+      | Some other ->
+          Or_error.errorf "redis url %s must use redis:// scheme (got %s)" url
+            other
       | None -> Or_error.errorf "redis url %s missing scheme" url)
 
 let create_redis ?namespace ?ttl_seconds url =
@@ -124,7 +137,8 @@ let encode_resp parts =
   let header = Printf.sprintf "*%d\r\n" (List.length parts) in
   let body =
     parts
-    |> List.map ~f:(fun part -> Printf.sprintf "$%d\r\n%s\r\n" (String.length part) part)
+    |> List.map ~f:(fun part ->
+           Printf.sprintf "$%d\r\n%s\r\n" (String.length part) part)
     |> String.concat ~sep:""
   in
   header ^ body
@@ -172,7 +186,7 @@ let rec read_reply ic =
       match In_channel.input_line ic with
       | Some len_text -> (
           match Int.of_string_opt len_text with
-          | Some (-1) -> Or_error.return (Array [])
+          | Some -1 -> Or_error.return (Array [])
           | Some len ->
               let rec gather acc remaining =
                 if remaining = 0 then Or_error.return (Array (List.rev acc))
@@ -213,16 +227,23 @@ let handshake cache ic oc =
 let with_connection cache ~f =
   let addr_result =
     Or_error.try_with (fun () ->
-        Unix.getaddrinfo cache.host (Int.to_string cache.port) [ Unix.AI_SOCKTYPE Unix.SOCK_STREAM ])
+        Unix.getaddrinfo cache.host (Int.to_string cache.port)
+          [ Unix.AI_SOCKTYPE Unix.SOCK_STREAM ])
   in
   let* addr_info =
     addr_result
     |> Or_error.bind ~f:(function
-           | [] -> Or_error.errorf "redis host %s could not be resolved" cache.host
-           | info :: _ -> Or_error.return info)
+         | [] ->
+             Or_error.errorf "redis host %s could not be resolved" cache.host
+         | info :: _ -> Or_error.return info)
   in
-  let socket = Unix.socket addr_info.Unix.ai_family addr_info.Unix.ai_socktype addr_info.Unix.ai_protocol in
-  match Or_error.try_with (fun () -> Unix.connect socket addr_info.Unix.ai_addr) with
+  let socket =
+    Unix.socket addr_info.Unix.ai_family addr_info.Unix.ai_socktype
+      addr_info.Unix.ai_protocol
+  in
+  match
+    Or_error.try_with (fun () -> Unix.connect socket addr_info.Unix.ai_addr)
+  with
   | Error err ->
       (try Unix.close socket with _ -> ());
       Error err
@@ -233,26 +254,29 @@ let with_connection cache ~f =
       Exn.protect
         ~f:(fun () ->
           let run () =
-              let* () = handshake cache ic oc in
-              f ic oc
+            let* () = handshake cache ic oc in
+            f ic oc
           in
           run ())
         ~finally:(fun () ->
           In_channel.close ic;
           Out_channel.close oc;
-          (try Unix.close socket with _ -> ()))
+          try Unix.close socket with _ -> ())
 
 let usage_to_json = function
   | None -> `Null
   | Some usage ->
       let fields =
-        [ "input_tokens", usage.Usage.input_tokens
-        ; "output_tokens", usage.Usage.output_tokens
-        ; "reasoning_tokens", usage.Usage.reasoning_tokens ]
+        [
+          ("input_tokens", usage.Usage.input_tokens);
+          ("output_tokens", usage.Usage.output_tokens);
+          ("reasoning_tokens", usage.Usage.reasoning_tokens);
+        ]
       in
       `Assoc
         (fields
-         |> List.filter_map ~f:(fun (label, value) -> Option.map value ~f:(fun v -> label, `Int v)))
+        |> List.filter_map ~f:(fun (label, value) ->
+               Option.map value ~f:(fun v -> (label, `Int v))))
 
 let usage_of_json json =
   match json with
@@ -266,30 +290,39 @@ let usage_of_json json =
       let input_tokens = parse "input_tokens" in
       let output_tokens = parse "output_tokens" in
       let reasoning_tokens = parse "reasoning_tokens" in
-      if Option.is_none input_tokens && Option.is_none output_tokens && Option.is_none reasoning_tokens then None
+      if
+        Option.is_none input_tokens
+        && Option.is_none output_tokens
+        && Option.is_none reasoning_tokens
+      then None
       else Some { Usage.input_tokens; output_tokens; reasoning_tokens }
 
 let entry_to_json (entry : entry) =
   `Assoc
-    [ "game_id", `Int entry.game_id
-    ; "score", `Float entry.score
-    ; (match entry.explanation with
-      | None -> "explanation", `Null
-      | Some text -> "explanation", `String text)
-    ; "themes", `List (List.map entry.themes ~f:(fun theme -> `String theme))
-    ; "reasoning_effort", `String (Effort.to_string entry.reasoning_effort)
-    ; "usage", usage_to_json entry.usage ]
+    [
+      ("game_id", `Int entry.game_id);
+      ("score", `Float entry.score);
+      (match entry.explanation with
+      | None -> ("explanation", `Null)
+      | Some text -> ("explanation", `String text));
+      ("themes", `List (List.map entry.themes ~f:(fun theme -> `String theme)));
+      ("reasoning_effort", `String (Effort.to_string entry.reasoning_effort));
+      ("usage", usage_to_json entry.usage);
+    ]
 
 let entry_of_json json =
   let game_id = Util.member "game_id" json |> Util.to_int_option in
   let score = Util.member "score" json |> Util.to_float_option in
-  match game_id, score with
+  match (game_id, score) with
   | Some game_id, Some score ->
-      let explanation = Util.member "explanation" json |> Util.to_string_option in
+      let explanation =
+        Util.member "explanation" json |> Util.to_string_option
+      in
       let themes =
         match Util.member "themes" json with
         | `Null -> []
-        | value -> value |> Util.to_list |> List.filter_map ~f:Util.to_string_option
+        | value ->
+            value |> Util.to_list |> List.filter_map ~f:Util.to_string_option
       in
       let effort =
         match Util.member "reasoning_effort" json |> Util.to_string_option with
@@ -301,23 +334,28 @@ let entry_of_json json =
       in
       let usage = usage_of_json (Util.member "usage" json) in
       Or_error.return
-        { Evaluation.game_id
-        ; score
-        ; explanation
-        ; themes
-        ; reasoning_effort = effort
-        ; usage }
+        {
+          Evaluation.game_id;
+          score;
+          explanation;
+          themes;
+          reasoning_effort = effort;
+          usage;
+        }
   | _ -> Or_error.error_string "cached entry missing required fields"
 
 let entry_of_string raw =
   match Or_error.try_with (fun () -> Yojson.Safe.from_string raw) with
-  | Error err -> Or_error.errorf "failed to parse cached agent evaluation: %s" (Error.to_string_hum err)
+  | Error err ->
+      Or_error.errorf "failed to parse cached agent evaluation: %s"
+        (Error.to_string_hum err)
   | Ok json -> entry_of_json json
 
 let entry_to_string entry = Yojson.Safe.to_string (entry_to_json entry)
 
 let log_redis_failure action key err =
-  eprintf "[agent-cache] redis %s for key %s failed: %s\n%!" action key (Error.to_string_hum err)
+  eprintf "[agent-cache] redis %s for key %s failed: %s\n%!" action key
+    (Error.to_string_hum err)
 
 let redis_find cache key =
   let namespaced = namespace_key cache key in
@@ -353,7 +391,7 @@ let redis_store cache key entry =
   in
   match
     with_connection cache ~f:(fun ic oc ->
-          let* reply = send_command ic oc command in
+        let* reply = send_command ic oc command in
         match reply with
         | Simple "OK" -> Or_error.return ()
         | Error_reply msg -> Or_error.error_string msg

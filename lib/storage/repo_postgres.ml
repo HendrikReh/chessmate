@@ -20,7 +20,6 @@
     positions, and embedding jobs for the ingestion and query pipelines. *)
 
 open! Base
-
 module Caqti_repo = Repo_postgres_caqti
 
 type game_summary = Caqti_repo.game_summary = {
@@ -37,9 +36,7 @@ type game_summary = Caqti_repo.game_summary = {
   played_on : string option;
 }
 
-type t = {
-  caqti : Caqti_repo.t;
-}
+type t = { caqti : Caqti_repo.t }
 
 type pool_stats = {
   capacity : int;
@@ -51,15 +48,16 @@ type pool_stats = {
 let create conninfo =
   if String.is_empty (String.strip conninfo) then
     Or_error.error_string "Postgres connection string cannot be empty"
-  else
-    Caqti_repo.create conninfo |> Or_error.map ~f:(fun caqti -> { caqti })
+  else Caqti_repo.create conninfo |> Or_error.map ~f:(fun caqti -> { caqti })
 
 let pool_stats t =
   let stats = Caqti_repo.stats t.caqti in
-  { capacity = stats.capacity
-  ; in_use = stats.in_use
-  ; available = Int.max 0 (stats.capacity - stats.in_use)
-  ; waiting = stats.waiting }
+  {
+    capacity = stats.capacity;
+    in_use = stats.in_use;
+    available = Int.max 0 (stats.capacity - stats.in_use);
+    waiting = stats.waiting;
+  }
 
 type vector_payload = Caqti_repo.vector_payload = {
   position_id : int;

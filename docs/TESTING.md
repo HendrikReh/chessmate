@@ -85,6 +85,7 @@ This checklist validates the Milestone 5 checkpoints: agent-ranked search, telem
   ```sh
   dune build && dune test
   ```
+- Formatting check is part of CI; run `dune fmt` locally before committing (equivalent to `dune build @fmt`). The repo uses `.ocamlformat` profile `conventional`/version `0.27.0`.
 - Target just the integration cases when you need a quick ingest/query sanity check:
   ```sh
   export CHESSMATE_TEST_DATABASE_URL=postgres://chess:chess@localhost:5433/postgres

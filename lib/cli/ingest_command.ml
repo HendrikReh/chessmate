@@ -22,16 +22,11 @@
 open! Base
 open Stdio
 
-type stats = {
-  inserted : int;
-  skipped : int;
-}
+type stats = { inserted : int; skipped : int }
 
 let empty_stats = { inserted = 0; skipped = 0 }
-
 let default_pending_limit = 250_000
 let default_worker_count = 4
-
 let ( let* ) t f = Or_error.bind t ~f
 
 let pending_guard_limit () =
@@ -39,7 +34,8 @@ let pending_guard_limit () =
 
 let preview raw =
   let condensed = String.strip raw in
-  if String.length condensed <= 100 then condensed else String.prefix condensed 100 ^ "…"
+  if String.length condensed <= 100 then condensed
+  else String.prefix condensed 100 ^ "…"
 
 let log_skip index reason raw =
   eprintf "Skipping PGN #%d: %s\n" index reason;
@@ -51,13 +47,17 @@ let enforce_pending_guard repo = function
       let* pending = Repo_postgres.pending_embedding_job_count repo in
       if Int.(pending >= limit) then
         Or_error.errorf
-          "Pending embedding queue has %d jobs which meets or exceeds the guard limit (%d). Aborting ingest. Set CHESSMATE_MAX_PENDING_EMBEDDINGS to raise or <= 0 to disable."
-          pending
-          limit
+          "Pending embedding queue has %d jobs which meets or exceeds the \
+           guard limit (%d). Aborting ingest. Set \
+           CHESSMATE_MAX_PENDING_EMBEDDINGS to raise or <= 0 to disable."
+          pending limit
       else (
         if Int.(pending > 0) then
-          eprintf "Embedding queue currently has %d pending jobs (limit %d). Proceeding with ingest.\n" pending limit;
-        Or_error.return () )
+          eprintf
+            "Embedding queue currently has %d pending jobs (limit %d). \
+             Proceeding with ingest.\n"
+            pending limit;
+        Or_error.return ())
 
 let run path =
   if not (Stdlib.Sys.file_exists path) then
@@ -66,7 +66,10 @@ let run path =
     let contents = In_channel.read_all path in
     let concurrency =
       match Stdlib.Sys.getenv_opt "CHESSMATE_INGEST_CONCURRENCY" with
-      | Some raw -> (match Int.of_string_opt (String.strip raw) with Some n when n > 0 -> n | _ -> default_worker_count)
+      | Some raw -> (
+          match Int.of_string_opt (String.strip raw) with
+          | Some n when n > 0 -> n
+          | _ -> default_worker_count)
       | None -> default_worker_count
     in
     pending_guard_limit ()
@@ -82,23 +85,34 @@ let run path =
                      stats := { !stats with skipped = !stats.skipped + 1 };
                      Lwt.return ())
                in
-               let queue = Lwt_pool.create concurrency (fun () -> Lwt.return ()) in
+               let queue =
+                 Lwt_pool.create concurrency (fun () -> Lwt.return ())
+               in
                let process_game ~index ~raw game =
                  Lwt_pool.use queue (fun () ->
-                     let metadata = Game_metadata.of_headers game.Pgn_parser.headers in
-                     match Repo_postgres.insert_game repo ~metadata ~pgn:raw ~moves:game.moves with
+                     let metadata =
+                       Game_metadata.of_headers game.Pgn_parser.headers
+                     in
+                     match
+                       Repo_postgres.insert_game repo ~metadata ~pgn:raw
+                         ~moves:game.moves
+                     with
                      | Ok (game_id, position_count) ->
                          Lwt_mutex.with_lock mutex (fun () ->
-                             printf "Stored game %d (PGN #%d) with %d positions\n" game_id index position_count;
-                             stats := { !stats with inserted = !stats.inserted + 1 };
+                             printf
+                               "Stored game %d (PGN #%d) with %d positions\n"
+                               game_id index position_count;
+                             stats :=
+                               { !stats with inserted = !stats.inserted + 1 };
                              Lwt.return ())
                      | Error err -> on_error ~index ~raw err)
                in
                Lwt_main.run
                  (Pgn_parser.stream_games contents ~on_error ~f:process_game);
                if Int.equal !stats.inserted 0 then
-                 Or_error.error_string "No games ingested; see skipped entries above."
+                 Or_error.error_string
+                   "No games ingested; see skipped entries above."
                else (
-                 printf "Ingest complete: %d stored, %d skipped.\n" !stats.inserted !stats.skipped;
-                 Or_error.return ())
-           ))
+                 printf "Ingest complete: %d stored, %d skipped.\n"
+                   !stats.inserted !stats.skipped;
+                 Or_error.return ())))

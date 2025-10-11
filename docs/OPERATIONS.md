@@ -67,6 +67,7 @@ The tests stub Qdrant/OpenAI access, so the suite passes without those services.
   - Postgres: `docker compose exec postgres pg_isready -U chess`.
   - Qdrant: `curl http://localhost:6333/healthz`.
 - **Degraded mode**: when Qdrant is unavailable or `QDRANT_URL`/bootstrap fails, the API logs `Vector search unavailable (...)` warnings and falls back to metadata-only ranking while the worker/API continue to keep the collection in sync (`Repo_qdrant.ensure_collection`).
+- **Rate limiting**: API rate limiting is enabled via `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` (default 60 per IP) and optional `CHESSMATE_RATE_LIMIT_BUCKET_SIZE` for bursts. 429 responses include `Retry-After`; counters appear under `/metrics`.
 - **Graceful shutdown**: send `SIGTERM`/`SIGINT` to the API (`pkill -TERM -f chessmate_api.exe`) or worker (`pkill -TERM -f embedding_worker.exe`). Both listeners stop accepting new work, finish in-flight jobs, and log a shutdown summary before exiting.
 - **Logs**: `docker compose logs -f <service>`; ship to Loki/ELK once observability stack is wired.
   - The `/metrics` endpoint currently surfaces database pool utilisation only; extend via Prometheus once more signals are required.

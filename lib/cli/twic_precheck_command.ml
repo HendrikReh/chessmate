@@ -16,8 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(** Run the `chessmate twic-precheck` command that inspects TWIC drops for malformed
-    PGNs before they reach the main ingestion pipeline. *)
+(** Run the `chessmate twic-precheck` command that inspects TWIC drops for
+    malformed PGNs before they reach the main ingestion pipeline. *)
 
 open! Base
 open Stdio
@@ -49,17 +49,21 @@ let truncate_preview raw =
 let validate_parsed_game index raw (game : Pgn_parser.t) =
   let problems = ref [] in
   let hints = ref [] in
-  if List.is_empty game.moves then begin
+  if List.is_empty game.moves then (
     problems := "No moves detected" :: !problems;
-    hints := "Remove the block or ensure the move list is present." :: !hints
-  end;
+    hints := "Remove the block or ensure the move list is present." :: !hints);
   (match Pgn_parser.result game with
   | None ->
       problems := "Missing [Result] tag" :: !problems;
       hints :=
-        "Add a [Result \"1-0\"/\"0-1\"/\"1/2-1/2\" or \"*\"] tag before the moves." :: !hints
-  | Some result when not (List.mem Pgn_parser.default_valid_results result ~equal:String.equal) ->
-      problems := Printf.sprintf "Unexpected result token '%s'" result :: !problems;
+        "Add a [Result \"1-0\"/\"0-1\"/\"1/2-1/2\" or \"*\"] tag before the \
+         moves." :: !hints
+  | Some result
+    when not
+           (List.mem Pgn_parser.default_valid_results result ~equal:String.equal)
+    ->
+      problems :=
+        Printf.sprintf "Unexpected result token '%s'" result :: !problems;
       hints := "Use one of 1-0, 0-1, 1/2-1/2, or *." :: !hints
   | Some _ -> ());
   if List.is_empty !problems then None
@@ -78,20 +82,26 @@ let run path =
       | Some issue -> Or_error.return (issue :: acc)
     in
     let on_error acc ~index ~raw err =
-      let problem = Printf.sprintf "Parse error: %s" (Error.to_string_hum err) in
-      let hint = "Clean up or remove this entry (often a TWIC editorial note)." in
+      let problem =
+        Printf.sprintf "Parse error: %s" (Error.to_string_hum err)
+      in
+      let hint =
+        "Clean up or remove this entry (often a TWIC editorial note)."
+      in
       let preview = Some (truncate_preview raw) in
       Or_error.return (Issue.create ?preview ~index [ problem ] [ hint ] :: acc)
     in
     match Pgn_parser.fold_games ~on_error contents ~init:[] ~f:collect with
-    | Error err -> Or_error.errorf "Precheck aborted: %s" (Error.to_string_hum err)
+    | Error err ->
+        Or_error.errorf "Precheck aborted: %s" (Error.to_string_hum err)
     | Ok issues ->
         let issues = List.rev issues in
         if List.is_empty issues then (
           printf "No issues detected in %s.\n" path;
           Or_error.return ())
         else (
-          printf "Found %d potential issue(s) in %s:\n" (List.length issues) path;
+          printf "Found %d potential issue(s) in %s:\n" (List.length issues)
+            path;
           List.iter issues ~f:Issue.print;
           printf "\nReview the fixes above before ingesting.\n";
           Or_error.return ())

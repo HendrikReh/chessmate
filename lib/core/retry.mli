@@ -3,22 +3,20 @@
 
 open! Base
 
-type 'a attempt =
-  | Resolved of 'a Or_error.t
-  | Retry of Error.t
+type 'a attempt = Resolved of 'a Or_error.t | Retry of Error.t
 
 val with_backoff :
-     ?sleep:(float -> unit)
-  -> ?random:(unit -> float)
-  -> ?on_retry:(attempt:int -> delay:float -> Error.t -> unit)
-  -> max_attempts:int
-  -> initial_delay:float
-  -> multiplier:float
-  -> ?max_delay:float
-  -> jitter:float
-  -> f:(attempt:int -> 'a attempt)
-  -> unit
-  -> 'a Or_error.t
+  ?sleep:(float -> unit) ->
+  ?random:(unit -> float) ->
+  ?on_retry:(attempt:int -> delay:float -> Error.t -> unit) ->
+  max_attempts:int ->
+  initial_delay:float ->
+  multiplier:float ->
+  ?max_delay:float ->
+  jitter:float ->
+  f:(attempt:int -> 'a attempt) ->
+  unit ->
+  'a Or_error.t
 (** [with_backoff ~max_attempts ~initial_delay ~multiplier ~jitter ~f] executes
     [f] until it returns a resolved result or the retry budget is exhausted.
 

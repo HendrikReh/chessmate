@@ -30,10 +30,7 @@ open! Base
 
 (** Build hybrid Qdrant + SQL requests from analysed intent. *)
 
-type t = {
-  vector_weight : float;
-  keyword_weight : float;
-}
+type t = { vector_weight : float; keyword_weight : float }
 (** Tunable weights for ranking. [vector_weight] multiplies semantic scores,
     [keyword_weight] multiplies heuristic keyword overlap. *)
 
@@ -70,5 +67,6 @@ val normalize_vector_score : float -> float
 
 val merge_keywords : string list -> string list -> string list
 val merge_phases : string list -> string list -> string list
+
 val merge_themes : string list -> string list -> string list
 (** Deduplicate and merge metadata coming from SQL and Qdrant sources. *)

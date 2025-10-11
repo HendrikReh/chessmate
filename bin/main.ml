@@ -54,23 +54,25 @@ let run_twic_precheck path =
 
 let run_query parts ~as_json =
   let question = String.concat ~sep:" " parts |> String.strip in
-  if String.is_empty question then exit_with_error (Error.of_string "query requires a question")
+  if String.is_empty question then
+    exit_with_error (Error.of_string "query requires a question")
   else
     match Service_health.ensure_all () with
     | Error err -> exit_with_error err
-    | Ok () -> (match Search_command.run ~as_json question with
+    | Ok () -> (
+        match Search_command.run ~as_json question with
         | Ok () -> ()
         | Error err -> exit_with_error err)
 
 let run_fen parts =
   match parts with
   | [] -> exit_with_error (Error.of_string "fen requires a PGN file path")
-  | [ input ] ->
-      (match Pgn_to_fen_command.run ~input ~output:None with
+  | [ input ] -> (
+      match Pgn_to_fen_command.run ~input ~output:None with
       | Ok () -> ()
       | Error err -> exit_with_error err)
-  | input :: output :: _ ->
-      (match Pgn_to_fen_command.run ~input ~output:(Some output) with
+  | input :: output :: _ -> (
+      match Pgn_to_fen_command.run ~input ~output:(Some output) with
       | Ok () -> ()
       | Error err -> exit_with_error err)
 
@@ -83,20 +85,28 @@ let () =
   match Array.to_list Stdlib.Sys.argv with
   | _ :: [] -> print_usage ()
   | [] -> print_usage ()
-  | _ :: rest ->
+  | _ :: rest -> (
       let rest = strip_dune_exec rest in
-      (match rest with
+      match rest with
       | ("help" | "--help" | "-h") :: _ -> print_usage ()
-      | "ingest" :: [] -> exit_with_error (Error.of_string "ingest requires a PGN file path")
+      | "ingest" :: [] ->
+          exit_with_error (Error.of_string "ingest requires a PGN file path")
       | "ingest" :: path :: _ -> run_ingest path
-      | "twic-precheck" :: [] -> exit_with_error (Error.of_string "twic-precheck requires a PGN file path")
+      | "twic-precheck" :: [] ->
+          exit_with_error
+            (Error.of_string "twic-precheck requires a PGN file path")
       | "twic-precheck" :: path :: _ -> run_twic_precheck path
-      | "query" :: [] -> exit_with_error (Error.of_string "query requires a question to ask")
-      | "query" :: "--json" :: question_parts -> run_query question_parts ~as_json:true
+      | "query" :: [] ->
+          exit_with_error (Error.of_string "query requires a question to ask")
+      | "query" :: "--json" :: question_parts ->
+          run_query question_parts ~as_json:true
       | "query" :: question_parts -> run_query question_parts ~as_json:false
       | "fen" :: args -> run_fen args
       | "embedding-worker" :: _ ->
-          exit_with_error (Error.of_string "embedding-worker command not yet wired; use dune exec embedding_worker")
+          exit_with_error
+            (Error.of_string
+               "embedding-worker command not yet wired; use dune exec \
+                embedding_worker")
       | [] -> print_usage ()
       | _ ->
           print_usage ();

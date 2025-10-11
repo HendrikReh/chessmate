@@ -18,11 +18,7 @@
 
 (** Derived features for FEN snapshots, used during embeddings and filters. *)
 
-type theme =
-  | Unknown
-  | KingsideAttack
-  | QueensideMajority
-  | CentralBreak
+type theme = Unknown | KingsideAttack | QueensideMajority | CentralBreak
 
 val theme_of_tags : string list -> theme
 (** Naive classifier turning PGN tags/comments into coarse themes. *)

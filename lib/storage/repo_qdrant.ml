@@ -30,11 +30,7 @@ module Config = struct
     | _ -> failwith "QDRANT_URL environment variable must be set"
 end
 
-type point = {
-  id : string;
-  vector : float list;
-  payload : Yojson.Safe.t;
-}
+type point = { id : string; vector : float list; payload : Yojson.Safe.t }
 
 type scored_point = {
   id : string;
@@ -60,15 +56,19 @@ let with_test_hooks hooks f =
 
 let point_to_yojson (point : point) =
   `Assoc
-    [ "id", `String point.id
-    ; "vector", `List (List.map point.vector ~f:(fun v -> `Float v))
-    ; "payload", point.payload ]
+    [
+      ("id", `String point.id);
+      ("vector", `List (List.map point.vector ~f:(fun v -> `Float v)));
+      ("payload", point.payload);
+    ]
 
 let headers = Cohttp.Header.init_with "Content-Type" "application/json"
 
 let http_post ~path ~body =
   let uri = Config.url path |> Uri.of_string in
-  Cohttp_lwt_unix.Client.post ~headers ~body:(Cohttp_lwt.Body.of_string body) uri
+  Cohttp_lwt_unix.Client.post ~headers
+    ~body:(Cohttp_lwt.Body.of_string body)
+    uri
 
 let http_get ~path =
   let uri = Config.url path |> Uri.of_string in
@@ -80,12 +80,9 @@ let http_put ~path ~body =
 
 let with_lwt_result f =
   let wrapped =
-    Lwt.catch
-      (fun () -> f)
-      (fun exn -> Lwt.return (Error (Exn.to_string exn)))
+    Lwt.catch (fun () -> f) (fun exn -> Lwt.return (Error (Exn.to_string exn)))
   in
-  try Lwt_main.run wrapped with
-  | exn -> Error (Exn.to_string exn)
+  try Lwt_main.run wrapped with exn -> Error (Exn.to_string exn)
 
 let run_request f =
   match with_lwt_result f with
@@ -94,11 +91,15 @@ let run_request f =
 
 let upsert_points_request points =
   let payload =
-    `Assoc [ "points", `List (List.map points ~f:point_to_yojson) ]
+    `Assoc [ ("points", `List (List.map points ~f:point_to_yojson)) ]
     |> Yojson.Safe.to_string
   in
   let open Lwt.Syntax in
-  let* response, body = http_post ~path:(Printf.sprintf "/collections/%s/points" Config.collection) ~body:payload in
+  let* response, body =
+    http_post
+      ~path:(Printf.sprintf "/collections/%s/points" Config.collection)
+      ~body:payload
+  in
   let status = Cohttp.Response.status response in
   if Cohttp.Code.(code_of_status status = 200) then Lwt.return (Ok ())
   else
@@ -116,28 +117,29 @@ let parse_scored_point json =
     let id = json |> member "id" |> to_string in
     let score = json |> member "score" |> to_float in
     let payload =
-      match member "payload" json with
-      | `Null -> None
-      | other -> Some other
+      match member "payload" json with `Null -> None | other -> Some other
     in
     Ok { id; score; payload }
-  with
-  | Type_error (msg, _) | Yojson.Json_error msg -> Error msg
+  with Type_error (msg, _) | Yojson.Json_error msg -> Error msg
 
 let filter_json_of_clauses = function
   | None -> `Null
-  | Some clauses -> `Assoc [ "must", `List clauses ]
+  | Some clauses -> `Assoc [ ("must", `List clauses) ]
 
 let vector_search_request ~vector ~filters ~limit =
   let payload =
     `Assoc
-      [ "vector"
-        , `Assoc
-            [ "name", `String "default"
-            ; "vector", `List (List.map vector ~f:(fun v -> `Float v)) ]
-      ; "with_payload", `Bool true
-      ; "limit", `Int limit
-      ; "filter", filter_json_of_clauses filters ]
+      [
+        ( "vector",
+          `Assoc
+            [
+              ("name", `String "default");
+              ("vector", `List (List.map vector ~f:(fun v -> `Float v)));
+            ] );
+        ("with_payload", `Bool true);
+        ("limit", `Int limit);
+        ("filter", filter_json_of_clauses filters);
+      ]
     |> Yojson.Safe.to_string
   in
   let open Lwt.Syntax in
@@ -148,15 +150,14 @@ let vector_search_request ~vector ~filters ~limit =
   in
   let status = Cohttp.Response.status response in
   let* body_string = Cohttp_lwt.Body.to_string body in
-  if Cohttp.Code.(code_of_status status = 200) then (
+  if Cohttp.Code.(code_of_status status = 200) then
     let open Yojson.Safe.Util in
     try
       let json = Yojson.Safe.from_string body_string in
       let results = json |> member "result" |> to_list in
       let parsed = List.map results ~f:parse_scored_point |> Result.all in
       Lwt.return parsed
-    with
-    | exn -> Lwt.return (Error (Exn.to_string exn)))
+    with exn -> Lwt.return (Error (Exn.to_string exn))
   else
     Lwt.return (Error (Printf.sprintf "Qdrant search failed: %s" body_string))
 
@@ -174,20 +175,23 @@ let ensure_collection_request ~name ~vector_size ~distance =
   if Int.equal code 200 then Lwt.return (Ok ())
   else
     let* body_string = Cohttp_lwt.Body.to_string body in
-    if Int.equal code 404 then (
+    if Int.equal code 404 then
       let payload =
         `Assoc
-          [ "vectors"
-            , `Assoc
-                [ "size", `Int vector_size
-                ; "distance", `String distance ]
-          ; "payload_schema"
-            , `Assoc
-                [ "game_id", `Assoc [ "type", `String "integer" ]
-                ; "fen", `Assoc [ "type", `String "keyword" ]
-                ; "white", `Assoc [ "type", `String "keyword" ]
-                ; "black", `Assoc [ "type", `String "keyword" ]
-                ; "opening_slug", `Assoc [ "type", `String "keyword" ] ]
+          [
+            ( "vectors",
+              `Assoc
+                [ ("size", `Int vector_size); ("distance", `String distance) ]
+            );
+            ( "payload_schema",
+              `Assoc
+                [
+                  ("game_id", `Assoc [ ("type", `String "integer") ]);
+                  ("fen", `Assoc [ ("type", `String "keyword") ]);
+                  ("white", `Assoc [ ("type", `String "keyword") ]);
+                  ("black", `Assoc [ ("type", `String "keyword") ]);
+                  ("opening_slug", `Assoc [ ("type", `String "keyword") ]);
+                ] );
           ]
         |> Yojson.Safe.to_string
       in
@@ -197,8 +201,11 @@ let ensure_collection_request ~name ~vector_size ~distance =
       if code = 200 || code = 201 || code = 202 then Lwt.return (Ok ())
       else
         let* body_string = Cohttp_lwt.Body.to_string body in
-        Lwt.return (Error (Printf.sprintf "Failed to create collection: %s" body_string)))
-    else Lwt.return (Error (Printf.sprintf "Unexpected status %d: %s" code body_string))
+        Lwt.return
+          (Error (Printf.sprintf "Failed to create collection: %s" body_string))
+    else
+      Lwt.return
+        (Error (Printf.sprintf "Unexpected status %d: %s" code body_string))
 
 let ensure_collection ~name ~vector_size ~distance =
   match !test_hooks_ref with

@@ -20,7 +20,8 @@
 
 open! Base
 
-(** CLI entry point for querying the `/query` HTTP API (backed by the prototype planning pipeline). *)
+(** CLI entry point for querying the `/query` HTTP API (backed by the prototype
+    planning pipeline). *)
 
 val run : ?as_json:bool -> string -> unit Or_error.t
 (** [run ?as_json question] posts [question] to the query API resolved by

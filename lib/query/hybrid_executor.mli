@@ -16,11 +16,13 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(** Coordinates fetching candidates, running agent evaluations, and scoring results. *)
+(** Coordinates fetching candidates, running agent evaluations, and scoring
+    results. *)
 
 open! Base
 
-(** Execute hybrid search by combining Postgres metadata with Qdrant vector hits. *)
+(** Execute hybrid search by combining Postgres metadata with Qdrant vector
+    hits. *)
 
 type result = {
   summary : Repo_postgres.game_summary;
@@ -37,18 +39,22 @@ type result = {
   keywords : string list;
 }
 
-(** The outcome of executing a hybrid plan. *)
 type execution = {
   plan : Query_intent.plan;
   results : result list;
   warnings : string list;
 }
+(** The outcome of executing a hybrid plan. *)
 
 val execute :
   fetch_games:(Query_intent.plan -> Repo_postgres.game_summary list Or_error.t) ->
-  fetch_vector_hits:(Query_intent.plan -> Hybrid_planner.vector_hit list Or_error.t) ->
+  fetch_vector_hits:
+    (Query_intent.plan -> Hybrid_planner.vector_hit list Or_error.t) ->
   ?fetch_game_pgns:(int list -> (int * string) list Or_error.t) ->
-  ?agent_evaluator:(plan:Query_intent.plan -> candidates:(Repo_postgres.game_summary * string) list -> Agent_evaluator.evaluation list Or_error.t) ->
+  ?agent_evaluator:
+    (plan:Query_intent.plan ->
+    candidates:(Repo_postgres.game_summary * string) list ->
+    Agent_evaluator.evaluation list Or_error.t) ->
   ?agent_client:Agents_gpt5_client.t ->
   ?agent_cache:Agent_cache.t ->
   Query_intent.plan ->

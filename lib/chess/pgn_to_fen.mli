@@ -29,10 +29,7 @@ val fens_of_file : string -> string list Or_error.t
     [fens_of_string]. *)
 
 val fen_after_move :
-  string ->
-  color:[ `White | `Black ] ->
-  move_number:int ->
-  string Or_error.t
+  string -> color:[ `White | `Black ] -> move_number:int -> string Or_error.t
 (** [fen_after_move pgn ~color ~move_number] returns the FEN string immediately
     after the specified player's move number. For example, passing
     [~color:`Black ~move_number:39] yields the FEN after Black's 39th move.

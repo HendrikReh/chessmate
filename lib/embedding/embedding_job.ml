@@ -21,11 +21,7 @@
 
 open! Base
 
-type status =
-  | Pending
-  | In_progress
-  | Completed
-  | Failed
+type status = Pending | In_progress | Completed | Failed
 
 let status_to_string = function
   | Pending -> "pending"
@@ -52,8 +48,14 @@ let create_pending ~id ~fen =
   { id; fen; attempts = 0; status = Pending; last_error = None }
 
 let mark_started job =
-  { job with status = In_progress; attempts = job.attempts + 1; last_error = None }
+  {
+    job with
+    status = In_progress;
+    attempts = job.attempts + 1;
+    last_error = None;
+  }
 
 let mark_completed job = { job with status = Completed }
 
-let mark_failed job ~error = { job with status = Failed; last_error = Some error }
+let mark_failed job ~error =
+  { job with status = Failed; last_error = Some error }

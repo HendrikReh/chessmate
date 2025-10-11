@@ -12,6 +12,7 @@ val load_retry_config : unit -> retry_config
 val should_retry_status : int -> bool
 val should_retry_error_json : Yojson.Safe.t -> bool
 val truncate_body : string -> string
+
 val log_retry :
   label:string ->
   attempt:int ->

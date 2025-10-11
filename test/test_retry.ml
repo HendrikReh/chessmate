@@ -15,16 +15,11 @@ let test_retries_until_success () =
     | _ -> Retry.Resolved (Ok "ok")
   in
   match
-    Retry.with_backoff
-      ~sleep
-      ~max_attempts:5
-      ~initial_delay:0.1
-      ~multiplier:2.0
+    Retry.with_backoff ~sleep ~max_attempts:5 ~initial_delay:0.1 ~multiplier:2.0
       ~jitter:0.0
       ~on_retry:(fun ~attempt ~delay err ->
         callbacks := (attempt, delay, Error.to_string_hum err) :: !callbacks)
-      ~f
-      ()
+      ~f ()
   with
   | Ok "ok" ->
       let recorded = List.rev !sleeps in
@@ -45,13 +40,8 @@ let test_exhausts_attempts () =
     Retry.Retry (to_error "always failing")
   in
   match
-    Retry.with_backoff
-      ~max_attempts:3
-      ~initial_delay:0.05
-      ~multiplier:1.5
-      ~jitter:0.0
-      ~f
-      ()
+    Retry.with_backoff ~max_attempts:3 ~initial_delay:0.05 ~multiplier:1.5
+      ~jitter:0.0 ~f ()
   with
   | Ok _ -> fail "expected failure after exhausting attempts"
   | Error err ->
@@ -76,15 +66,8 @@ let test_applies_jitter () =
     else Retry.Resolved (Ok ())
   in
   match
-    Retry.with_backoff
-      ~sleep
-      ~random
-      ~max_attempts:3
-      ~initial_delay:0.2
-      ~multiplier:2.0
-      ~jitter:0.3
-      ~f
-      ()
+    Retry.with_backoff ~sleep ~random ~max_attempts:3 ~initial_delay:0.2
+      ~multiplier:2.0 ~jitter:0.3 ~f ()
   with
   | Error err -> failf "unexpected failure %s" (Error.to_string_hum err)
   | Ok () ->
@@ -95,7 +78,8 @@ let test_applies_jitter () =
       check (list (float 1e-6)) "jittered delays" expected recorded
 
 let suite =
-  [ test_case "retries until success" `Quick test_retries_until_success
-  ; test_case "limits retry attempts" `Quick test_exhausts_attempts
-  ; test_case "applies jitter" `Quick test_applies_jitter
+  [
+    test_case "retries until success" `Quick test_retries_until_success;
+    test_case "limits retry attempts" `Quick test_exhausts_attempts;
+    test_case "applies jitter" `Quick test_applies_jitter;
   ]

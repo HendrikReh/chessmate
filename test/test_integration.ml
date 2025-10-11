@@ -1,7 +1,6 @@
 open! Base
 open Alcotest
 open Chessmate
-
 module Support = Test_integration_support
 module Job = Embedding_job
 
@@ -28,14 +27,21 @@ let test_ingest_workflow () =
         Support.with_initialized_database ~template ~f:(fun env ->
             let* (_ : Support.env) = ingest_fixture env "sample_game.pgn" in
             let* games = Support.scalar_int env "SELECT COUNT(*) FROM games;" in
-            let* positions = Support.scalar_int env "SELECT COUNT(*) FROM positions;" in
-            let* embedding_jobs =
-              Support.scalar_int env "SELECT COUNT(*) FROM embedding_jobs WHERE status = 'pending';"
+            let* positions =
+              Support.scalar_int env "SELECT COUNT(*) FROM positions;"
             in
-            let* players = Support.scalar_int env "SELECT COUNT(*) FROM players;" in
+            let* embedding_jobs =
+              Support.scalar_int env
+                "SELECT COUNT(*) FROM embedding_jobs WHERE status = 'pending';"
+            in
+            let* players =
+              Support.scalar_int env "SELECT COUNT(*) FROM players;"
+            in
             Or_error.return (games, positions, embedding_jobs, players))
       in
-      let games, positions, jobs, players = expect_ok "ingest workflow" result in
+      let games, positions, jobs, players =
+        expect_ok "ingest workflow" result
+      in
       check int "games" 1 games;
       check int "players" 2 players;
       check int "positions" 6 positions;
@@ -54,17 +60,22 @@ let test_embedding_job_lifecycle () =
             let* () =
               jobs
               |> List.map ~f:(fun job ->
-                     Repo_postgres.mark_job_completed repo ~job_id:job.Job.id ~vector_id:"vec:test")
+                     Repo_postgres.mark_job_completed repo ~job_id:job.Job.id
+                       ~vector_id:"vec:test")
               |> Or_error.all_unit
             in
             let* completed =
-              Support.scalar_int env "SELECT COUNT(*) FROM embedding_jobs WHERE status = 'completed';"
+              Support.scalar_int env
+                "SELECT COUNT(*) FROM embedding_jobs WHERE status = \
+                 'completed';"
             in
             let* pending =
-              Support.scalar_int env "SELECT COUNT(*) FROM embedding_jobs WHERE status = 'pending';"
+              Support.scalar_int env
+                "SELECT COUNT(*) FROM embedding_jobs WHERE status = 'pending';"
             in
             let* vectorized =
-              Support.scalar_int env "SELECT COUNT(*) FROM positions WHERE vector_id IS NOT NULL;"
+              Support.scalar_int env
+                "SELECT COUNT(*) FROM positions WHERE vector_id IS NOT NULL;"
             in
             Or_error.return (List.length jobs, completed, pending, vectorized))
       in
@@ -85,49 +96,62 @@ let test_hybrid_executor_pipeline () =
         Support.with_initialized_database ~template ~f:(fun env ->
             let* (_ : Support.env) = ingest_fixture env "sample_game.pgn" in
             let* repo = Repo_postgres.create env.Support.database_url in
-            let* row = Support.fetch_row env "SELECT id::text FROM games ORDER BY id LIMIT 1;" in
+            let* row =
+              Support.fetch_row env
+                "SELECT id::text FROM games ORDER BY id LIMIT 1;"
+            in
             let* game_id =
               match row with
               | Some id_str :: _ -> (
                   match Int.of_string_opt id_str with
                   | Some value -> Or_error.return value
-                  | None -> Or_error.errorf "Invalid game id value: %s" id_str )
+                  | None -> Or_error.errorf "Invalid game id value: %s" id_str)
               | _ -> Or_error.error_string "No ingested games found"
             in
-            let plan = Query_intent.analyse { Query_intent.text = "Find sample games with e4" } in
+            let plan =
+              Query_intent.analyse
+                { Query_intent.text = "Find sample games with e4" }
+            in
             let fetch_games plan =
-              Repo_postgres.search_games
-                repo
-                ~filters:plan.Query_intent.filters
-                ~rating:plan.rating
-                ~limit:plan.limit
+              Repo_postgres.search_games repo ~filters:plan.Query_intent.filters
+                ~rating:plan.rating ~limit:plan.limit
             in
             let vector_hit =
-              { Hybrid_planner.game_id = game_id
-              ; score = 0.92
-              ; phases = [ "middlegame" ]
-              ; themes = [ "attack" ]
-              ; keywords = [ "sample"; "attack" ] }
+              {
+                Hybrid_planner.game_id;
+                score = 0.92;
+                phases = [ "middlegame" ];
+                themes = [ "attack" ];
+                keywords = [ "sample"; "attack" ];
+              }
             in
-            let fetch_vector_hits (_ : Query_intent.plan) = Or_error.return [ vector_hit ] in
-            let* execution = Hybrid_executor.execute ~fetch_games ~fetch_vector_hits plan in
+            let fetch_vector_hits (_ : Query_intent.plan) =
+              Or_error.return [ vector_hit ]
+            in
+            let* execution =
+              Hybrid_executor.execute ~fetch_games ~fetch_vector_hits plan
+            in
             Or_error.return (execution, game_id))
       in
-      let execution, expected_id = expect_ok "hybrid executor pipeline" result in
+      let execution, expected_id =
+        expect_ok "hybrid executor pipeline" result
+      in
       check int "warnings" 0 (List.length execution.Hybrid_executor.warnings);
       let results = execution.Hybrid_executor.results in
       check int "result count" 1 (List.length results);
       let top = List.hd_exn results in
       let summary = top.Hybrid_executor.summary in
       check int "result id" expected_id summary.Repo_postgres.id;
-      check bool "vector score" true Float.(top.Hybrid_executor.vector_score > 0.8);
-      check bool
-        "themes include attack"
-        true
+      check bool "vector score" true
+        Float.(top.Hybrid_executor.vector_score > 0.8);
+      check bool "themes include attack" true
         (List.mem top.Hybrid_executor.themes "attack" ~equal:String.equal)
 
 let suite =
-  [ test_case "ingest workflow persists data" `Slow test_ingest_workflow
-  ; test_case "embedding job lifecycle completes" `Slow test_embedding_job_lifecycle
-  ; test_case "hybrid executor surfaces ingested game" `Slow test_hybrid_executor_pipeline
+  [
+    test_case "ingest workflow persists data" `Slow test_ingest_workflow;
+    test_case "embedding job lifecycle completes" `Slow
+      test_embedding_job_lifecycle;
+    test_case "hybrid executor surfaces ingested game" `Slow
+      test_hybrid_executor_pipeline;
   ]

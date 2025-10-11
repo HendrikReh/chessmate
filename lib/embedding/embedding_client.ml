@@ -16,15 +16,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(** Call the OpenAI embeddings API with batching, chunk guards, and retry/backoff
-    so the worker can efficiently transform FEN positions into vectors. *)
+(** Call the OpenAI embeddings API with batching, chunk guards, and
+    retry/backoff so the worker can efficiently transform FEN positions into
+    vectors. *)
 
 open! Base
 open Stdio
-
 module Backoff = Retry
 module Common = Openai_common
-
 module Util = Yojson.Safe.Util
 
 let default_max_batch_size = 2048
@@ -56,11 +55,12 @@ let chunk_list list ~chunk_size =
   in
   loop [] list
 
-let total_chars chunk = List.fold_left chunk ~init:0 ~f:(fun acc fen -> acc + String.length fen)
+let total_chars chunk =
+  List.fold_left chunk ~init:0 ~f:(fun acc fen -> acc + String.length fen)
 
 let rec enforce_char_limit chunk ~max_chars =
   if total_chars chunk <= max_chars then [ chunk ]
-  else (
+  else
     match chunk with
     | [] -> []
     | [ _ ] -> [ chunk ]
@@ -68,7 +68,7 @@ let rec enforce_char_limit chunk ~max_chars =
         let len = List.length chunk in
         let left_len = Int.max 1 (len / 2) in
         let left, right = List.split_n chunk left_len in
-        enforce_char_limit left ~max_chars @ enforce_char_limit right ~max_chars)
+        enforce_char_limit left ~max_chars @ enforce_char_limit right ~max_chars
 
 module Private = struct
   let chunk_list = chunk_list
@@ -76,10 +76,7 @@ module Private = struct
   let total_chars = total_chars
 end
 
-type http_response = {
-  status : int;
-  body : string;
-}
+type http_response = { status : int; body : string }
 
 type t = {
   api_key : string;
@@ -91,44 +88,54 @@ type t = {
 let default_model = "text-embedding-3-small"
 
 let create ~api_key ~endpoint =
-  if String.is_empty (String.strip api_key) then Or_error.error_string "OPENAI_API_KEY missing"
-  else if String.is_empty (String.strip endpoint) then Or_error.error_string "OpenAI endpoint missing"
+  if String.is_empty (String.strip api_key) then
+    Or_error.error_string "OPENAI_API_KEY missing"
+  else if String.is_empty (String.strip endpoint) then
+    Or_error.error_string "OpenAI endpoint missing"
   else
     let retry = Common.load_retry_config () in
     Or_error.return { api_key; endpoint; model = default_model; retry }
 
 let call_curl ~endpoint ~api_key ~body =
   let payload_file = Stdlib.Filename.temp_file "chessmate_embedding" ".json" in
-  let response_file = Stdlib.Filename.temp_file "chessmate_embedding_response" ".json" in
+  let response_file =
+    Stdlib.Filename.temp_file "chessmate_embedding_response" ".json"
+  in
   Exn.protect
     ~f:(fun () ->
-        Out_channel.write_all payload_file ~data:body;
-        let command =
-          Printf.sprintf
-            "curl -sS -X POST %s -H %s -H %s --data-binary @%s -o %s -w '%%{http_code}'"
-            (Stdlib.Filename.quote endpoint)
-            (Stdlib.Filename.quote ("Authorization: Bearer " ^ api_key))
-            (Stdlib.Filename.quote "Content-Type: application/json")
-            (Stdlib.Filename.quote payload_file)
-            (Stdlib.Filename.quote response_file)
-        in
-        let ic, oc, ec = Unix.open_process_full command (Unix.environment ()) in
-        Out_channel.close oc;
-        let status_text = In_channel.input_all ic |> String.strip in
-        let stderr = In_channel.input_all ec |> String.strip in
-        match Unix.close_process_full (ic, oc, ec) with
-        | Unix.WEXITED 0 -> (
-            match Int.of_string_opt status_text with
-            | None -> Or_error.errorf "curl returned invalid status code: %s" status_text
-            | Some status ->
-                let body = In_channel.read_all response_file in
-                Or_error.return { status; body })
-        | Unix.WEXITED code -> Or_error.errorf "curl exited with code %d: %s" code stderr
-        | Unix.WSIGNALED signal -> Or_error.errorf "curl terminated by signal %d" signal
-        | Unix.WSTOPPED signal -> Or_error.errorf "curl stopped by signal %d" signal)
+      Out_channel.write_all payload_file ~data:body;
+      let command =
+        Printf.sprintf
+          "curl -sS -X POST %s -H %s -H %s --data-binary @%s -o %s -w \
+           '%%{http_code}'"
+          (Stdlib.Filename.quote endpoint)
+          (Stdlib.Filename.quote ("Authorization: Bearer " ^ api_key))
+          (Stdlib.Filename.quote "Content-Type: application/json")
+          (Stdlib.Filename.quote payload_file)
+          (Stdlib.Filename.quote response_file)
+      in
+      let ic, oc, ec = Unix.open_process_full command (Unix.environment ()) in
+      Out_channel.close oc;
+      let status_text = In_channel.input_all ic |> String.strip in
+      let stderr = In_channel.input_all ec |> String.strip in
+      match Unix.close_process_full (ic, oc, ec) with
+      | Unix.WEXITED 0 -> (
+          match Int.of_string_opt status_text with
+          | None ->
+              Or_error.errorf "curl returned invalid status code: %s"
+                status_text
+          | Some status ->
+              let body = In_channel.read_all response_file in
+              Or_error.return { status; body })
+      | Unix.WEXITED code ->
+          Or_error.errorf "curl exited with code %d: %s" code stderr
+      | Unix.WSIGNALED signal ->
+          Or_error.errorf "curl terminated by signal %d" signal
+      | Unix.WSTOPPED signal ->
+          Or_error.errorf "curl stopped by signal %d" signal)
     ~finally:(fun () ->
       (try Stdlib.Sys.remove payload_file with _ -> ());
-      (try Stdlib.Sys.remove response_file with _ -> ()))
+      try Stdlib.Sys.remove response_file with _ -> ())
 
 let parse_embeddings json =
   try
@@ -136,62 +143,62 @@ let parse_embeddings json =
     data
     |> List.map ~f:(fun item ->
            let embedding = Util.member "embedding" item |> Util.to_list in
-           embedding
-           |> List.map ~f:Util.to_float
-           |> Array.of_list)
+           embedding |> List.map ~f:Util.to_float |> Array.of_list)
     |> Or_error.return
   with exn -> Or_error.of_exn exn
 
 let embed_chunk t chunk ~chunk_index ~total_chunks =
   let payload =
     `Assoc
-      [ "model", `String t.model
-      ; "input", `List (List.map chunk ~f:(fun fen -> `String fen))
+      [
+        ("model", `String t.model);
+        ("input", `List (List.map chunk ~f:(fun fen -> `String fen)));
       ]
     |> Yojson.Safe.to_string
   in
   let attempt ~attempt:_ =
     match call_curl ~endpoint:t.endpoint ~api_key:t.api_key ~body:payload with
-      | Error err ->
-          Backoff.Retry (Error.tag err ~tag:"embedding request failed")
-      | Ok { status; _ } when Common.should_retry_status status ->
-          let err = Error.of_string (Printf.sprintf "OpenAI transient status %d" status) in
-          Backoff.Retry err
-      | Ok { status; body } when status < 200 || status >= 300 ->
-          let message =
-            Printf.sprintf "OpenAI request failed with status %d: %s" status (Common.truncate_body body)
-          in
-          Backoff.Resolved (Or_error.error_string message)
-      | Ok { status = _; body } -> (
-          match Yojson.Safe.from_string body with
-          | exception exn -> Backoff.Retry (Error.of_exn exn)
-          | json -> (
-              match Util.member "error" json with
-              | `Null -> Backoff.Resolved (parse_embeddings json)
-              | err_json ->
-                  let message =
-                    Util.member "message" err_json |> Util.to_string_option |> Option.value ~default:"unknown error"
-                  in
-                  let err =
-                    Error.of_string (Printf.sprintf "OpenAI error: %s" message)
-                  in
-                  if Common.should_retry_error_json err_json then Backoff.Retry err
-                  else Backoff.Resolved (Error err)))
+    | Error err -> Backoff.Retry (Error.tag err ~tag:"embedding request failed")
+    | Ok { status; _ } when Common.should_retry_status status ->
+        let err =
+          Error.of_string (Printf.sprintf "OpenAI transient status %d" status)
+        in
+        Backoff.Retry err
+    | Ok { status; body } when status < 200 || status >= 300 ->
+        let message =
+          Printf.sprintf "OpenAI request failed with status %d: %s" status
+            (Common.truncate_body body)
+        in
+        Backoff.Resolved (Or_error.error_string message)
+    | Ok { status = _; body } -> (
+        match Yojson.Safe.from_string body with
+        | exception exn -> Backoff.Retry (Error.of_exn exn)
+        | json -> (
+            match Util.member "error" json with
+            | `Null -> Backoff.Resolved (parse_embeddings json)
+            | err_json ->
+                let message =
+                  Util.member "message" err_json
+                  |> Util.to_string_option
+                  |> Option.value ~default:"unknown error"
+                in
+                let err =
+                  Error.of_string (Printf.sprintf "OpenAI error: %s" message)
+                in
+                if Common.should_retry_error_json err_json then
+                  Backoff.Retry err
+                else Backoff.Resolved (Error err)))
   in
-  Backoff.with_backoff
-    ~max_attempts:t.retry.max_attempts
-    ~initial_delay:t.retry.initial_delay
-    ~multiplier:t.retry.multiplier
+  Backoff.with_backoff ~max_attempts:t.retry.max_attempts
+    ~initial_delay:t.retry.initial_delay ~multiplier:t.retry.multiplier
     ~jitter:t.retry.jitter
     ~on_retry:(fun ~attempt ~delay err ->
       Common.log_retry
-        ~label:(Printf.sprintf "openai-embedding chunk=%d/%d" (chunk_index + 1) total_chunks)
-        ~attempt
-        ~max_attempts:t.retry.max_attempts
-      ~delay
-      err)
-    ~f:attempt
-    ()
+        ~label:
+          (Printf.sprintf "openai-embedding chunk=%d/%d" (chunk_index + 1)
+             total_chunks)
+        ~attempt ~max_attempts:t.retry.max_attempts ~delay err)
+    ~f:attempt ()
 
 let embed_fens t fens =
   if List.is_empty fens then Or_error.return []
@@ -199,7 +206,10 @@ let embed_fens t fens =
     let chunk_size = max_batch_size () in
     let raw_chunks = chunk_list fens ~chunk_size in
     let max_chars = max_chunk_chars () in
-    let chunks = raw_chunks |> List.concat_map ~f:(fun chunk -> enforce_char_limit chunk ~max_chars) in
+    let chunks =
+      raw_chunks
+      |> List.concat_map ~f:(fun chunk -> enforce_char_limit chunk ~max_chars)
+    in
     let total_chunks = List.length chunks in
     let rec loop acc index = function
       | [] -> Or_error.return (List.concat (List.rev acc))
@@ -208,11 +218,9 @@ let embed_fens t fens =
           | Error err -> Error err
           | Ok embeddings ->
               Stdio.eprintf
-                "[openai-embedding] processed chunk %d/%d (%d fens, %d chars)\n%!"
-                (index + 1)
-                total_chunks
-                (List.length chunk)
-                (total_chars chunk);
+                "[openai-embedding] processed chunk %d/%d (%d fens, %d chars)\n\
+                 %!"
+                (index + 1) total_chunks (List.length chunk) (total_chars chunk);
               loop (embeddings :: acc) (index + 1) rest)
     in
     loop [] 0 chunks
