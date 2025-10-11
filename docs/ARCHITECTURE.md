@@ -113,9 +113,18 @@ flowchart TD
 5. `Result_formatter` merges heuristic and agent scores into JSON payload/CLI summary.
 
 ### Observability & Health
-- `/metrics` exposes Caqti pool gauges and rate limiter counters; upcoming work adds per-dependency health metrics.
-- `/health` (planned extension) will return structured JSON indicating dependency status (Postgres, Qdrant, Redis, OpenAI).
-- CLI health command reuses probe logic to validate local environments before queries.
+- `/metrics` currently exposes Caqti pool gauges and rate-limiter counters. Upcoming work adds request latency histograms and `health_dependency_status{service}` gauges (Postgres/Qdrant/Redis/OpenAI), plus counters for agent timeouts and circuit-breaker events.
+- `/health` (planned extension) will return structured JSON such as `{ status: "degraded", details: { postgres: { ok: true, latency_ms: 12 }, qdrant: { ok: false, error: "Connection refused" } } }`. Both API and worker reuse the same probe helpers so responses stay consistent.
+- Probes include Postgres connection tests, Qdrant `/healthz`, Redis `PING` (when cache enabled), and a lightweight OpenAI sanity check. Failures bubble up to CLI health output, logs, and metrics for alerting.
+- CLI `chessmate health` command reuses these probes, giving operators immediate feedback before running queries.
+- Alerts fire after configurable numbers of degraded probes, with logs and docs linking to remediation playbooks.
+
+### Planned GPT-5 Timeout & Circuit Breaker
+- **Request timeout**: wrap GPT-5 calls in a configurable deadline (e.g., 10s). On timeout, cancel the request, log `[agent-timeout]`, and increment `agent_timeouts_total`.
+- **Fallback**: surface heuristic-only results with a JSON warning (`"agent": { "status": "timeout", "fallback": "heuristic" }`) and matching CLI message. This keeps queries responsive when the agent is slow or offline.
+- **Circuit breaker**: after N consecutive failures/timeouts, open the breaker for a cooling period (e.g., 60s). During that window the agent path is skipped and we log `[agent-circuit] open` / `[agent-circuit] closed` when recovering.
+- **Retry policy**: maintain limited retries for transient errors but cap aggregate wait time to avoid wedging the request thread.
+- **Telemetry**: expose breaker state and timeout counts via `/metrics`; add OpenAPI documentation so clients know how to interpret new fields.
 
 ---
 
