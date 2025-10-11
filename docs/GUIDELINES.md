@@ -14,33 +14,33 @@ This document complements the [Developer Handbook](DEVELOPER.md), [Testing Plan]
 ## 2. Branching & PR Hygiene
 - Branch naming: `feature/<topic>`, `fix/<issue-id>`, `docs/<subject>`.
 - Keep PRs under ~400 lines; split refactors into reviewable slices.
-- PR template checklist: summary, testing evidence (`dune build`, `dune runtest`, integration steps if relevant), migration impact, rollback plan.
+- PR template checklist: summary, testing evidence (`dune build`, `dune runtest`, integration steps), migration impact, rollback plan.
 - Require at least one peer review focused on correctness, resiliency, and test coverage.
 - No direct pushes to `main`; protected branch rules + required status checks enforce lint/tests.
 
 ---
 
 ## 3. Coding Standards
-- **OCaml style**: use `open! Base`, provide `.mli` interfaces, avoid `Stdlib` unless necessary, prefer `Or_error.t` for recoverable failures.
-- **Separation of concerns**: keep `lib/chess` pure; put side effects in `lib/storage`/services.
-- Use pattern matching, avoid partial functions, and add concise comments for non-obvious logic.
-- Add GPL notice headers to new source/interfaces (copy from existing modules).
-- **Formatting**: run `dune fmt` (ocamlformat profile `conventional`, version `0.27.0`). CI runs `dune build @fmt`—mismatches fail the pipeline.
+- **Functional-first**: prefer pure functions, immutability, combinators (`List.map`, `Option.bind`, `Result.map`), and `Or_error.t` for recoverable failures. Avoid mutation unless there’s a clear justification.
+- **OCaml style**: `open! Base`, provide `.mli` interfaces, avoid `Stdlib` unless necessary.
+- **Separation of concerns**: keep `lib/chess` pure; place side effects (IO, DB, network) in `lib/storage` or service modules.
+- Use pattern matching, avoid partial functions, add concise comments for non-obvious logic.
+- Run `dune fmt` (ocamlformat profile `conventional`, version `0.27.0`) before committing. CI runs `dune build @fmt`.
 
 ---
 
 ## 4. Testing Expectations
 - Write Alcotest unit tests for new modules; store fixtures under `test/`.
-- Integration tests (dockerised Postgres/Qdrant) should be tagged once we enable tagging; ensure `CHESSMATE_TEST_DATABASE_URL` has `CREATEDB` rights.
+- Integration tests (dockerised Postgres/Qdrant) need tagged roles with `CREATEDB`; run via `dune exec test/test_main.exe -- test integration`.
 - Update curated natural-language queries when behaviour changes and document acceptance criteria.
 - Never merge with red tests; if you must skip a test, file an issue with justification.
 
 ---
 
 ## 5. Documentation & Runbooks
-- Update `docs/IMPLEMENTATION_PLAN.md` (roadmap) and `docs/ARCHITECTURE.md` (component/data flows) after major changes.
-- Log incident retrospectives or service runbooks under `docs/`.
-- Keep `README.md`, `COOKBOOK.md`, `COOKBOOK`, etc., in sync with new workflows.
+- Keep `docs/IMPLEMENTATION_PLAN.md` and `docs/ARCHITECTURE.md` current.
+- Maintain `.mld` odoc pages (`docs/*.mld`) alongside Markdown docs; they feed the generated documentation site.
+- Add runbooks or incident retrospectives under `docs/INCIDENTS/`.
 
 ---
 
@@ -54,16 +54,17 @@ This document complements the [Developer Handbook](DEVELOPER.md), [Testing Plan]
 
 ## 7. CI Expectations
 - GitHub Actions must be green before merge; treat required status checks as gates.
-- If a workflow fails, note the failure in the PR and summarise the root cause / fix.
+- If a workflow fails, note the failure in the PR and summarise the root cause/fix.
 - Re-run workflows after rebases or flakes; track flaky tests via issues for follow-up.
 
 ---
 
 ## 8. Quick Do / Don’t Checklist
+- ✅ Use functional idioms (pure functions, combinators, `Or_error.t`, pattern matching).
 - ✅ Encapsulate database access behind `Repo_*` modules.
-- ✅ Write small, composable functions and favour explicit types.
+- ✅ Keep `.mld` odoc pages updated with doc changes.
 - ✅ Run `dune fmt && dune build && dune runtest` before pushing.
-- ❌ Don’t commit secrets or `.env`; rely on env vars or secret managers.
+- ❌ Don’t commit secrets or `.env`; rely on environment variables or secret managers.
 - ❌ Don’t merge failing pipelines or bypass code review.
 
 ---
