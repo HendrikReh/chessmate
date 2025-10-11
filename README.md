@@ -1,7 +1,7 @@
 # Chessmate
 
 [![OCaml](https://img.shields.io/badge/OCaml-%3E%3D%205.1-orange.svg)](https://ocaml.org)
-[![Version](https://img.shields.io/badge/Version-0.6.0-blue.svg)](RELEASE_NOTES.md)
+[![Version](https://img.shields.io/badge/Version-0.6.1-blue.svg)](RELEASE_NOTES.md)
 [![Status](https://img.shields.io/badge/Status-Proof%20of%20Concept-yellow.svg)](docs/IMPLEMENTATION_PLAN.md)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/HendrikReh/chessmate/ci.yml?branch=master)](https://github.com/HendrikReh/chessmate/actions)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -319,12 +319,23 @@ The pool size can be tuned via `CHESSMATE_DB_POOL_SIZE` (default 10).
 Need a clean slate? Stop the containers (`docker compose down`), wipe the volumes (`rm -rf data/postgres data/qdrant`), bring services back up, rerun migrations, then re-ingest your PGNs as shown above.
 
 ## Documentation
-- [Implementation Plan](docs/IMPLEMENTATION_PLAN.md)
-- [Architecture Overview](docs/ARCHITECTURE.md)
-- [Developer Handbook](docs/DEVELOPER.md)
-- [Operations Playbook](docs/OPERATIONS.md)
-- [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
-- [Collaboration Guidelines](docs/GUIDELINES.md)
+- **Roadmaps & Overviews**
+  - [Architecture](docs/ARCHITECTURE.md) – component diagrams, data flow, and responsibilities.
+  - [Review & Planning Notes](docs/REVIEW_v4.md) – open issues, prioritised work, and follow-up tasks.
+- **How-To Guides**
+  - [Developer Handbook](docs/DEVELOPER.md) – environment setup, CLI usage, and daily workflows.
+  - [Chessmate for Dummies](docs/CHESSMATE_FOR_DUMMIES.md) – narrative walkthrough of ingestion and search.
+  - [Cookbook](docs/COOKBOOK.md) – common command sequences and automation snippets.
+- **Operations & Testing**
+  - [Operations Playbook](docs/OPERATIONS.md) – deployment, monitoring, and maintenance procedures.
+  - [Testing Guide](docs/TESTING.md) – test matrix, fixtures, and troubleshooting tips.
+  - [Load Testing](docs/LOAD_TESTING.md) – benchmarking harness and performance checklists.
+- **Reference & Collaboration**
+  - [Troubleshooting](docs/TROUBLESHOOTING.md) – common failure modes and recovery steps.
+  - [Prompts](docs/PROMPTS.md) – prompt engineering notes and examples for agent tasks.
+  - [Collaboration Guidelines](docs/GUIDELINES.md) – coding standards, PR checklist, and review policy.
+- **Generated Guides**
+  - `docs/*.mld` – odoc pages (e.g., CLI, pipeline, embedding) rendered via `opam exec -- dune build @doc` and served from `_build/default/_doc/_html/`.
 
 ## Contributing
 PRs welcome! See [Collaboration Guidelines](docs/GUIDELINES.md) for coding standards, testing expectations, and PR checklist. Please open an issue before large changes and include `dune build && dune test` output in your PR template.

@@ -1,6 +1,19 @@
 
 # Release Notes
 
+## 0.6.1 – Health Checks & Query JSON Mode
+
+### Added
+- Added dependency health checks (Postgres, Qdrant, Redis, API) before `chessmate query` executes.
+- Introduced `--json` flag to `chessmate query` for raw API responses.
+
+### Fix
+- Fixed SQL whitespace bug affecting query pagination defaults.
+
+### Notes
+- Rebuilt review roadmap (docs/REVIEW_v4.md) and consolidated CLI docs.
+
+
 ## 0.6.0 – Caqti Repository Migration
 
 ### Changed
