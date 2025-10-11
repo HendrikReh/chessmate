@@ -79,12 +79,32 @@ Chessmate is stable enough for production-style workloads, but a handful of infr
    - Effort: ~14h.
 
 4. **Deep health checks**  
-   - Expand `/health` to probe Postgres, Qdrant, Redis, OpenAI; surface degraded states as JSON.  
-   - Reuse CLI health-check helper to avoid duplication.  
+   - Implementation
+     - Introduce `lib/api/health.(ml|mli)` providing probe helpers for Postgres, Qdrant (`/healthz`), Redis (`PING`), and a lightweight OpenAI sanity call (or cached token check).  
+     - Return structured JSON from `/health` (e.g., `{ status: "degraded", details: { qdrant: { ok: false, error: ... } } }`).  
+     - Capture probe latency and export gauges/counters via `/metrics` (e.g., `health_dependency_status{service="qdrant"}`), enabling alerting.  
+   - Integration
+     - Extend API startup to register the new health routes and reuse the same module inside the CLI health helper to keep logic consistent.  
+     - Expose a simple `/health` endpoint for the embedding worker (either HTTP or CLI command) reusing the same probe functions.  
+     - Emit degraded-mode logs with remediation hints (e.g., `vector search unavailable - check Qdrant`).  
+   - Testing
+     - Unit tests covering success/failure branches of each probe (mocked Postgres/Qdrant/Redis/OpenAI).  
+     - Integration test verifying the JSON structure and metrics after forcing a dependency down (e.g., simulate 500 or timeout).  
+     - Hook health checks into the load-test script to ensure alerts trigger under failure.  
    - Effort: ~8h.
 
 5. **Agent evaluation timeout**  
-   - Configure `Agents_gpt5_client` with per-request timeout and surface retries/failures as structured errors.  
+   - Implementation
+     - Add configurable timeout (`AGENT_REQUEST_TIMEOUT_SECONDS`) to `Agents_gpt5_client`; wrap Lwt HTTP calls with `Lwt_unix.with_timeout`.  
+     - Introduce a simple circuit breaker: after N consecutive timeouts, temporarily disable agent calls and log a warning, resuming after a cool-off period.  
+     - Ensure fallback path returns heuristic results with a warning in the JSON payload/CLI output (`"agent": {"status": "timeout"}`) and increments a timeout counter in `/metrics`.  
+   - Integration
+     - Surface timeout configuration in `Config.Api`, document it in developer/operations guides, and make CLI health output indicate when the agent path is degraded.  
+     - Optionally add a Redis flag to short-circuit known-bad states until the circuit breaker resets.  
+   - Testing
+     - Unit test forcing the HTTP layer to hang and verifying the timeout triggers and fallback rolls back to heuristic ranking.  
+     - End-to-end test validating the warning and metric increments when the agent is slow.  
+     - Load test scenario ensuring the circuit breaker prevents cascading failures.  
    - Effort: ~6h.
 
 6. **Query pagination**  
