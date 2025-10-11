@@ -11,6 +11,7 @@ let () =
       "fen", Test_fen.suite;
       "chess-parsing", Test_chess_parsing.suite;
       "query", Test_query.suite;
+      "rate-limiter", Test_rate_limiter.suite;
       "integration", Test_integration.suite;
       "sql-filters", Test_sql_filters.suite;
       "sanitizer", Test_sanitizer.suite;

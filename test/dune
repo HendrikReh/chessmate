@@ -4,6 +4,7 @@
   test_support
   test_chess_parsing
   test_query
+  test_rate_limiter
   test_fen
   test_retry
   test_config

@@ -1,12 +1,17 @@
 # Chessmate Review & Improvement Plan (v4)
 
-_Last revised: 2025-10-10 (post-v0.6.1 health-check release)_
+_Last revised: 2025-10-10 (post-v0.6.2 rate-limit release)_
 
 Chessmate is stable enough for production-style workloads, but a handful of infrastructure gaps are blocking public deployment. This document summarises the current state, highlights outstanding issues, and provides an incremental roadmap for closing them.
 
 ---
 
 ## 1. Current Snapshot
+
+### Completed in v0.6.2
+- **API rate limiting** via token-bucket middleware (per-IP 429s, Prometheus counters).
+- **Qdrant bootstrap** ensuring the target collection exists at API/worker startup.
+- **Config/Docs refresh** for new rate-limit and Qdrant env vars.
 
 ### Completed in v0.6.1
 - **CLI health checks** run before queries, verifying Postgres, Qdrant, Redis, and the API.
