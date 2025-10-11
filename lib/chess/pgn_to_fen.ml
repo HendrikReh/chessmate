@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Convert SAN move sequences into incremental FEN snapshots used by ingestion,
+    embedding, and downstream analytics. *)
+
 open! Base
 
 module Color = struct

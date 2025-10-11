@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Minimal Qdrant HTTP client used to upsert embedding vectors and fetch scored
+    points for hybrid search. *)
+
 open! Base
 
 module Config = struct

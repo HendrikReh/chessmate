@@ -16,7 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Formats ranked games and summaries for CLI/API responses. *)
+(** Assemble ranked results into human-readable summaries for the CLI and rich
+    JSON payloads for the HTTP API. *)
 
 open! Base
 

@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Translate analysed query intent into Postgres predicates, optional Qdrant
+    payload filters, and deterministic vector placeholders plus scoring weights. *)
+
 open! Base
 
 module Util = Yojson.Safe.Util

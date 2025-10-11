@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Deterministically parse natural-language questions into filters, keywords,
+    and limits that the hybrid planner can consume. *)
+
 open! Base
 
 type rating_filter = {

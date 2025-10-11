@@ -1,6 +1,9 @@
 open! Base
 open Stdio
 
+(** Emit structured telemetry about GPT-5 evaluations, including token usage and
+    optional cost estimates derived from environment configuration. *)
+
 module Effort = Agents_gpt5_client.Effort
 module Usage = Agents_gpt5_client.Usage
 

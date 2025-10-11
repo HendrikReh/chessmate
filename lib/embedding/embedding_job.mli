@@ -28,7 +28,10 @@ type status =
   | Failed
 
 val status_to_string : status -> string
+[@@ocaml.doc "Serialise a status for storage/logging."]
+
 val status_of_string : string -> status Or_error.t
+[@@ocaml.doc "Parse a status coming from the database."]
 
 (** Representation of a job fetched from the database. *)
 type t = {
@@ -40,6 +43,13 @@ type t = {
 }
 
 val create_pending : id:int -> fen:string -> t
+[@@ocaml.doc "Build a new [Pending] job record."]
+
 val mark_started : t -> t
+[@@ocaml.doc "Transition a job to [In_progress]."]
+
 val mark_completed : t -> t
+[@@ocaml.doc "Transition a job to [Completed]."]
+
 val mark_failed : t -> error:string -> t
+[@@ocaml.doc "Transition a job to [Failed] with the supplied error message."]

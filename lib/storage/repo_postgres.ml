@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** High-level Postgres repository that wraps Caqti queries to store games,
+    positions, and embedding jobs for the ingestion and query pipelines. *)
+
 open! Base
 
 module Caqti_repo = Repo_postgres_caqti

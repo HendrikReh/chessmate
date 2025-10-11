@@ -16,7 +16,8 @@ Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Opium HTTP API handling `/query` requests. *)
+(** Opium HTTP service exposing `/query` by running intent analysis, hybrid
+    planning/execution, optional GPT-5 evaluation, and structured JSON formatting. *)
 
 open! Base
 open Chessmate

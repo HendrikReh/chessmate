@@ -41,7 +41,7 @@ Chessmate uses **hybrid search**: combining traditional filters (player ratings,
 
 ### Step 1: Parsing PGN Files (`lib/chess/pgn_parser.ml`)
 
-When you run `chessmate ingest game.pgn`, the system:
+When you run `dune exec -- chessmate -- ingest game.pgn`, the system:
 
 1. **Reads the PGN file** - a chess game format with headers and moves:
    ```
@@ -180,10 +180,10 @@ Every 2 seconds, it:
    ```
    Returns a **1536-dimensional vector**: `[0.023, -0.451, 0.882, ...]`
 
-3. **Derives a deterministic `vector_id`** from the FEN (SHA digest today) and *marks the job completed*. At present the raw vector is still ignored; wiring up `Repo_qdrant.upsert_points` is tracked in follow-up work.
+3. **Derives a deterministic `vector_id`** from the FEN (SHA digest) and **upserts the vector into Qdrant** via `Repo_qdrant.upsert_points`, with exponential backoff and jitter for transient failures.
 
 4. **Updates PostgreSQL**:
-   - Set `positions.vector_id = "abc123"` (reserve the identifier for when the vector store comes online)
+   - Set `positions.vector_id = "abc123"`
    - Mark the job as completed and clear `last_error`
 
 > Need to see progress in real time? Run `scripts/embedding_metrics.sh --interval 120`
@@ -502,14 +502,21 @@ Final output (JSON or text):
 
 ---
 
+## Monitoring, Metrics, and Load Testing
+
+- **Queue health**: run `scripts/embedding_metrics.sh --interval 120` while workers are active to observe pending/completed counts, throughput, and ETA.
+- **HTTP load tests**: with the API running, execute `TOOL=oha DURATION=60s CONCURRENCY=50 TARGET_URL=http://localhost:8080/query scripts/load_test.sh`. The helper prints latency/throughput and fetches `/metrics`; keep `db_pool_wait_ratio` near zero for healthy runs.
+- **Further reading**: see `docs/TESTING.md` for the full testing matrix and the `README` for live CLI transcripts.
+
 ## Summary: Key Takeaways
 
-1. **PostgreSQL** stores structured data (games, players, positions) - fast for exact filtering.
-2. **Qdrant** integration is prepared but not yet receiving live vectors; the worker reserves `vector_id`s so uploads can be enabled without reingesting.
-3. **Hybrid search** combines metadata filters with vector similarity when Qdrant replies; otherwise it gracefully falls back to heuristics.
-4. **Reranking** uses weighted scoring (70% vector, 30% keyword) whenever vector scores are available.
+1. **PostgreSQL** stores structured data (games, players, positions) and powers fast deterministic filters.
+2. **Qdrant** now receives live vectors—embedding jobs call `Repo_qdrant.upsert_points` with retry/backoff before marking work complete.
+3. **Hybrid search** blends metadata filters with vector similarity and gracefully falls back to heuristics if vectors or GPT-5 results are unavailable.
+4. **Reranking** combines vector scores, keyword matches, and optional GPT-5 explanations (cached in Redis).
 5. **Every position** (not just games) becomes addressable, enabling “find this board shape” queries.
-6. **No LLMs in query processing**—intent parsing relies on deterministic rules and the opening catalogue.
+6. **Try it end-to-end**: ingest with `dune exec -- chessmate -- ingest test/fixtures/sample_game.pgn`, then query with `dune exec -- chessmate -- query "Show French Defense draws"`.
+7. **No LLMs in intent parsing**—opening/rating extraction relies on deterministic rules and the opening catalogue.
 
 This architecture enables queries like "French Defense endgames that end in a draw with queenside pawn majority" by:
 - **Filtering**: opening=french, result=draw, phase=endgame (PostgreSQL)
@@ -543,9 +550,8 @@ Key modules implementing each stage:
 
 Current limitations and planned improvements:
 
-1. **Persist embeddings to Qdrant**: Teach the worker to call `Repo_qdrant.upsert_points` so the reserved `vector_id`s reference real vectors.
-2. **Reciprocal Rank Fusion (RRF)**: Introduce a more robust result-merging algorithm.
-3. **Query Embedding**: Embed user queries (not just keywords) for better semantic matching.
-4. **Position Features**: Extract tactical themes (pins, forks, sacrifices) during ingestion.
-5. **Caching**: Redis layer for frequently asked questions.
-6. **Observability**: Structured logging + Prometheus metrics for worker/API performance.
+1. **Vector-aware scoring**: adopt Reciprocal Rank Fusion (RRF) and OpenAI query embeddings so hybrid search leans on real vectors rather than heuristics.
+2. **Query Embedding**: Embed user queries (not just keywords) for better semantic matching.
+3. **Position Features**: Extract tactical themes (pins, forks, sacrifices) during ingestion.
+4. **Caching**: extend Redis usage with TTL policies and Prometheus counters for cache hit/miss telemetry.
+5. **Observability**: expand Prometheus coverage (request histograms, agent cost counters, worker duration metrics) and wire dashboards/alerts.

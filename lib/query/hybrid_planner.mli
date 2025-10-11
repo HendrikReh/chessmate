@@ -16,7 +16,15 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(** Builds hybrid plans combining deterministic filters and vector signals. *)
+(** Utilities that prepare metadata and vector queries for the hybrid executor.
+    Given a {!Query_intent.plan}, the planner produces:
+    - SQL predicates (filters/rating) the repository understands
+    - optional Qdrant payload filters
+    - a deterministic “query vector” used as a placeholder until true query
+      embeddings are introduced
+    - helper functions for merging vector metadata with SQL metadata
+
+    The executor consumes the results emitted by this module. *)
 
 open! Base
 
@@ -26,16 +34,22 @@ type t = {
   vector_weight : float;
   keyword_weight : float;
 }
+(** Tunable weights for ranking. [vector_weight] multiplies semantic scores,
+    [keyword_weight] multiplies heuristic keyword overlap. *)
 
 val default : t
+(** Default weighting (70% vector, 30% keyword today). *)
 
 val scoring_weights : t -> vector:float -> keyword:float -> float
+(** Combine normalised vector/keyword scores using the configured weights. *)
 
 val build_payload_filters : Query_intent.plan -> Yojson.Safe.t list option
 (** Convert a query plan into Qdrant payload filter clauses. *)
 
 val query_vector : Query_intent.plan -> float list
 (** Deterministically derive a query embedding from the analysed intent. *)
+
+(** TODO: replace with real query embeddings once available. *)
 
 type vector_hit = {
   game_id : int;

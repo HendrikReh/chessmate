@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Implement the `chessmate ingest` command: parse PGNs, enforce queue guard
+    rails, and persist games plus embedding jobs. *)
+
 open! Base
 open Stdio
 

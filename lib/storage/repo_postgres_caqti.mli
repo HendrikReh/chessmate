@@ -1,20 +1,34 @@
 open! Base
 
-(** Experimental Caqti-backed Postgres pool. *)
+(** Caqti-backed repository wrapper around the Chessmate Postgres schema.
 
+    This module owns the connection pool that is handed to all services
+    (CLI, API, embedding worker). Public functions mirror the operations the
+    system performs today: inserting parsed PGNs, reading back metadata for
+    hybrid search, and managing the embedding job lifecycle.
+
+    The interface purposefully exposes only Or_error-returning helpers so
+    callers inherit a consistent error-reporting story without depending on
+    Caqti-specific exceptions. *)
+
+(** Abstract handle to the shared connection pool. *)
 type t
 
 val create : ?pool_size:int -> string -> t Or_error.t
-(** Create a connection pool targeting the given connection URI. *)
+(** [create ?pool_size uri] initialises a blocking Caqti pool targeting the
+    given connection [uri]. When [pool_size] is omitted the pool honours
+    [CHESSMATE_DB_POOL_SIZE] (default 10). *)
 
 val with_connection :
   t ->
   (Caqti_blocking.connection -> ('a, Caqti_error.t) Result.t) ->
   'a Or_error.t
-(** Execute [f] with a pooled connection, mapping Caqti errors into [Or_error]. *)
+(** [with_connection repo f] borrows a connection from [repo]'s pool,
+    executes [f], and returns the result as an [Or_error]. The connection is
+    returned to the pool regardless of success/failure. *)
 
 val disconnect : t -> unit
-(** Drain the pool and close all connections. *)
+(** Drain and dispose the underlying pool (used mainly in tests). *)
 
 type stats = {
   capacity : int;
@@ -23,7 +37,7 @@ type stats = {
 }
 
 val stats : t -> stats
-(** Return pool utilisation statistics. *)
+(** Snapshot the current pool utilisation (exposed via [/metrics]). *)
 
 type game_summary = {
   id : int;
@@ -45,11 +59,16 @@ val search_games :
   rating:Query_intent.rating_filter ->
   limit:int ->
   game_summary list Or_error.t
+(** Search the [games] table using the same metadata filters the hybrid
+    planner produces (opening slug, ECO range, rating bounds, etc.). Results
+    are ordered by [played_on DESC, id DESC] and limited to [limit]. *)
 
 val pending_embedding_job_count : t -> int Or_error.t
+(** Count jobs in [embedding_jobs] that are still marked [pending]. *)
 
 val fetch_games_with_pgn :
   t -> ids:int list -> (int * string) list Or_error.t
+(** Fetch raw PGN blobs for the provided game ids. *)
 
 val insert_game :
   t ->
@@ -57,9 +76,22 @@ val insert_game :
   pgn:string ->
   moves:Pgn_parser.move list ->
   (int * int) Or_error.t
+(** Persist a parsed PGN:
+    - upsert players,
+    - insert a game row,
+    - insert per-ply positions and enqueue embedding jobs.
 
+    Returns [(game_id, inserted_position_count)]. *)
+
+(** Atomically claim up to [limit] pending embedding jobs using
+    [FOR UPDATE SKIP LOCKED]. Claimed jobs transition to [in_progress]. *)
 val claim_pending_jobs : t -> limit:int -> Embedding_job.t list Or_error.t
+
+(** Mark an embedding job [completed] and push [vector_id] into
+    [positions.vector_id]. *)
 val mark_job_completed : t -> job_id:int -> vector_id:string -> unit Or_error.t
+
+(** Record an embedding job failure with a sanitized [error] message. *)
 val mark_job_failed : t -> job_id:int -> error:string -> unit Or_error.t
 
 type vector_payload = {
@@ -68,6 +100,8 @@ type vector_payload = {
   json : Yojson.Safe.t;
 }
 
+(** Load the metadata used to build a Qdrant payload (game/position fields
+    plus denormalised player/opening stats). *)
 val vector_payload_for_job : t -> job_id:int -> vector_payload Or_error.t
 
 module Private : sig

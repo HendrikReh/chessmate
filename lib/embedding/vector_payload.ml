@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Build the JSON payload sent to Qdrant for each embedding, combining player
+    metadata, tags, and runtime extras. *)
+
 open! Base
 
 let from_metadata metadata ~extra =

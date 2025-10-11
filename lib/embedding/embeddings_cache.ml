@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Simple in-memory embedding cache used in tests and local workflows to avoid
+    redundant OpenAI requests. *)
+
 open! Base
 
 type t = (string, float array, String.comparator_witness) Map.t ref

@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Stream PGN files into structured games with headers and SAN move lists,
+    emitting incremental results suitable for concurrent ingestion. *)
+
 open! Base
 open! Lwt.Infix
 

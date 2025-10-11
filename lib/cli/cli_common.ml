@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Shared helpers for CLI commands: environment validation, URL resolution,
+    and formatted error handling. *)
+
 open! Base
 
 let with_db_url f =

@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Run the `chessmate twic-precheck` command that inspects TWIC drops for malformed
+    PGNs before they reach the main ingestion pipeline. *)
+
 open! Base
 open Stdio
 

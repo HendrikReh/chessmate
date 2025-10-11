@@ -4,9 +4,29 @@
 ## 0.6.0 – Caqti Repository Migration
 
 ### Changed
-- Replaced the libpq-backed repository with a fully typed Caqti implementation for all read/write paths.
-- Removed the `postgresql` library dependency at runtime; services now rely on `caqti` + `caqti-driver-postgresql`.
-- Updated developer and operations docs to reflect the new pool instrumentation and dependency set.
+ **Caqti Migration Complete**
+   - Replaced libpq shell wrapper with typed Caqti pool
+   - Parameterized queries throughout (SQL injection risk eliminated)
+   - Pool instrumentation via `/metrics` endpoint
+   - Evidence: lib/storage/repo_postgres_caqti.ml:1-300, services/api/chessmate_api.ml:278-301
+
+2. **Vector Upload Implemented**
+   - Worker now uploads embeddings to Qdrant with retry logic
+   - Payload enrichment from Postgres metadata
+   - 3-attempt exponential backoff for transient failures
+   - Evidence: services/embedding_worker/embedding_worker.ml:142-192
+
+3. **Secret Sanitization**
+   - Regex-based redaction of API keys, database URLs, Redis URIs
+   - Applied to all error messages and logs
+   - Test coverage in place
+   - Evidence: lib/core/sanitizer.ml:1-25, test/test_sanitizer.ml
+
+4. **Observability Foundation**
+   - `/metrics` endpoint exposing pool stats (capacity, in_use, waiting, wait_ratio)
+   - Load testing script with oha/vegeta support
+   - Integration tests for core workflows
+   - Evidence: services/api/chessmate_api.ml:278-301, scripts/load_test.sh, test/test_integration.ml
 
 ### Notes
 - Ensure the opam switch has `caqti` and `caqti-driver-postgresql` installed (`opam install caqti caqti-driver-postgresql`).

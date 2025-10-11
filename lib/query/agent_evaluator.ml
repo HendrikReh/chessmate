@@ -1,9 +1,12 @@
 (*  Chessmate - Hybrid chess tutor combining Postgres metadata with Qdrant
     vector search
-    Copyright (C) 2025 Hendrik Reh
+Copyright (C) 2025 Hendrik Reh
 
     GPL v3
 *)
+
+(** Drive GPT-5 evaluations for query candidates, normalising scores,
+    explanations, and telemetry reporting. *)
 
 open! Base
 

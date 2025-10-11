@@ -1,6 +1,6 @@
 (*  Chessmate - Hybrid chess tutor combining Postgres metadata with Qdrant
     vector search
-    Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
+Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,6 +15,9 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
+
+(** Execute the hybrid retrieval plan by combining Postgres metadata, optional
+    vector hits, and GPT-5 scores into ranked results. *)
 
 open! Base
 

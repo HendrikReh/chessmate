@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Implement the `chessmate query` CLI command by posting questions to the HTTP
+    API and formatting JSON responses for the terminal. *)
+
 open! Base
 
 let build_uri () =

@@ -1,5 +1,10 @@
 open! Base
 
+(** Implementation backing {!Repo_postgres_caqti}: thin wrappers around blocking
+    Caqti queries plus helpers used by the API, CLI, and embedding worker. All
+    database interaction flows through this module so the application can share
+    a single pool and a consistent error surface. *)
+
 module Blocking = Caqti_blocking
 module Pool = Blocking.Pool
 module Pool_config = Caqti_pool_config

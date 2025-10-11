@@ -1,6 +1,9 @@
 open! Base
 open Stdio
 
+(** Cache GPT-5 agent evaluations behind in-memory LRU or Redis backends so repeat
+    queries reuse previous scoring work. *)
+
 let ( let* ) t f = Or_error.bind t ~f
 
 module Evaluation = Agent_evaluator

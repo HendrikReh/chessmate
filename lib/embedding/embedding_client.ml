@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Call the OpenAI embeddings API with batching, chunk guards, and retry/backoff
+    so the worker can efficiently transform FEN positions into vectors. *)
+
 open! Base
 open Stdio
 

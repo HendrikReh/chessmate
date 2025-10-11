@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Represent embedding job rows shared between the CLI, worker, and tests to
+    keep state transitions consistent. *)
+
 open! Base
 
 type status =

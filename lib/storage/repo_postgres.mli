@@ -16,14 +16,16 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(** Postgres repository for ingesting games, managing jobs, and fetching query data. *)
+(** High-level Postgres repository for ingesting games, managing embedding jobs,
+    and serving query metadata. *)
 
 open! Base
 
 type t
+(** Thin wrapper around {!Repo_postgres_caqti.t} kept for backwards compatibility. *)
 
 val create : string -> t Or_error.t
-(** Initialize a repository using a database connection string. *)
+(** Create the shared repository state used by CLI/worker/API. *)
 
 type pool_stats = {
   capacity : int;
@@ -33,7 +35,7 @@ type pool_stats = {
 }
 
 val pool_stats : t -> pool_stats
-(** Expose current pool utilisation for diagnostics/metrics. *)
+(** Read pool utilisation stats for diagnostics/metrics. *)
 
 val insert_game :
   t ->
@@ -77,7 +79,6 @@ type vector_payload = {
 }
 
 val vector_payload_for_job : t -> job_id:int -> vector_payload Or_error.t
-(** Retrieve contextual information for an embedding job used when building the Qdrant payload. *)
 
 module Private : sig
   val build_conditions :

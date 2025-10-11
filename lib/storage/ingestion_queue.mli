@@ -16,7 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(** Helpers for reading and updating the embedding job queue in Postgres. *)
+(** In-memory queue abstraction used by ingestion tests before hitting the
+    persistent embedding_jobs table. *)
 
 open! Base
 

@@ -16,7 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(* Embedding worker loop that drains jobs and persists vectors. *)
+(** Long-running worker that drains pending embedding jobs, batches OpenAI calls,
+    upserts Qdrant vectors, and updates job status with retries and telemetry. *)
 
 open! Base
 open Stdio

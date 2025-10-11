@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Provide the `chessmate fen` helper that streams PGN moves to stdout as FEN
+    snapshots or writes them to a file. *)
+
 open! Base
 open Stdio
 

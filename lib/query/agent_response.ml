@@ -1,5 +1,8 @@
 open! Base
 
+(** Parse the GPT-5 agent JSON payload into typed evaluation items consumed by
+    the planner and formatter. *)
+
 module Util = Yojson.Safe.Util
 
 type item = {

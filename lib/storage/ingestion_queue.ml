@@ -16,6 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+(** Lightweight in-memory queue used during ingestion tests to stage embedding
+    jobs before they are persisted. *)
+
 open! Base
 
 type job = {
