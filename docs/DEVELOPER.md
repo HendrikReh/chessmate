@@ -68,6 +68,8 @@ The executables validate configuration on startup; missing or malformed values r
 | `AGENT_CACHE_REDIS_URL` | ⛏️ | — | API | Redis-backed agent cache. |
 | `OPENAI_RETRY_MAX_ATTEMPTS` | ⛏️ | `5` | CLI/API/worker | Positive integer; overrides retry attempts for OpenAI calls. |
 | `OPENAI_RETRY_BASE_DELAY_MS` | ⛏️ | `200` | CLI/API/worker | Positive float (milliseconds) controlling initial retry backoff. |
+| `OPENAI_EMBEDDING_CHUNK_SIZE` | ⛏️ | `2048` | Worker | Positive integer; maximum FEN batch size per embedding request. |
+| `OPENAI_EMBEDDING_MAX_CHARS` | ⛏️ | `120000` | Worker | Positive integer; character limit per batch (requests split recursively when exceeded). |
 
 ✅ = required · ⛏️ = optional.
 

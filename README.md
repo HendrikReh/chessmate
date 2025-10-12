@@ -60,7 +60,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    ```sh
    dune exec -- chessmate -- config
    ```
-   Exit code `0` means all required services/env vars are ready, `2` signals optional components are skipped (e.g. Redis), and `1` indicates a fatal misconfiguration (the command prints remediation hints).
+   Exit code `0` means all required services/env vars are ready, `2` signals optional components are skipped (e.g. Redis), and `1` indicates a fatal misconfiguration (the command prints remediation hints). Invalid overrides (e.g. non-positive `OPENAI_RETRY_MAX_ATTEMPTS` or `OPENAI_EMBEDDING_CHUNK_SIZE`) are surfaced here. Configure chunking via `OPENAI_EMBEDDING_CHUNK_SIZE` and `OPENAI_EMBEDDING_MAX_CHARS`.
 9. Explore the available tooling:
    ```sh
    # Start the prototype query API (Opium server)

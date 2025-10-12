@@ -31,20 +31,16 @@ let default_max_batch_size = 2048
 let default_max_chars = 120_000
 
 let max_batch_size () =
-  match Stdlib.Sys.getenv_opt "OPENAI_EMBEDDING_CHUNK_SIZE" with
-  | None -> default_max_batch_size
-  | Some raw -> (
-      match Int.of_string_opt (String.strip raw) with
-      | Some value when value > 0 -> value
-      | _ -> default_max_batch_size)
+  match Config.Helpers.optional "OPENAI_EMBEDDING_CHUNK_SIZE" with
+  | None -> Or_error.return default_max_batch_size
+  | Some raw ->
+      Config.Helpers.parse_positive_int "OPENAI_EMBEDDING_CHUNK_SIZE" raw
 
 let max_chunk_chars () =
-  match Stdlib.Sys.getenv_opt "OPENAI_EMBEDDING_MAX_CHARS" with
-  | None -> default_max_chars
-  | Some raw -> (
-      match Int.of_string_opt (String.strip raw) with
-      | Some value when value > 0 -> value
-      | _ -> default_max_chars)
+  match Config.Helpers.optional "OPENAI_EMBEDDING_MAX_CHARS" with
+  | None -> Or_error.return default_max_chars
+  | Some raw ->
+      Config.Helpers.parse_positive_int "OPENAI_EMBEDDING_MAX_CHARS" raw
 
 let chunk_list list ~chunk_size =
   let rec loop acc remaining =
@@ -204,9 +200,9 @@ let embed_chunk t chunk ~chunk_index ~total_chunks =
 let embed_fens t fens =
   if List.is_empty fens then Or_error.return []
   else
-    let chunk_size = max_batch_size () in
+    let* chunk_size = max_batch_size () in
     let raw_chunks = chunk_list fens ~chunk_size in
-    let max_chars = max_chunk_chars () in
+    let* max_chars = max_chunk_chars () in
     let chunks =
       raw_chunks
       |> List.concat_map ~f:(fun chunk -> enforce_char_limit chunk ~max_chars)
