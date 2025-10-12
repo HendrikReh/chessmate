@@ -18,5 +18,6 @@
   test_main)
  (libraries chessmate alcotest stdio)
  (deps
+  (file fixtures/annotated_game.pgn)
   (file fixtures/extended_sample_game.pgn)
   (file fixtures/sample_game.pgn)))

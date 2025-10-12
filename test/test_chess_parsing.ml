@@ -115,6 +115,27 @@ let test_parse_extended_sample_game () =
       check (option string) "tag test1" (Some "VALUE_TEST_TAG_1")
         (Pgn_parser.tag_value parsed "TEST_TAG_1")
 
+let test_parse_annotated_game () =
+  let annotated = load_fixture "annotated_game.pgn" in
+  match Pgn_parser.parse annotated with
+  | Error err ->
+      failf "annotated fixture failed to parse: %s" (Error.to_string_hum err)
+  | Ok parsed -> (
+      let moves = parsed.moves in
+      check int "annotated move count" 16 (List.length moves);
+      let first = List.hd_exn moves in
+      check string "first annotated san" "e4!!" first.san;
+      match Pgn_to_fen.fens_of_string annotated with
+      | Error err ->
+          failf "annotated fixture failed to convert to FEN: %s"
+            (Error.to_string_hum err)
+      | Ok fens ->
+          check int "annotated fen count" 16 (List.length fens);
+          let first_fen = List.hd_exn fens in
+          check string "first annotated fen"
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+            first_fen)
+
 let test_metadata_from_headers () =
   let headers =
     [
@@ -265,6 +286,7 @@ let suite =
     ("illegal castle rejected", `Quick, test_castle_requires_clear_path);
     ("invalid capture rejected", `Quick, test_capture_requires_target);
     ("parse extended sample game", `Quick, test_parse_extended_sample_game);
+    ("parse annotated game", `Quick, test_parse_annotated_game);
     ("metadata extraction", `Quick, test_metadata_from_headers);
     ("sample FEN sequence", `Quick, test_fen_sequence_sample);
     ("fen after move", `Quick, test_fen_after_move);

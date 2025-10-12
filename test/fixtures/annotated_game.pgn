@@ -1,0 +1,12 @@
+% This PGN includes percent comments and annotated SAN moves.
+[Event "Annotated Fixture"]
+[Site "Chessmate Test"]
+[Date "2024.05.12"]
+[Round "1"]
+[White "Annotator, A"]
+[Black "Responder, B"]
+[Result "1-0"]
+
+1. e4!! e5 { Standard reply } 2. Nf3!? Nc6 3. Bb5?! a6
+% Another comment
+4. Ba4 Nf6 5. O-O Be7 6. Re1 d6 7. c3 O-O 8. h3 Re8 1-0

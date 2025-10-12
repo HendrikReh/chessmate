@@ -229,6 +229,19 @@ let verbosity_to_use t override = Option.first_some override t.default_verbosity
 let response_field name json =
   match Util.member name json with `Null -> None | value -> Some value
 
+let extract_output_text json =
+  match response_field "output_text" json with
+  | Some (`List texts) ->
+      let pieces =
+        List.filter_map texts ~f:(function
+          | `String text -> Some text
+          | _ -> None)
+      in
+      if List.is_empty pieces then None
+      else Some (String.concat ~sep:"\n" pieces)
+  | Some (`String text) -> Some text
+  | _ -> None
+
 let extract_text_from_output output =
   let rec loop items =
     match items with
@@ -253,19 +266,22 @@ let extract_text_from_output output =
   match output with `List items -> loop items | _ -> None
 
 let extract_text json =
-  match response_field "output" json with
-  | Some output -> (
-      match extract_text_from_output output with
-      | Some text -> Some text
-      | None -> None)
+  match extract_output_text json with
+  | Some text -> Some text
   | None -> (
-      match response_field "choices" json with
-      | Some (`List (choice :: _)) -> (
-          match Util.member "message" choice with
-          | `Assoc _ as message ->
-              Util.member "content" message |> Util.to_string_option
-          | _ -> Util.member "text" choice |> Util.to_string_option)
-      | _ -> None)
+      match response_field "output" json with
+      | Some output -> (
+          match extract_text_from_output output with
+          | Some text -> Some text
+          | None -> None)
+      | None -> (
+          match response_field "choices" json with
+          | Some (`List (choice :: _)) -> (
+              match Util.member "message" choice with
+              | `Assoc _ as message ->
+                  Util.member "content" message |> Util.to_string_option
+              | _ -> Util.member "text" choice |> Util.to_string_option)
+          | _ -> None))
 
 let reasoning_field effort =
   `Assoc

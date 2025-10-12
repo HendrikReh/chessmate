@@ -60,6 +60,7 @@ let drop_while s ~f =
 let strip_comments text =
   let len = String.length text in
   let buffer = Stdlib.Buffer.create len in
+  let is_line_start idx = Int.equal idx 0 || Char.equal text.[idx - 1] '\n' in
   let rec loop i state =
     if i >= len then ()
     else
@@ -70,6 +71,7 @@ let strip_comments text =
           | '{' -> loop (i + 1) `Brace
           | '(' -> loop (i + 1) `Paren
           | ';' -> loop (i + 1) `Line_comment
+          | '%' when is_line_start i -> loop (i + 1) `Percent_comment
           | _ ->
               Stdlib.Buffer.add_char buffer char;
               loop (i + 1) `Normal)
@@ -84,6 +86,11 @@ let strip_comments text =
             Stdlib.Buffer.add_char buffer char;
             loop (i + 1) `Normal)
           else loop (i + 1) `Line_comment
+      | `Percent_comment ->
+          if Char.(char = '\n') then (
+            Stdlib.Buffer.add_char buffer char;
+            loop (i + 1) `Normal)
+          else loop (i + 1) `Percent_comment
   in
   loop 0 `Normal;
   Stdlib.Buffer.contents buffer

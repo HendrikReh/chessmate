@@ -21,7 +21,9 @@ open! Base
 type theme = Unknown | KingsideAttack | QueensideMajority | CentralBreak
 
 let theme_of_tags tags =
-  let downcased = List.map tags ~f:String.lowercase in
+  let downcased =
+    List.map tags ~f:(fun tag -> String.strip tag |> String.lowercase)
+  in
   if
     List.exists downcased
       ~f:(String.is_substring ~substring:"queenside majority")

@@ -63,14 +63,28 @@ let normalize_date value =
       else
         match String.split trimmed ~on:'.' with
         | [ yyyy; mm; dd ] ->
-            if String.exists yyyy ~f:(Char.equal '?') then None
+            let yyyy = String.strip yyyy in
+            if
+              String.is_empty yyyy
+              || String.exists yyyy ~f:(Char.equal '?')
+              || not (String.for_all yyyy ~f:Char.is_digit)
+            then None
             else
-              let fix part default_value =
-                if String.exists part ~f:(Char.equal '?') then default_value
-                else part
+              let canonical_component part ~default =
+                let stripped = String.strip part in
+                if
+                  String.is_empty stripped
+                  || String.exists stripped ~f:(Char.equal '?')
+                  || not (String.for_all stripped ~f:Char.is_digit)
+                then default
+                else
+                  match String.length stripped with
+                  | 1 -> "0" ^ stripped
+                  | 2 -> stripped
+                  | _ -> default
               in
-              let mm = fix mm "01" in
-              let dd = fix dd "01" in
+              let mm = canonical_component mm ~default:"01" in
+              let dd = canonical_component dd ~default:"01" in
               Some (String.concat ~sep:"-" [ yyyy; mm; dd ])
         | _ -> Some trimmed)
 

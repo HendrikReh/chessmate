@@ -125,6 +125,7 @@ let metrics t =
           in
           line :: acc)
   in
+  let per_ip_lines = List.sort per_ip_lines ~compare:String.compare in
   let total_line =
     Printf.sprintf "api_rate_limited_total %d" !(t.total_limited)
   in

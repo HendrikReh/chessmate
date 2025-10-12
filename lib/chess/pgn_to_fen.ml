@@ -233,11 +233,10 @@ module San = struct
   let strip_suffixes token =
     let len = String.length token in
     let rec drop idx =
-      if
-        idx > 0
-        && (Stdlib.Char.equal token.[idx - 1] '+'
-           || Stdlib.Char.equal token.[idx - 1] '#')
-      then drop (idx - 1)
+      if idx > 0 then
+        match token.[idx - 1] with
+        | '+' | '#' | '!' | '?' -> drop (idx - 1)
+        | _ -> idx
       else idx
     in
     String.subo token ~pos:0 ~len:(drop len)
