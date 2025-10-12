@@ -1,12 +1,17 @@
 # Chessmate Roadmap (v4)
 
-_Last revised: 2025-10-10 (post-v0.6.2 release)_
+_Last revised: 2025-10-10 (post-v0.6.3 release)_
 
 Chessmate is production-capable, but a few infrastructure gaps remain before we can expose the API broadly. This document tracks what’s done, what’s next, and the effort involved.
 
 ---
 
 ## 1. Current State
+
+### Shipped in v0.6.3
+- PGN parser tolerates percent-style comments and SAN annotations (`?!`, `!!`) without breaking ingestion.
+- GPT-5 agent client consumes `output_text` responses and maintains deterministic rate-limit metrics for observability.
+- Metadata normalisation trims tags, pads partial dates, and adds annotated PGN regression coverage.
 
 ### Shipped in v0.6.2
 - Token-bucket API rate limiting (per-IP 429s, Prometheus counters).

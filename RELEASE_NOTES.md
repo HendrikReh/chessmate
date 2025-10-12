@@ -1,5 +1,15 @@
 # Release Notes
 
+## 0.6.3 – PGN Annotation Support & Agent Polish
+
+### Added
+- Annotated PGN fixture plus regression tests covering percent comments, SAN suffixes, and FEN generation.
+
+### Changed
+- GPT-5 response handling now reads `output_text` payloads alongside legacy fields, improving compatibility with streamed responses.
+- Rate limiter metrics sort per-IP counters for deterministic Prometheus output.
+- PGN metadata sanitisation normalises header dates, trims tag whitespace, and ignores annotated SAN suffixes during parsing.
+
 ## 0.6.2 – Rate Limiting & Qdrant Bootstrap
 
 ### Added
