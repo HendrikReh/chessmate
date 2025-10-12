@@ -31,6 +31,7 @@ let prefix_for = function
 let log ?label msg = printf "%s %s\n%!" (prefix_for label) msg
 let warn ?label msg = eprintf "%s %s\n%!" (prefix_for label) msg
 let error ?label msg = eprintf "%s %s\n%!" (prefix_for label) msg
+let sanitize_error err = Sanitizer.sanitize_error err
 
 type stats = { mutable processed : int; mutable failed : int }
 
@@ -120,10 +121,11 @@ let upsert_vector ?label point =
     ~initial_delay:qdrant_retry_initial_delay
     ~multiplier:qdrant_retry_multiplier ~jitter:qdrant_retry_jitter
     ~on_retry:(fun ~attempt ~delay err ->
+      let message = sanitize_error err in
       warn ?label
         (Printf.sprintf
            "[qdrant] upsert attempt %d/%d failed: %s (retrying in %.2fs)"
-           attempt qdrant_retry_max_attempts (Error.to_string_hum err) delay))
+           attempt qdrant_retry_max_attempts message delay))
     ~f:(fun ~attempt ->
       match Repo_qdrant.upsert_points [ point ] with
       | Ok () -> Retry.Resolved (Or_error.return ())
@@ -143,17 +145,29 @@ let mark_announced exit_condition =
 let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
   match Embedding_client.embed_fens embedding_client [ job.fen ] with
   | Error err ->
-      let message = Sanitizer.sanitize_error err in
-      let _ =
+      let message = sanitize_error err in
+      let mark_result =
         Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:message
       in
+      (match mark_result with
+      | Ok () -> ()
+      | Error persist_err ->
+          warn ?label
+            (Printf.sprintf "job %d failed to persist failure state: %s" job.id
+               (sanitize_error persist_err)));
       error ?label (Printf.sprintf "job %d failed: %s" job.id message);
       record_result stats ~failed:true
   | Ok [] ->
       let message = "embedding client returned no vectors" in
-      let _ =
+      let mark_result =
         Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:message
       in
+      (match mark_result with
+      | Ok () -> ()
+      | Error persist_err ->
+          warn ?label
+            (Printf.sprintf "job %d failed to persist failure state: %s" job.id
+               (sanitize_error persist_err)));
       error ?label (Printf.sprintf "job %d failed: %s" job.id message);
       record_result stats ~failed:true
   | Ok (vector :: _ as embeddings) -> (
@@ -165,10 +179,17 @@ let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
       let vector_values = Array.to_list vector in
       match Repo_postgres.vector_payload_for_job repo ~job_id:job.id with
       | Error err ->
-          let message = Sanitizer.sanitize_error err in
-          let _ =
+          let message = sanitize_error err in
+          let mark_result =
             Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:message
           in
+          (match mark_result with
+          | Ok () -> ()
+          | Error persist_err ->
+              warn ?label
+                (Printf.sprintf "job %d failed to persist failure state: %s"
+                   job.id
+                   (sanitize_error persist_err)));
           error ?label (Printf.sprintf "job %d failed: %s" job.id message);
           record_result stats ~failed:true
       | Ok context -> (
@@ -190,19 +211,33 @@ let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
                   log ?label (Printf.sprintf "job %d completed" job.id);
                   record_result stats ~failed:false
               | Error err ->
-                  let message = Error.to_string_hum err in
-                  let _ =
+                  let message = sanitize_error err in
+                  let mark_result =
                     Repo_postgres.mark_job_failed repo ~job_id:job.id
                       ~error:message
                   in
+                  (match mark_result with
+                  | Ok () -> ()
+                  | Error persist_err ->
+                      warn ?label
+                        (Printf.sprintf
+                           "job %d failed to persist failure state: %s" job.id
+                           (sanitize_error persist_err)));
                   error ?label
                     (Printf.sprintf "job %d failed: %s" job.id message);
                   record_result stats ~failed:true)
           | Error err ->
-              let message = Error.to_string_hum err in
-              let _ =
+              let message = sanitize_error err in
+              let mark_result =
                 Repo_postgres.mark_job_failed repo ~job_id:job.id ~error:message
               in
+              (match mark_result with
+              | Ok () -> ()
+              | Error persist_err ->
+                  warn ?label
+                    (Printf.sprintf "job %d failed to persist failure state: %s"
+                       job.id
+                       (sanitize_error persist_err)));
               error ?label (Printf.sprintf "job %d failed: %s" job.id message);
               record_result stats ~failed:true))
 
@@ -292,6 +327,12 @@ let () =
       eprintf "[worker][fatal] unexpected positional arguments: %s\n%!"
         (String.concat ~sep:" " (List.rev !anon_args));
       Stdlib.exit 1);
+  if Float.(!poll_sleep <= 0.) then (
+    warn "poll-sleep must be positive; defaulting to 0.1s";
+    poll_sleep := 0.1);
+  if Int.(!concurrency <= 0) then (
+    warn "workers must be >= 1; defaulting to 1";
+    concurrency := 1);
   let sleep_interval = Float.max 0.1 !poll_sleep in
   let env_result =
     Repo_postgres.create worker_config.Config.Worker.database_url
