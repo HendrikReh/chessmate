@@ -122,13 +122,9 @@ let summary_tokens_with_vector summary vector_hit =
         (summary_keyword_tokens summary)
         hit.Hybrid_planner.keywords
 
-let keyword_overlap plan summary vector_hit =
-  let summary_tokens =
-    summary_tokens_with_vector summary vector_hit |> Set.of_list (module String)
-  in
+let keyword_overlap plan token_set =
   let matches =
-    List.count plan.Query_intent.keywords ~f:(fun kw ->
-        Set.mem summary_tokens kw)
+    List.count plan.Query_intent.keywords ~f:(fun kw -> Set.mem token_set kw)
   in
   let total = Int.max 1 (List.length plan.Query_intent.keywords) in
   Float.of_int matches /. Float.of_int total
@@ -152,17 +148,18 @@ let vector_score plan summary vector_hit =
   | Some _ -> 0.0
   | None -> fallback_vector_score plan summary
 
-let score_result plan summary vector_hit =
+let score_result plan summary vector_hit summary_tokens =
   let vector = Float.min 1.0 (vector_score plan summary vector_hit) in
-  let keyword = keyword_overlap plan summary vector_hit in
+  let keyword =
+    keyword_overlap plan (Set.of_list (module String) summary_tokens)
+  in
   let combined =
     Hybrid_planner.scoring_weights Hybrid_planner.default ~vector ~keyword
   in
   (combined, vector, keyword)
 
-let combined_keywords plan summary vector_hit =
-  let enriched_summary = summary_tokens_with_vector summary vector_hit in
-  Hybrid_planner.merge_keywords plan.Query_intent.keywords enriched_summary
+let combined_keywords plan summary_tokens =
+  Hybrid_planner.merge_keywords plan.Query_intent.keywords summary_tokens
 
 let combined_phases plan_phases vector_hit =
   match vector_hit with
@@ -201,8 +198,9 @@ let agent_candidate_multiplier = 5
 let agent_candidate_max = 25
 
 let build_result plan summary plan_phases plan_themes vector_hit agent_eval =
+  let summary_tokens = summary_tokens_with_vector summary vector_hit in
   let base_total, vector_score, keyword_score =
-    score_result plan summary vector_hit
+    score_result plan summary vector_hit summary_tokens
   in
   let phases = combined_phases plan_phases vector_hit in
   let themes = combined_themes plan_themes vector_hit in
@@ -234,7 +232,7 @@ let build_result plan summary plan_phases plan_themes vector_hit agent_eval =
     agent_usage;
     phases;
     themes = combined_themes;
-    keywords = combined_keywords plan summary vector_hit;
+    keywords = combined_keywords plan summary_tokens;
   }
 
 let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
