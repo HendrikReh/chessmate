@@ -22,12 +22,13 @@
 open! Base
 open Stdio
 
+let ( let* ) t f = Or_error.bind t ~f
+
 type stats = { inserted : int; skipped : int }
 
 let empty_stats = { inserted = 0; skipped = 0 }
 let default_pending_limit = 250_000
 let default_worker_count = 4
-let ( let* ) t f = Or_error.bind t ~f
 
 let pending_guard_limit () =
   Config.Cli.pending_guard_limit ~default:default_pending_limit

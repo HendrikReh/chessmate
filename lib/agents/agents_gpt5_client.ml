@@ -195,7 +195,7 @@ let create ~api_key ?(endpoint = default_endpoint) ?(model = default_model)
   let* api_key = ensure_non_empty "api_key" api_key in
   let* endpoint = ensure_non_empty "endpoint" endpoint in
   let* model = ensure_non_empty "model" model in
-  let retry = Common.load_retry_config () in
+  let* retry = Common.load_retry_config () in
   Or_error.return
     { api_key; endpoint; model; default_effort; default_verbosity; retry }
 

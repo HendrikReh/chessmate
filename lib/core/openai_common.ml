@@ -15,33 +15,58 @@ type retry_config = {
 let default_retry_config =
   { max_attempts = 5; initial_delay = 0.2; multiplier = 2.0; jitter = 0.2 }
 
-let parse_env_int name ~default =
-  match Stdlib.Sys.getenv_opt name with
-  | None -> default
-  | Some raw -> (
-      match Int.of_string_opt (String.strip raw) with
-      | Some value when value > 0 -> value
-      | _ -> default)
-
-let parse_env_float_ms name ~default =
-  match Stdlib.Sys.getenv_opt name with
-  | None -> default
-  | Some raw -> (
-      match Float.of_string (String.strip raw) with
-      | exception _ -> default
-      | value when Float.(value > 0.) -> value /. 1000.
-      | _ -> default)
-
 let load_retry_config () =
-  let max_attempts =
-    parse_env_int "OPENAI_RETRY_MAX_ATTEMPTS"
-      ~default:default_retry_config.max_attempts
+  let trimmed_env name =
+    Stdlib.Sys.getenv_opt name |> Option.map ~f:String.strip
+    |> Option.filter ~f:(fun value -> not (String.is_empty value))
   in
-  let initial_delay =
-    parse_env_float_ms "OPENAI_RETRY_BASE_DELAY_MS"
-      ~default:default_retry_config.initial_delay
+  let parse_positive_int name raw =
+    match Int.of_string_opt raw with
+    | Some value when value > 0 -> Or_error.return value
+    | _ ->
+        Or_error.errorf
+          "Configuration error: %s=%s is invalid (expected a positive integer)"
+          name raw
   in
-  { default_retry_config with max_attempts; initial_delay }
+  let parse_positive_float_ms name raw =
+    match Float.of_string raw with
+    | value when Float.(value > 0.) -> Or_error.return (value /. 1000.)
+    | _ ->
+        Or_error.errorf
+          "Configuration error: %s=%s is invalid (expected a positive float)"
+          name raw
+  in
+  match trimmed_env "OPENAI_RETRY_MAX_ATTEMPTS" with
+  | Some raw -> (
+      match parse_positive_int "OPENAI_RETRY_MAX_ATTEMPTS" raw with
+      | Error err -> Error err
+      | Ok max_attempts -> (
+          match trimmed_env "OPENAI_RETRY_BASE_DELAY_MS" with
+          | Some delay_raw -> (
+              match
+                parse_positive_float_ms "OPENAI_RETRY_BASE_DELAY_MS" delay_raw
+              with
+              | Error err -> Error err
+              | Ok initial_delay ->
+                  Or_error.return
+                    { default_retry_config with max_attempts; initial_delay })
+          | None ->
+              Or_error.return
+                {
+                  default_retry_config with
+                  max_attempts;
+                  initial_delay = default_retry_config.initial_delay;
+                }))
+  | None -> (
+      match trimmed_env "OPENAI_RETRY_BASE_DELAY_MS" with
+      | Some delay_raw -> (
+          match
+            parse_positive_float_ms "OPENAI_RETRY_BASE_DELAY_MS" delay_raw
+          with
+          | Error err -> Error err
+          | Ok initial_delay ->
+              Or_error.return { default_retry_config with initial_delay })
+      | None -> Or_error.return default_retry_config)
 
 let should_retry_status status =
   match status with

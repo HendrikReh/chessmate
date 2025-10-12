@@ -8,7 +8,7 @@ type retry_config = {
 }
 
 val default_retry_config : retry_config
-val load_retry_config : unit -> retry_config
+val load_retry_config : unit -> retry_config Or_error.t
 val should_retry_status : int -> bool
 val should_retry_error_json : Yojson.Safe.t -> bool
 val truncate_body : string -> string

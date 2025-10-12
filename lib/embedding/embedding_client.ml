@@ -26,6 +26,7 @@ module Backoff = Retry
 module Common = Openai_common
 module Util = Yojson.Safe.Util
 
+let ( let* ) t f = Or_error.bind t ~f
 let default_max_batch_size = 2048
 let default_max_chars = 120_000
 
@@ -93,7 +94,7 @@ let create ~api_key ~endpoint =
   else if String.is_empty (String.strip endpoint) then
     Or_error.error_string "OpenAI endpoint missing"
   else
-    let retry = Common.load_retry_config () in
+    let* retry = Common.load_retry_config () in
     Or_error.return { api_key; endpoint; model = default_model; retry }
 
 let call_curl ~endpoint ~api_key ~body =

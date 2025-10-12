@@ -1,8 +1,9 @@
 open! Base
 
 module Helpers = struct
-  let trimmed_env name =
-    Stdlib.Sys.getenv_opt name |> Option.map ~f:String.strip
+  let trimmed_env ?(strip = true) name =
+    Stdlib.Sys.getenv_opt name
+    |> Option.map ~f:(fun value -> if strip then String.strip value else value)
     |> Option.filter ~f:(fun value -> not (String.is_empty value))
 
   let missing name =
@@ -13,12 +14,12 @@ module Helpers = struct
     Or_error.errorf "Configuration error: %s=%s is invalid (%s)" name value
       message
 
-  let require name =
-    match trimmed_env name with
+  let require ?(strip = true) name =
+    match trimmed_env ~strip name with
     | Some value -> Or_error.return value
     | None -> missing name
 
-  let optional name = trimmed_env name
+  let optional ?(strip = true) name = trimmed_env ~strip name
 
   let parse_int name value =
     match Int.of_string value with
@@ -30,6 +31,12 @@ module Helpers = struct
     | Ok parsed when parsed > 0 -> Or_error.return parsed
     | Ok _ -> invalid name value "expected a positive integer"
     | Error err -> Error err
+
+  let parse_positive_float name value =
+    match Float.of_string value with
+    | exception _ -> invalid name value "expected a floating value"
+    | parsed when Float.(parsed > 0.) -> Or_error.return parsed
+    | _ -> invalid name value "expected a positive floating value"
 end
 
 module Api = struct
@@ -79,13 +86,7 @@ module Api = struct
   let load_port () =
     match Helpers.optional "CHESSMATE_API_PORT" with
     | None -> Or_error.return default_port
-    | Some raw -> (
-        match Helpers.parse_int "CHESSMATE_API_PORT" raw with
-        | Ok parsed when parsed > 0 -> Or_error.return parsed
-        | Ok _ ->
-            Helpers.invalid "CHESSMATE_API_PORT" raw
-              "expected a positive integer"
-        | Error err -> Error err)
+    | Some raw -> Helpers.parse_positive_int "CHESSMATE_API_PORT" raw
 
   let load_reasoning_effort () =
     match Helpers.optional "AGENT_REASONING_EFFORT" with

@@ -22,6 +22,8 @@
 open! Base
 open Stdio
 
+let ( let* ) t f = Or_error.bind t ~f
+
 (* Writes each FEN on its own line to the provided channel. *)
 let write_fens channel fens =
   List.iter fens ~f:(fun fen ->
@@ -30,7 +32,6 @@ let write_fens channel fens =
   Out_channel.flush channel
 
 let run ~input ~output =
-  let ( let* ) t f = Or_error.bind t ~f in
   let* fens =
     Pgn_to_fen.fens_of_file input
     |> Or_error.tag ~tag:(Printf.sprintf "failed to derive FENs for %s" input)

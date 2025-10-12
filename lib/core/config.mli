@@ -1,13 +1,14 @@
 open! Base
 
 module Helpers : sig
-  val trimmed_env : string -> string option
+  val trimmed_env : ?strip:bool -> string -> string option
   val missing : string -> 'a Or_error.t
   val invalid : string -> string -> string -> 'a Or_error.t
-  val require : string -> string Or_error.t
-  val optional : string -> string option
+  val require : ?strip:bool -> string -> string Or_error.t
+  val optional : ?strip:bool -> string -> string option
   val parse_int : string -> string -> int Or_error.t
   val parse_positive_int : string -> string -> int Or_error.t
+  val parse_positive_float : string -> string -> float Or_error.t
 end
 
 module Api : sig
