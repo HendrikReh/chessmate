@@ -81,6 +81,27 @@ let test_cli_guard_limit () =
       | Error err ->
           failf "unexpected guard failure: %s" (Error.to_string_hum err))
 
+let test_cli_guard_limit_disable () =
+  with_env
+    [ ("CHESSMATE_MAX_PENDING_EMBEDDINGS", Some "0") ]
+    (fun () ->
+      match Config.Cli.pending_guard_limit ~default:250_000 with
+      | Ok (Some _) -> fail "expected guard to disable"
+      | Ok None -> ()
+      | Error err ->
+          failf "unexpected guard failure: %s" (Error.to_string_hum err))
+
+let test_cli_guard_limit_invalid () =
+  with_env
+    [ ("CHESSMATE_MAX_PENDING_EMBEDDINGS", Some "not-an-int") ]
+    (fun () ->
+      match Config.Cli.pending_guard_limit ~default:250_000 with
+      | Error err ->
+          check bool "mentions guard env" true
+            (String.is_substring (Error.to_string_hum err)
+               ~substring:"CHESSMATE_MAX_PENDING_EMBEDDINGS")
+      | Ok _ -> fail "expected guard parsing failure")
+
 let suite =
   [
     test_case "api config loads" `Quick test_api_config_success;
@@ -89,4 +110,7 @@ let suite =
     test_case "worker config requires openai key" `Quick
       test_worker_config_missing_openai;
     test_case "cli guard limit parses" `Quick test_cli_guard_limit;
+    test_case "cli guard limit disables" `Quick test_cli_guard_limit_disable;
+    test_case "cli guard limit detects invalid" `Quick
+      test_cli_guard_limit_invalid;
   ]
