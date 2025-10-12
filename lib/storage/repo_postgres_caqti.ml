@@ -20,12 +20,12 @@ let pool_config ?pool_size () =
       Pool_config.set Pool_config.max_size size default
 
 let parse_pool_size ~env_var ~default =
-  match Stdlib.Sys.getenv_opt env_var with
+  match Config.Helpers.optional ~strip:true env_var with
   | None -> default
   | Some raw -> (
-      match Int.of_string_opt (String.strip raw) with
-      | Some value when value > 0 -> value
-      | _ -> default)
+      match Config.Helpers.parse_positive_int env_var raw with
+      | Ok value -> value
+      | Error _ -> default)
 
 let default_pool_size = 10
 let pool_size_env = "CHESSMATE_DB_POOL_SIZE"
