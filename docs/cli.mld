@@ -12,6 +12,9 @@ Cmdliner-based executable (`dune exec -- chessmate -- ...`).
 
 {1 Primary Commands}
 
+- `lib/cli/config_command.ml`: runs configuration/health diagnostics and emits
+  machine-friendly exit codes (`0` ok, `2` warnings for optional services, `1`
+  fatal).
 - `lib/cli/ingest_command.ml`: parses PGNs, enforces embedding queue guard
   rails, and persists games plus positions.
 - `lib/cli/search_command.ml`: posts questions to the `/query` service and
@@ -44,6 +47,13 @@ Cmdliner-based executable (`dune exec -- chessmate -- ...`).
 {2 TWIC Precheck}
 - Use the precheck before long ingests to surface malformed headers and
   missing metadata early.
+
+{2 Config Diagnostics}
+- `dune exec -- chessmate -- config` prints the same `[health] …` table the
+  query command uses, then exits with `0` (all good), `2` (warnings for
+  optional components such as Redis), or `1` (fatal dependency/env failure).
+- When a fatal check fails, the command emits remediation hints—ideal for CI
+  smoke tests or pre-flight scripts.
 
 {2 Health Check Output}
 - `chessmate query` prints `[health] …` lines before executing, summarising the

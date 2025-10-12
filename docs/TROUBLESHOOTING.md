@@ -8,6 +8,12 @@ Quick diagnostics and fixes for common Chessmate issues. Use alongside [OPERATIO
 
 Run this loop whenever you reset dependencies or suspect ingest/embedding is wedged:
 
+0. **Config sanity**
+   ```sh
+   dune exec -- chessmate -- config
+   ```
+   Exit code `0` means required services/env vars are ready. A `2` indicates optional components (e.g. Redis) are skipped, and `1` surfaces fatal issues alongside remediation hints.
+
 1. **Postgres connectivity**
    ```sh
    DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate      psql "$DATABASE_URL" -c "SELECT 1"

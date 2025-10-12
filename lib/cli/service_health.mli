@@ -2,6 +2,22 @@
 
 open! Base
 
+type availability =
+  | Available of string option
+  | Skipped of string
+  | Unavailable of string
+
+type status = { name : string; availability : availability; fatal : bool }
+
+type summary = {
+  statuses : status list;
+  fatal : status option;
+  warnings : status list;
+}
+
+val status_line : status -> string
+val check : unit -> summary Or_error.t
+
 val ensure_all : unit -> unit Or_error.t
 (** Probe Redis, Postgres, Qdrant, and the Chessmate API. A summary is printed
     to stderr; returns [Ok ()] when all required services respond, otherwise an

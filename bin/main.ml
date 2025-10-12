@@ -27,13 +27,14 @@ let usage =
 Usage: chessmate <command> [options]
 
 Commands:
-  ingest <pgn-file>        Parse a PGN and persist it (requires DATABASE_URL)
+  config                  Run configuration and dependency checks
+  ingest <pgn-file>       Parse a PGN and persist it (requires DATABASE_URL)
   twic-precheck <pgn-file> Inspect a TWIC PGN and report malformed games
   query [--json] <question>
                           Send a natural-language question to the query API
-  fen <pgn-file> [output]  Emit FEN after each half-move (optional output file)
-  embedding-worker         Placeholder (use `dune exec embedding_worker` for now)
-  help                     Show this message
+  fen <pgn-file> [output] Emit FEN after each half-move (optional output file)
+  embedding-worker        Placeholder (use `dune exec embedding_worker` for now)
+  help                    Show this message
 |}
 
 let print_usage () = printf "%s\n" usage
@@ -89,6 +90,7 @@ let () =
       let rest = strip_dune_exec rest in
       match rest with
       | ("help" | "--help" | "-h") :: _ -> print_usage ()
+      | "config" :: _ -> Config_command.run ()
       | "ingest" :: [] ->
           exit_with_error (Error.of_string "ingest requires a PGN file path")
       | "ingest" :: path :: _ -> run_ingest path

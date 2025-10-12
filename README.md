@@ -56,7 +56,12 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    dune runtest
    ```
    To include the integration suite, provide `CHESSMATE_TEST_DATABASE_URL` (a Postgres connection string with `CREATEDB`) and rerun `dune exec -- test/test_main.exe -- test integration`. See `docs/TESTING.md` for the full testing matrix.
-8. Explore the available tooling:
+8. Validate configuration and dependencies:
+   ```sh
+   dune exec -- chessmate -- config
+   ```
+   Exit code `0` means all required services/env vars are ready, `2` signals optional components are skipped (e.g. Redis), and `1` indicates a fatal misconfiguration (the command prints remediation hints).
+9. Explore the available tooling:
    ```sh
    # Start the prototype query API (Opium server)
    dune exec -- chessmate-api --port 8080
@@ -93,6 +98,7 @@ data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
 
 ## Services & CLIs
 - `dune exec -- chessmate_api -- --port 8080`: starts the prototype query HTTP API.
+- `dune exec -- chessmate -- config`: runs dependency/configuration diagnostics (exit codes: `0` OK, `2` warnings for optional components, `1` fatal error).
 - `dune exec -- chessmate -- ingest <pgn>`: parses and persists PGNs with parallel parsing (default 4 workers, set `CHESSMATE_INGEST_CONCURRENCY` to tune).
 - `dune exec -- chessmate -- twic-precheck <pgn>`: scans TWIC PGNs for malformed entries before ingestion.
 - `dune exec -- chessmate -- query "…"`: sends questions to the running query API (`CHESSMATE_API_URL` defaults to `http://localhost:8080`).

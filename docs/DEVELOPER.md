@@ -18,6 +18,12 @@ The bootstrap script is idempotent. It:
 - Starts Docker services (Postgres, Qdrant, Redis) and runs migrations.
 - Executes `dune build` + `dune runtest`.
 
+After any manual changes to environment variables or service credentials, run:
+```sh
+dune exec -- chessmate -- config
+```
+Exit codes: `0` (everything ready), `2` (warnings for optional dependencies such as Redis), `1` (fatal configuration error; the command prints remediation hints).
+
 If you prefer manual setup, follow the prerequisites below then run the same commands yourself.
 
 ---
@@ -60,6 +66,8 @@ The executables validate configuration on startup; missing or malformed values r
 | `AGENT_API_KEY` | ⛏️ | — | API | Enables GPT‑5 re-ranking. |
 | `AGENT_REASONING_EFFORT`, `AGENT_VERBOSITY` | ⛏️ | `medium` | API | Tune GPT‑5 calls. |
 | `AGENT_CACHE_REDIS_URL` | ⛏️ | — | API | Redis-backed agent cache. |
+| `OPENAI_RETRY_MAX_ATTEMPTS` | ⛏️ | `5` | CLI/API/worker | Positive integer; overrides retry attempts for OpenAI calls. |
+| `OPENAI_RETRY_BASE_DELAY_MS` | ⛏️ | `200` | CLI/API/worker | Positive float (milliseconds) controlling initial retry backoff. |
 
 ✅ = required · ⛏️ = optional.
 
@@ -107,7 +115,7 @@ More recipes live in [COOKBOOK.md](COOKBOOK.md).
 ## 5. Observability & Health
 
 - `/metrics` exposes Caqti pool gauges, rate-limiter counters, and (soon) per-dependency health/timeouts.
-- CLI prints `[health] postgres/qdrant/redis/api` lines before executing queries.
+- CLI prints `[health] postgres/qdrant/redis/api` lines before executing queries. Run `dune exec -- chessmate -- config` to see the full dependency report at any time.
 - Planned `/health` JSON endpoint will report dependency status and probe latency for both API and worker.
 - Use `scripts/embedding_metrics.sh` to monitor queue depth; rate limiter increments appear under `api_rate_limited_total`.
 

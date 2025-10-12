@@ -39,6 +39,12 @@ type availability =
 
 type status = { name : string; availability : availability; fatal : bool }
 
+type summary = {
+  statuses : status list;
+  fatal : status option;
+  warnings : status list;
+}
+
 let sanitize = Sanitizer.sanitize_string
 
 let status_line status =
@@ -180,26 +186,54 @@ let check_api ~timeout =
   | Error err ->
       { name; availability = Unavailable (sanitize err); fatal = true }
 
+let check_openai_retry () =
+  let name = "openai-retry" in
+  match Openai_common.load_retry_config () with
+  | Ok _ -> { name; availability = Available None; fatal = true }
+  | Error err ->
+      {
+        name;
+        availability = Unavailable (Sanitizer.sanitize_error err);
+        fatal = true;
+      }
+
 let check_all ~timeout =
   [
-    check_postgres (); check_qdrant ~timeout; check_redis (); check_api ~timeout;
+    check_postgres ();
+    check_qdrant ~timeout;
+    check_redis ();
+    check_api ~timeout;
+    check_openai_retry ();
   ]
 
-let report statuses = List.iter statuses ~f:print_status
+let summarize statuses =
+  let fatal =
+    List.find statuses ~f:(function
+      | { availability = Unavailable _; fatal = true; _ } -> true
+      | _ -> false)
+  in
+  let warnings =
+    List.filter statuses ~f:(function
+      | { availability = Skipped _; fatal = false; _ } -> true
+      | _ -> false)
+  in
+  { statuses; fatal; warnings }
 
-let ensure_all () =
+let check () =
   let* timeout =
     Cli_common.positive_float_from_env ~name:"CHESSMATE_HEALTH_TIMEOUT_SECONDS"
       ~default:5.0
   in
   let statuses = check_all ~timeout in
-  report statuses;
-  match
-    List.find statuses ~f:(function
-      | { availability = Unavailable _; fatal = true; _ } -> true
-      | _ -> false)
-  with
-  | None -> Or_error.return ()
+  Or_error.return (summarize statuses)
+
+let report statuses = List.iter statuses ~f:print_status
+
+let ensure_all () : unit Or_error.t =
+  let* summary = check () in
+  report summary.statuses;
+  match summary.fatal with
   | Some { name; availability = Unavailable reason; _ } ->
       Or_error.errorf "%s unavailable: %s" name reason
-  | Some _ -> Or_error.return ()
+  | Some { name; _ } -> Or_error.errorf "%s unavailable" name
+  | None -> Or_error.return ()
