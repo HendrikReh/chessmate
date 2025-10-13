@@ -287,7 +287,7 @@ let worker_config : Config.Worker.t =
       eprintf "[worker][fatal] %s\n%!" (Sanitizer.sanitize_error err);
       Stdlib.exit 1
 
-let () =
+let ensure_qdrant_collection () =
   match Config.Api.load () with
   | Ok api_config -> (
       match api_config.Config.Api.qdrant_collection with
@@ -303,7 +303,8 @@ let () =
               Stdlib.exit 1))
   | Error _ -> ()
 
-let () =
+let run () =
+  ensure_qdrant_collection ();
   let speclist =
     [
       ( "--poll-sleep",
@@ -416,3 +417,5 @@ let () =
         log
           (Printf.sprintf "summary: processed=%d failures=%d duration=%.2fs"
              stats.processed stats.failed elapsed))
+
+let () = run ()
