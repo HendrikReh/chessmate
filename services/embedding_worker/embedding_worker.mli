@@ -16,27 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
-(** Health checks for external services required by the CLI. *)
+(** Embedding worker entrypoint and orchestration helpers. *)
 
-open! Base
-
-type availability =
-  | Available of string option
-  | Skipped of string
-  | Unavailable of string
-
-type status = { name : string; availability : availability; fatal : bool }
-
-type summary = {
-  statuses : status list;
-  fatal : status option;
-  warnings : status list;
-}
-
-val status_line : status -> string
-val check : unit -> summary Or_error.t
-
-val ensure_all : unit -> unit Or_error.t
-(** Probe Redis, Postgres, Qdrant, and the Chessmate API. A summary is printed
-    to stderr; returns [Ok ()] when all required services respond, otherwise an
-    error describing the first unavailable dependency. *)
+val run : unit -> unit
+(** Start the embedding worker loop using configuration and CLI flags. *)
