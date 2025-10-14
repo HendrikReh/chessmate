@@ -64,7 +64,7 @@ Chessmate ingests PGN games, stores metadata and FEN snapshots in PostgreSQL, em
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| Rate limiting | ✅ | Token-bucket per IP via `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE`. Metrics: `api_rate_limited_total`. |
+| Rate limiting | ✅ | Token-bucket per IP via `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` (+ body budget `CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE`). Metrics: `api_rate_limited_total`, `api_rate_limited_body_total`. |
 | Qdrant bootstrap | ✅ | `Repo_qdrant.ensure_collection` runs at API/worker startup. |
 | Health probes | 🔄 | CLI covers Postgres/Qdrant/Redis; `/health` JSON + worker endpoint planned. |
 | GPT-5 timeout/breaker | 🔄 | Upcoming: per-request timeout, fallback warnings, circuit breaker, metrics. |
@@ -82,6 +82,8 @@ Legend: ✅ shipped · ☑️ partial · 🔄 planned.
 | `DATABASE_URL` | Postgres DSN (required). |
 | `QDRANT_URL` | Qdrant base URL (required). |
 | `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` | Per-IP quota; optional `CHESSMATE_RATE_LIMIT_BUCKET_SIZE` for bursts. |
+| `CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE` | Optional per-IP body-size quota (`CHESSMATE_RATE_LIMIT_BODY_BUCKET_SIZE` for bursts). |
+| `CHESSMATE_MAX_REQUEST_BODY_BYTES` | Per-request body limit (default 1 MiB; set `0` to disable). |
 | `QDRANT_COLLECTION_NAME`, `QDRANT_VECTOR_SIZE`, `QDRANT_DISTANCE` | Collection bootstrap settings (defaults: `positions`, `1536`, `Cosine`). |
 | `AGENT_API_KEY` et al. | GPT-5 agent scoring (optional). |
 | See [Developer Handbook](DEVELOPER.md#configuration-reference) for the full table. |

@@ -41,7 +41,12 @@ end
 
 module Api = struct
   module Rate_limit = struct
-    type t = { requests_per_minute : int; bucket_size : int option }
+    type t = {
+      requests_per_minute : int;
+      bucket_size : int option;
+      body_bytes_per_minute : int option;
+      body_bucket_size : int option;
+    }
   end
 
   module Qdrant = struct
@@ -78,6 +83,7 @@ module Api = struct
     agent : agent;
     rate_limit : Rate_limit.t option;
     qdrant_collection : Qdrant.collection option;
+    max_request_body_bytes : int option;
   }
 
   let default_port = 8080
@@ -88,6 +94,7 @@ module Api = struct
   let default_agent_timeout_seconds = 15.
   let default_agent_candidate_multiplier = 5
   let default_agent_candidate_max = 25
+  let default_max_request_body_bytes = 1_048_576
 
   let load_port () =
     match Helpers.optional "CHESSMATE_API_PORT" with
@@ -157,6 +164,20 @@ module Api = struct
         Or_error.return default_agent_candidate_max
     | Some raw -> Helpers.parse_positive_int "AGENT_CANDIDATE_MAX" raw
 
+  let load_max_request_body_bytes () =
+    match Helpers.optional "CHESSMATE_MAX_REQUEST_BODY_BYTES" with
+    | None -> Or_error.return (Some default_max_request_body_bytes)
+    | Some raw when String.is_empty raw ->
+        Or_error.return (Some default_max_request_body_bytes)
+    | Some raw -> (
+        match Helpers.parse_int "CHESSMATE_MAX_REQUEST_BODY_BYTES" raw with
+        | Error err -> Error err
+        | Ok value when value < 0 ->
+            Helpers.invalid "CHESSMATE_MAX_REQUEST_BODY_BYTES" raw
+              "expected a non-negative integer"
+        | Ok 0 -> Or_error.return None
+        | Ok value -> Or_error.return (Some value))
+
   let load_agent () =
     let api_key = Helpers.optional "AGENT_API_KEY" in
     let endpoint =
@@ -191,29 +212,49 @@ module Api = struct
                                                 }))))))
 
   let load_rate_limit () =
+    let parse_optional_positive name =
+      match Helpers.optional name with
+      | None -> Or_error.return None
+      | Some raw when String.is_empty raw -> Or_error.return None
+      | Some raw ->
+          Helpers.parse_positive_int name raw |> Or_error.map ~f:Option.some
+    in
+    let parse_body_bucket ~body_bytes_per_minute =
+      match Helpers.optional "CHESSMATE_RATE_LIMIT_BODY_BUCKET_SIZE" with
+      | None -> Or_error.return None
+      | Some raw when String.is_empty raw -> Or_error.return None
+      | Some raw -> (
+          match body_bytes_per_minute with
+          | None ->
+              Helpers.invalid "CHESSMATE_RATE_LIMIT_BODY_BUCKET_SIZE" raw
+                "requires CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE"
+          | Some _ ->
+              Helpers.parse_positive_int "CHESSMATE_RATE_LIMIT_BODY_BUCKET_SIZE"
+                raw
+              |> Or_error.map ~f:Option.some)
+    in
     match Helpers.optional "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE" with
     | None -> Or_error.return None
     | Some raw when String.is_empty raw -> Or_error.return None
-    | Some raw -> (
-        match
-          Helpers.parse_positive_int "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE"
-            raw
-        with
-        | Error err -> Error err
-        | Ok requests_per_minute -> (
-            let bucket_size =
-              match Helpers.optional "CHESSMATE_RATE_LIMIT_BUCKET_SIZE" with
-              | None -> Ok None
-              | Some raw_bucket when String.is_empty raw_bucket -> Ok None
-              | Some raw_bucket ->
-                  Helpers.parse_positive_int "CHESSMATE_RATE_LIMIT_BUCKET_SIZE"
-                    raw_bucket
-                  |> Or_error.map ~f:Option.some
-            in
-            match bucket_size with
-            | Error err -> Error err
-            | Ok bucket_size ->
-                Ok (Some { Rate_limit.requests_per_minute; bucket_size })))
+    | Some raw ->
+        Helpers.parse_positive_int "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE"
+          raw
+        |> Or_error.bind ~f:(fun requests_per_minute ->
+               parse_optional_positive "CHESSMATE_RATE_LIMIT_BUCKET_SIZE"
+               |> Or_error.bind ~f:(fun bucket_size ->
+                      parse_optional_positive
+                        "CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE"
+                      |> Or_error.bind ~f:(fun body_bytes_per_minute ->
+                             parse_body_bucket ~body_bytes_per_minute
+                             |> Or_error.bind ~f:(fun body_bucket_size ->
+                                    Or_error.return
+                                      (Some
+                                         {
+                                           Rate_limit.requests_per_minute;
+                                           bucket_size;
+                                           body_bytes_per_minute;
+                                           body_bucket_size;
+                                         })))))
 
   let load_qdrant_collection () =
     let name_result =
@@ -266,16 +307,20 @@ module Api = struct
                     | Ok rate_limit -> (
                         match load_qdrant_collection () with
                         | Error err -> Error err
-                        | Ok qdrant_collection ->
-                            Or_error.return
-                              {
-                                database_url;
-                                qdrant_url;
-                                port;
-                                agent;
-                                rate_limit;
-                                qdrant_collection;
-                              })))))
+                        | Ok qdrant_collection -> (
+                            match load_max_request_body_bytes () with
+                            | Error err -> Error err
+                            | Ok max_request_body_bytes ->
+                                Or_error.return
+                                  {
+                                    database_url;
+                                    qdrant_url;
+                                    port;
+                                    agent;
+                                    rate_limit;
+                                    qdrant_collection;
+                                    max_request_body_bytes;
+                                  }))))))
 end
 
 module Worker = struct

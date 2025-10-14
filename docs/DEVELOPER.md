@@ -57,6 +57,9 @@ The executables validate configuration on startup; missing or malformed values r
 | `CHESSMATE_API_URL` | ⛏️ | `http://localhost:8080` | CLI | Location of the query API. |
 | `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` | ⛏️ | `60` | API | Per-IP quota for the rate limiter. |
 | `CHESSMATE_RATE_LIMIT_BUCKET_SIZE` | ⛏️ | same as requests/min | API | Optional burst capacity. |
+| `CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE` | ⛏️ | — (disabled) | API | Optional per-IP body-size quota in bytes per minute. |
+| `CHESSMATE_RATE_LIMIT_BODY_BUCKET_SIZE` | ⛏️ | same as bytes/min | API | Optional burst capacity for body quota. |
+| `CHESSMATE_MAX_REQUEST_BODY_BYTES` | ⛏️ | `1048576` | API | Request body limit; `0` disables the middleware. |
 | `QDRANT_COLLECTION_NAME` | ⛏️ | `positions` | API, worker | Collection ensured at startup. |
 | `QDRANT_VECTOR_SIZE` | ⛏️ | `1536` | API, worker | Embedding dimension. |
 | `QDRANT_DISTANCE` | ⛏️ | `Cosine` | API, worker | Distance metric. |

@@ -25,6 +25,7 @@ let sample_api_config =
     agent = sample_agent;
     rate_limit = None;
     qdrant_collection = None;
+    max_request_body_bytes = Some 1_048_576;
   }
 
 let sample_worker_config =

@@ -133,6 +133,35 @@ module Result = struct
       ]
 end
 
+let route_of_request req =
+  let method_name = Cohttp.Code.string_of_method (Request.meth req) in
+  let path = Uri.path (Request.uri req) in
+  if String.is_empty path then method_name ^ " /" else method_name ^ " " ^ path
+
+let ip_of_request req =
+  let header_ip name =
+    Cohttp.Header.get (Request.headers req) name
+    |> Option.bind ~f:(fun value ->
+           value |> String.split ~on:',' |> List.hd
+           |> Option.map ~f:String.strip)
+    |> Option.filter ~f:(fun value -> not (String.is_empty value))
+  in
+  match header_ip "x-forwarded-for" with
+  | Some ip -> ip
+  | None -> (
+      match header_ip "x-real-ip" with Some ip -> ip | None -> "unknown")
+
+let log_body_limit_violation ~source ~route ~ip ~actual ~limit =
+  let ip = Sanitizer.sanitize_string ip in
+  let route = Sanitizer.sanitize_string route in
+  Stdio.eprintf
+    "[chessmate-api][body-limit][%s] route=%s remote=%s bytes=%d limit=%d\n%!"
+    source route ip actual limit
+
+let body_bytes_key : int Opium.Hmap.key =
+  Opium.Hmap.Key.create
+    ("chessmate.request_body_bytes", Sexplib.Conv.sexp_of_int)
+
 let api_config : Config.Api.t =
   match Config.Api.load () with
   | Ok config ->
@@ -149,11 +178,28 @@ let api_config : Config.Api.t =
       let rate_limit_mode =
         match config.Config.Api.rate_limit with
         | None -> "disabled"
-        | Some { Config.Api.Rate_limit.requests_per_minute; bucket_size } ->
+        | Some
+            {
+              Config.Api.Rate_limit.requests_per_minute;
+              bucket_size;
+              body_bytes_per_minute;
+              body_bucket_size;
+            } ->
             let burst =
               Option.value_map bucket_size ~default:"default" ~f:Int.to_string
             in
-            Printf.sprintf "%d/min (burst=%s)" requests_per_minute burst
+            let body_details =
+              match body_bytes_per_minute with
+              | None -> ""
+              | Some bytes ->
+                  let burst_bytes =
+                    Option.value_map body_bucket_size ~default:"default"
+                      ~f:Int.to_string
+                  in
+                  Printf.sprintf " body=%dB/min (burst=%s)" bytes burst_bytes
+            in
+            Printf.sprintf "%d/min (burst=%s)%s" requests_per_minute burst
+              body_details
       in
       Stdio.eprintf
         "[chessmate-api][config] port=%d database=present qdrant=present \
@@ -218,6 +264,8 @@ let agent_cache : Agent_cache.t option Lazy.t =
               (Error.to_string_hum err);
             None))
 
+let body_limit_bytes = api_config.Config.Api.max_request_body_bytes
+
 let rate_limiter : Rate_limiter.t option Lazy.t =
   lazy
     (match api_config.Config.Api.rate_limit with
@@ -229,24 +277,15 @@ let rate_limiter : Rate_limiter.t option Lazy.t =
         in
         Some
           (Rate_limiter.create ~tokens_per_minute:settings.requests_per_minute
-             ~bucket_size ()))
+             ~bucket_size ?body_bytes_per_minute:settings.body_bytes_per_minute
+             ?body_bucket_size:settings.body_bucket_size ()))
 
 let rate_limit_middleware : Rock.Middleware.t option Lazy.t =
   let filter_of_limiter limiter handler req =
-    let ip_of_request req =
-      let header_ip name =
-        Cohttp.Header.get (Request.headers req) name
-        |> Option.bind ~f:(fun value ->
-               value |> String.split ~on:',' |> List.hd
-               |> Option.map ~f:String.strip)
-        |> Option.filter ~f:(fun value -> not (String.is_empty value))
-      in
-      match header_ip "x-forwarded-for" with
-      | Some ip -> ip
-      | None -> (
-          match header_ip "x-real-ip" with Some ip -> ip | None -> "unknown")
-    in
-    match Rate_limiter.check limiter ~remote_addr:(ip_of_request req) with
+    let body_bytes = Opium.Hmap.find body_bytes_key req.Rock.Request.env in
+    match
+      Rate_limiter.check limiter ~remote_addr:(ip_of_request req) ?body_bytes ()
+    with
     | Rate_limiter.Allowed _ -> handler req
     | Rate_limiter.Limited { retry_after; _ } ->
         let retry_after_seconds =
@@ -272,6 +311,75 @@ let rate_limit_middleware : Rock.Middleware.t option Lazy.t =
         Some
           (Rock.Middleware.create ~name:"rate-limiter"
              ~filter:(filter_of_limiter limiter)))
+
+let body_limit_middleware : Rock.Middleware.t option =
+  match body_limit_bytes with
+  | None -> None
+  | Some limit_bytes ->
+      let violation_response ~source ~route ~ip ~actual =
+        log_body_limit_violation ~source ~route ~ip ~actual ~limit:limit_bytes;
+        let headers =
+          Cohttp.Header.init_with "Content-Type" "application/json"
+        in
+        let payload =
+          `Assoc
+            [
+              ( "error",
+                `String
+                  (Error.to_string_hum
+                     (Body_limit.error ~limit:limit_bytes ~actual)) );
+            ]
+        in
+        let body = Yojson.Safe.to_string payload in
+        App.respond' ~code:`Request_entity_too_large ~headers (`String body)
+      in
+      let read_body_with_limit handler req =
+        let open Lwt.Syntax in
+        let route = route_of_request req in
+        let ip = ip_of_request req in
+        let content_length =
+          Cohttp.Header.get (Request.headers req) "content-length"
+          |> Option.bind ~f:(fun raw -> Int.of_string_opt (String.strip raw))
+        in
+        match content_length with
+        | Some content_length when content_length > limit_bytes ->
+            violation_response ~source:"header" ~route ~ip
+              ~actual:content_length
+        | _ -> (
+            let stream = Cohttp_lwt.Body.to_stream (Request.body req) in
+            let buffer = Buffer.create (Int.min limit_bytes 4096) in
+            let rec consume total =
+              let* chunk_opt = Lwt_stream.get stream in
+              match chunk_opt with
+              | None ->
+                  let body = Buffer.contents buffer in
+                  Lwt.return (`Ok (body, total))
+              | Some chunk ->
+                  let chunk_len = String.length chunk in
+                  let total' = total + chunk_len in
+                  if total' > limit_bytes then Lwt.return (`Too_large total')
+                  else (
+                    Buffer.add_string buffer chunk;
+                    consume total')
+            in
+            let* result = consume 0 in
+            match result with
+            | `Ok (body, total) ->
+                let env =
+                  Opium.Hmap.add body_bytes_key total req.Rock.Request.env
+                in
+                let req =
+                  { req with body = Cohttp_lwt.Body.of_string body; env }
+                in
+                handler req
+            | `Too_large actual ->
+                violation_response ~source:"payload" ~route ~ip ~actual)
+      in
+      Some
+        (Rock.Middleware.create ~name:"body-limit" ~filter:(fun handler req ->
+             match Request.meth req with
+             | `POST | `PUT | `PATCH -> read_body_with_limit handler req
+             | _ -> handler req))
 
 let () =
   match api_config.Config.Api.qdrant_collection with
@@ -401,12 +509,7 @@ let openapi_handler _req =
 let request_metrics_middleware =
   Rock.Middleware.create ~name:"request-metrics" ~filter:(fun handler req ->
       let start = Unix.gettimeofday () in
-      let method_name = Cohttp.Code.string_of_method (Request.meth req) in
-      let path = Uri.path (Request.uri req) in
-      let route =
-        if String.is_empty path then method_name ^ " /"
-        else method_name ^ " " ^ path
-      in
+      let route = route_of_request req in
       Lwt.catch
         (fun () ->
           handler req
@@ -681,12 +784,18 @@ let query_handler req =
           respond_json payload)
 
 let routes =
-  let base = App.empty |> App.middleware request_metrics_middleware in
+  let base = App.empty in
+  let base =
+    match body_limit_middleware with
+    | Some middleware -> App.middleware middleware base
+    | None -> base
+  in
   let base =
     match Lazy.force rate_limit_middleware with
     | Some middleware -> App.middleware middleware base
     | None -> base
   in
+  let base = App.middleware request_metrics_middleware base in
   base
   |> App.get "/health" health_handler
   |> App.get "/metrics" metrics_handler

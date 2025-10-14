@@ -31,7 +31,12 @@ end
 
 module Api : sig
   module Rate_limit : sig
-    type t = { requests_per_minute : int; bucket_size : int option }
+    type t = {
+      requests_per_minute : int;
+      bucket_size : int option;
+      body_bytes_per_minute : int option;
+      body_bucket_size : int option;
+    }
   end
 
   module Qdrant : sig
@@ -68,6 +73,7 @@ module Api : sig
     agent : agent;
     rate_limit : Rate_limit.t option;
     qdrant_collection : Qdrant.collection option;
+    max_request_body_bytes : int option;
   }
 
   val load : unit -> t Or_error.t
