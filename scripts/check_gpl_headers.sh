@@ -1,3 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || {
+  echo "error: must run inside git repository" >&2
+  exit 1
+})
+
+cd "$ROOT_DIR"
+
+HEADER="$(cat <<'EOF'
 (*  Chessmate - Hybrid chess tutor combining Postgres metadata with Qdrant
     vector search
     Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
@@ -15,16 +26,28 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
+EOF
+)"
 
-open! Base
-open Stdio
+header_lines=$(printf '%s\n' "$HEADER" | wc -l | tr -d ' ')
 
-let load_fixture name =
-  let source_root =
-    Stdlib.Sys.getenv_opt "DUNE_SOURCEROOT" |> Option.value ~default:"."
-  in
-  let path =
-    Stdlib.Filename.concat source_root
-      (Stdlib.Filename.concat "test/fixtures" name)
-  in
-  In_channel.read_all path
+missing=()
+
+while IFS= read -r file; do
+  [[ -s "$file" ]] || continue
+  if ! diff -u --label "$file" --label header \
+    <(printf '%s\n' "$HEADER") <(head -n "$header_lines" "$file") >/dev/null
+  then
+    missing+=("$file")
+  fi
+done < <(git ls-files '*.ml' '*.mli' '*.mll' '*.mly')
+
+if ((${#missing[@]})); then
+  printf 'error: %d file(s) missing GPL header:\n' "${#missing[@]}" >&2
+  for file in "${missing[@]}"; do
+    printf '  %s\n' "$file" >&2
+  done
+  exit 1
+fi
+
+echo "GPL headers verified (${#missing[@]} issues)."

@@ -80,7 +80,13 @@ The executables validate configuration on startup; missing or malformed values r
 
 ## 4. Everyday Workflow
 
-1. **Format & test before commit**
+1. **Verify GPL headers**
+   ```sh
+   scripts/check_gpl_headers.sh
+   ```
+   The bootstrap script configures a pre-commit hook to run this check locally; CI blocks merges if a source file is missing the standard header.
+
+2. **Format & test before commit**
    ```sh
    dune fmt
    dune build
@@ -88,25 +94,25 @@ The executables validate configuration on startup; missing or malformed values r
    ```
    CI runs `dune build @fmt` to enforce formatting (profile `conventional`, version `0.27.0`).
 
-2. **Run the embedding worker**
+3. **Run the embedding worker**
    ```sh
    OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate      dune exec -- embedding_worker -- --workers 2 --poll-sleep 1.0 --exit-after-empty 3
    ```
    Monitors: `scripts/embedding_metrics.sh --interval 120`.
 
-3. **Run the query API**
+4. **Run the query API**
    ```sh
    dune exec -- services/api/chessmate_api.exe --port 8080
    ```
    Logs include rate-limiter configuration and Qdrant bootstrap status.
 
-4. **Query from the CLI**
+5. **Query from the CLI**
    ```sh
    CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query --json "Show 5 random games"
    ```
    Output includes dependency health, rate-limit responses, and JSON payloads when `--json` is used.
 
-5. **Integration smoke test**
+6. **Integration smoke test**
    ```sh
    export CHESSMATE_TEST_DATABASE_URL=postgres://chess:chess@localhost:5433/postgres
    dune exec test/test_main.exe -- test integration

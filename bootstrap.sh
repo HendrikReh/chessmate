@@ -19,6 +19,7 @@ OPAM_SWITCH_DIR="$ROOT_DIR/_opam"
 OPAM_SWITCH_NAME="$(opam switch show 2>/dev/null || echo "chessmate-bootstrap")"
 DEFAULT_DATABASE_URL="postgres://chess:chess@localhost:5433/chessmate"
 MIGRATE_SCRIPT="$ROOT_DIR/scripts/migrate.sh"
+HOOKS_DIR="$ROOT_DIR/.githooks"
 
 main() {
   info "Validating prerequisites"
@@ -27,6 +28,11 @@ main() {
   require_cmd docker
   require_cmd docker-compose || require_cmd "docker compose"
   require_cmd psql || warn "psql not found; migrate.sh will fail if DATABASE_URL is unreachable"
+
+  if [[ -d "$HOOKS_DIR" ]]; then
+    info "Configuring git hooks path"
+    git config core.hooksPath "$HOOKS_DIR"
+  fi
 
   if [[ ! -f "$ENV_FILE" ]]; then
     if [[ -f "$ENV_SAMPLE" ]]; then
