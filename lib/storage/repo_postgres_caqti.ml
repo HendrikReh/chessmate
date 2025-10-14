@@ -173,6 +173,13 @@ let build_conditions_internal ~filters ~rating =
           | `Exact single ->
               let placeholder = add_string single in
               conditions := ("g.eco_code = " ^ placeholder) :: !conditions)
+      | "vector_only" | "vector" -> (
+          match String.lowercase (String.strip filter.value) with
+          | "true" | "1" | "yes" ->
+              conditions := "g.vector_id IS NOT NULL" :: !conditions
+          | "false" | "0" | "no" ->
+              conditions := "g.vector_id IS NULL" :: !conditions
+          | _ -> ())
       | field -> (
           match column_of_field field with
           | Some (`Case_insensitive column) ->
