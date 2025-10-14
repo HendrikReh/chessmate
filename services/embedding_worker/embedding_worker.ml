@@ -241,11 +241,14 @@ let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
               error ?label (Printf.sprintf "job %d failed: %s" job.id message);
               record_result stats ~failed:true))
 
+let default_batch_size = 16
+let jobs_per_batch = ref default_batch_size
+
 let rec work_loop repo embedding_client ~poll_sleep ~label stats exit_condition
     =
   if should_stop exit_condition then ()
   else
-    match Repo_postgres.claim_pending_jobs repo ~limit:16 with
+    match Repo_postgres.claim_pending_jobs repo ~limit:!jobs_per_batch with
     | Error err ->
         warn ?label
           (Printf.sprintf "failed to fetch jobs: %s"
@@ -273,11 +276,6 @@ let rec work_loop repo embedding_client ~poll_sleep ~label stats exit_condition
 let poll_sleep = ref 2.0
 let concurrency = ref 1
 let exit_after_empty = ref None
-
-let usage_msg =
-  "Usage: embedding_worker [--poll-sleep SECONDS] [--workers COUNT] \
-   [--exit-after-empty N]"
-
 let anon_args = ref []
 
 let worker_config : Config.Worker.t =
@@ -286,6 +284,8 @@ let worker_config : Config.Worker.t =
   | Error err ->
       eprintf "[worker][fatal] %s\n%!" (Sanitizer.sanitize_error err);
       Stdlib.exit 1
+
+let () = jobs_per_batch := worker_config.Config.Worker.batch_size
 
 let ensure_qdrant_collection () =
   match Config.Api.load () with
@@ -303,6 +303,10 @@ let ensure_qdrant_collection () =
               Stdlib.exit 1))
   | Error _ -> ()
 
+let usage_msg =
+  "Usage: embedding_worker [--poll-sleep SECONDS] [--workers COUNT] \\ \n\
+  \   [--exit-after-empty N] [--batch-size COUNT]"
+
 let run () =
   ensure_qdrant_collection ();
   let speclist =
@@ -316,6 +320,9 @@ let run () =
       ( "--exit-after-empty",
         Stdlib.Arg.Int (fun n -> exit_after_empty := Some (Int.max 1 n)),
         "Exit after N consecutive empty polls (default: run indefinitely)" );
+      ( "--batch-size",
+        Stdlib.Arg.Int (fun n -> jobs_per_batch := n),
+        "Number of jobs to claim per poll (default: 16)" );
       ("-w", Stdlib.Arg.Set_int concurrency, "Alias for --workers");
     ]
   in
@@ -334,6 +341,11 @@ let run () =
   if Int.(!concurrency <= 0) then (
     warn "workers must be >= 1; defaulting to 1";
     concurrency := 1);
+  if Int.(!jobs_per_batch <= 0) then (
+    warn
+      (Printf.sprintf "batch-size must be >= 1; defaulting to %d"
+         default_batch_size);
+    jobs_per_batch := default_batch_size);
   let sleep_interval = Float.max 0.1 !poll_sleep in
   let env_result =
     Repo_postgres.create worker_config.Config.Worker.database_url
@@ -361,8 +373,8 @@ let run () =
       log
         (Printf.sprintf
            "configuration: database=present openai_key=present workers=%d \
-            poll_sleep=%.2fs exit_after_empty=%s"
-           worker_count sleep_interval exit_after_summary);
+            poll_sleep=%.2fs exit_after_empty=%s batch_size=%d"
+           worker_count sleep_interval exit_after_summary !jobs_per_batch);
       if Int.equal worker_count 1 then (
         log "starting polling loop";
         Stdlib.Sys.catch_break false;
@@ -384,8 +396,9 @@ let run () =
              stats.processed stats.failed elapsed))
       else (
         log
-          (Printf.sprintf "starting %d worker loops (poll_sleep=%.2fs)"
-             worker_count sleep_interval);
+          (Printf.sprintf
+             "starting %d worker loops (poll_sleep=%.2fs batch_size=%d)"
+             worker_count sleep_interval !jobs_per_batch);
         Stdlib.Sys.catch_break false;
         let labels =
           List.init worker_count ~f:(fun idx -> Some (Int.to_string (idx + 1)))

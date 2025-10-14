@@ -76,6 +76,7 @@ module Worker : sig
     database_url : string;
     openai_api_key : string;
     openai_endpoint : string;
+    batch_size : int;
   }
 
   val load : unit -> t Or_error.t

@@ -76,6 +76,47 @@ let test_worker_config_missing_openai () =
             (String.is_substring (Error.to_string_hum err)
                ~substring:"OPENAI_API_KEY"))
 
+let test_worker_config_batch_size_defaults () =
+  with_env
+    [
+      ("DATABASE_URL", Some "postgres://localhost/db");
+      ("OPENAI_API_KEY", Some "abc");
+      ("CHESSMATE_WORKER_BATCH_SIZE", None);
+    ]
+    (fun () ->
+      match Config.Worker.load () with
+      | Error err ->
+          failf "unexpected worker config failure: %s" (Error.to_string_hum err)
+      | Ok config -> check int "default batch size" 16 config.batch_size)
+
+let test_worker_config_batch_size_override () =
+  with_env
+    [
+      ("DATABASE_URL", Some "postgres://localhost/db");
+      ("OPENAI_API_KEY", Some "abc");
+      ("CHESSMATE_WORKER_BATCH_SIZE", Some "32");
+    ]
+    (fun () ->
+      match Config.Worker.load () with
+      | Error err ->
+          failf "unexpected worker config failure: %s" (Error.to_string_hum err)
+      | Ok config -> check int "override batch size" 32 config.batch_size)
+
+let test_worker_config_batch_size_invalid () =
+  with_env
+    [
+      ("DATABASE_URL", Some "postgres://localhost/db");
+      ("OPENAI_API_KEY", Some "abc");
+      ("CHESSMATE_WORKER_BATCH_SIZE", Some "0");
+    ]
+    (fun () ->
+      match Config.Worker.load () with
+      | Ok _ -> fail "expected batch size validation failure"
+      | Error err ->
+          check bool "mentions env" true
+            (String.is_substring (Error.to_string_hum err)
+               ~substring:"CHESSMATE_WORKER_BATCH_SIZE"))
+
 let test_cli_guard_limit () =
   with_env
     [ ("CHESSMATE_MAX_PENDING_EMBEDDINGS", Some "500000") ]
@@ -114,6 +155,12 @@ let suite =
       test_api_config_missing_database;
     test_case "worker config requires openai key" `Quick
       test_worker_config_missing_openai;
+    test_case "worker config batch size defaults" `Quick
+      test_worker_config_batch_size_defaults;
+    test_case "worker config batch size override" `Quick
+      test_worker_config_batch_size_override;
+    test_case "worker config batch size invalid" `Quick
+      test_worker_config_batch_size_invalid;
     test_case "cli guard limit parses" `Quick test_cli_guard_limit;
     test_case "cli guard limit disables" `Quick test_cli_guard_limit_disable;
     test_case "cli guard limit detects invalid" `Quick

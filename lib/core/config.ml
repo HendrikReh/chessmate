@@ -263,9 +263,17 @@ module Worker = struct
     database_url : string;
     openai_api_key : string;
     openai_endpoint : string;
+    batch_size : int;
   }
 
   let default_endpoint = "https://api.openai.com/v1/embeddings"
+  let default_batch_size = 16
+
+  let load_batch_size () =
+    match Helpers.optional "CHESSMATE_WORKER_BATCH_SIZE" with
+    | None -> Or_error.return default_batch_size
+    | Some raw when String.is_empty raw -> Or_error.return default_batch_size
+    | Some raw -> Helpers.parse_positive_int "CHESSMATE_WORKER_BATCH_SIZE" raw
 
   let load () =
     match Helpers.require "DATABASE_URL" with
@@ -273,13 +281,18 @@ module Worker = struct
     | Ok database_url -> (
         match Helpers.require "OPENAI_API_KEY" with
         | Error err -> Error err
-        | Ok openai_api_key ->
+        | Ok openai_api_key -> (
             let openai_endpoint =
               Option.value
                 (Helpers.optional "OPENAI_EMBEDDING_ENDPOINT")
                 ~default:default_endpoint
             in
-            Or_error.return { database_url; openai_api_key; openai_endpoint })
+            match load_batch_size () with
+            | Error err -> Error err
+            | Ok batch_size ->
+                Or_error.return
+                  { database_url; openai_api_key; openai_endpoint; batch_size })
+        )
 end
 
 module Cli = struct

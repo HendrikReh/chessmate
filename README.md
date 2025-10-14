@@ -178,6 +178,10 @@ data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
 
 When any of these variables change, restart API/CLI sessions so the lazy client picks up the new configuration. The API/CLI prints telemetry lines prefixed with `[agent-telemetry]` containing the sanitized question, candidate counts, latency, token usage, and any cost estimates.
 
+### Embedding Worker Configuration
+- `OPENAI_EMBEDDING_ENDPOINT`: optional override for the embeddings API endpoint (defaults to `https://api.openai.com/v1/embeddings`).
+- `CHESSMATE_WORKER_BATCH_SIZE`: optional positive integer controlling how many jobs the worker claims per poll (defaults to `16`). Use lower values to reduce peak load or higher values to improve throughput when resources allow.
+
 ### CLI Usage
 Example CLI session (assuming Postgres is running locally):
 ```sh
