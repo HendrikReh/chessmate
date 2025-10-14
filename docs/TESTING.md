@@ -42,6 +42,28 @@ Inspect API logs for `[agent-telemetry]` JSON entries with candidate counts, lat
 
 ---
 
+### 4a. Prometheus Label Escaping Check
+This manual probe verifies that oddball request paths cannot break the `/metrics` endpoint.
+
+1. **Pre-req**: API running locally (see §2). Use a fresh shell with `eval "$(opam env --set-switch)"`.
+2. **Trigger a weird route**:
+   ```sh
+   curl -sS -o /dev/null -w "%{http_code}\n" -g "http://localhost:8080/metrics%22bad%5Cname"
+   ```
+   `curl` percent-encodes reserved characters, so the middleware records the literal `GET /metrics%22bad%5Cname`. A `404` status is normal—the router only exposes `/metrics`.
+3. **Send a raw-path request** (to exercise true quotes/backslashes):
+   ```sh
+   printf 'GET /metrics"bad\\name HTTP/1.1\r\nHost: localhost:8080\r\n\r\n' | nc -N localhost 8080
+   ```
+   On GNU `nc`, use `-q 1` instead of `-N`. The server replies with `404` (only `/metrics` exists), but the middleware still records the literal path containing `"` and `\`.
+4. **Inspect metrics output**:
+   ```sh
+   curl -s http://localhost:8080/metrics | grep 'api_request_total{route='
+   ```
+   Expect to see the route surfaced as `api_request_total{route="GET /metrics\"bad\\name"}` (note the escaped quote and backslash). If the line is missing or contains raw `"`/`\`, the escape helper regressed.
+
+---
+
 ## 5. Redis Cache Behaviour
 Repeat the query. On second run, logs should show cache hits (no fresh GPT-5 call). Optional: `redis-cli --scan --pattern 'chessmate:agent:*'` to inspect stored keys.
 

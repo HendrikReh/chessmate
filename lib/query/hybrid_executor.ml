@@ -22,6 +22,7 @@
 open! Base
 module Agent_eval = Agent_evaluator
 module GPT = Agents_gpt5_client
+module Api_metrics = Api_metrics
 
 let phases_from_plan plan =
   plan.Query_intent.filters
@@ -301,12 +302,14 @@ let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
                           ~f:(fun (cache_hits, missing) (summary, pgn, key) ->
                             match Agent_cache.find cache key with
                             | Some eval ->
+                                Api_metrics.record_agent_cache_hit ();
                                 let cache_hits =
                                   Map.set cache_hits
                                     ~key:summary.Repo_postgres.id ~data:eval
                                 in
                                 (cache_hits, missing)
                             | None ->
+                                Api_metrics.record_agent_cache_miss ();
                                 (cache_hits, (summary, pgn, key) :: missing))
                   in
                   let cached_messages =

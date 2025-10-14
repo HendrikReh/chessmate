@@ -32,6 +32,7 @@ module Usage = Agents_gpt5_client.Usage
 module Response = Agents_gpt5_client.Response
 module Response_items = Agent_response
 module Telemetry = Agent_telemetry
+module Api_metrics = Api_metrics
 
 type evaluation = {
   game_id : int;
@@ -175,12 +176,14 @@ let evaluate ~client ~plan ~candidates ~timeout_seconds =
         }
     in
     let response_format = Response_format.Json_schema response_schema in
+    let response_result =
+      Agents_gpt5_client.generate client ~reasoning_effort:effort ?verbosity
+        ~response_format ?timeout_seconds
+        [ system_message; user_message ]
+    in
+    let latency_ms = (Unix.gettimeofday () -. started_at) *. 1000.0 in
     let* response =
-      match
-        Agents_gpt5_client.generate client ~reasoning_effort:effort ?verbosity
-          ~response_format ?timeout_seconds
-          [ system_message; user_message ]
-      with
+      match response_result with
       | Ok response -> Or_error.return response
       | Error err ->
           let err =
@@ -194,10 +197,16 @@ let evaluate ~client ~plan ~candidates ~timeout_seconds =
                        seconds)
             | _ -> err
           in
+          Api_metrics.record_agent_evaluation ~success:false ~latency_ms;
           Error err
     in
-    let latency_ms = (Unix.gettimeofday () -. started_at) *. 1000.0 in
-    let* parsed = Response_items.parse response.Response.content in
+    let* parsed =
+      match Response_items.parse response.Response.content with
+      | Ok parsed -> Or_error.return parsed
+      | Error err ->
+          Api_metrics.record_agent_evaluation ~success:false ~latency_ms;
+          Error err
+    in
     let evaluations =
       List.map parsed ~f:(fun item ->
           {
@@ -209,6 +218,7 @@ let evaluate ~client ~plan ~candidates ~timeout_seconds =
             usage = Some response.Response.usage;
           })
     in
+    Api_metrics.record_agent_evaluation ~success:true ~latency_ms;
     Telemetry.log ~plan ~candidate_count ~evaluated:(List.length evaluations)
       ~effort ~latency_ms ~usage:response.Response.usage;
     Or_error.return evaluations

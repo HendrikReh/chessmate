@@ -38,7 +38,7 @@ docker compose exec postgres psql -U chess -c "ALTER ROLE chess WITH CREATEDB;"
 | `dune exec -- services/api/chessmate_api.exe --port 8080` | Start the query API. Logs include rate-limiter quota and Qdrant bootstrap status. |
 | `OPENAI_API_KEY=... dune exec -- embedding_worker -- --workers N --poll-sleep 1.0 --exit-after-empty 3` | Run embedding worker loops. Adjust `N` gradually; monitor queue via `scripts/embedding_metrics.sh --interval 120`. |
 | `dune exec chessmate -- query "..."` | CLI queries; add `--json` for raw payloads. Prints `[health] ...` lines before execution. |
-| `curl http://localhost:8080/metrics` | Inspect Prometheus gauges/counters (Caqti pool, rate limiter, etc.). |
+| `curl http://localhost:8080/metrics` | Inspect Prometheus gauges/counters (DB pool usage, per-route latency histograms, agent cache stats, rate limiter). |
 | `curl http://localhost:8080/openapi.yaml` | Retrieve the OpenAPI spec (override path with `CHESSMATE_OPENAPI_SPEC`). |
 
 Upcoming `/health` JSON endpoint will surface per-dependency status for API and worker.
@@ -57,9 +57,9 @@ Exercises ingest → embedding pipeline → hybrid query. Vector hits are stubbe
 
 ## 5. Runtime Operations
 - **Health checks**: `curl /health` (planned structured JSON), `pg_isready`, `curl http://qdrant:6333/healthz`, `redis-cli PING`.
-- **Metrics**: `/metrics` for DB pool usage, rate limits, (future) dependency status and agent timeouts.
+- **Metrics**: `/metrics` now exposes DB pool usage, per-route latency/error histograms (`api_request_latency_ms_pXX{route="..."}`), agent cache hit/miss totals, circuit breaker state, and rate limiter counters. Dependency probes arrive with GH-011.
 - **Rate limiter**: 429 responses include `Retry-After`. Tune `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` (and optional `..._BUCKET_SIZE`) as needed during load tests.
-- **Embedding queue monitoring**: `scripts/embedding_metrics.sh --interval 120` (processed, pending, ETA). Worker quits automatically if `--exit-after-empty` is set.
+- **Embedding queue monitoring**: `scripts/embedding_metrics.sh --interval 120` (processed, pending, ETA). Worker quits automatically if `--exit-after-empty` is set. Jobs/minute and characters/sec are also written to the optional `CHESSMATE_WORKER_METRICS_PATH` textfile for Prometheus textfile scraping.
 - **Graceful shutdown**: API/worker handle SIGINT/SIGTERM; look for `[shutdown]` logs confirming clean exit.
 
 ---

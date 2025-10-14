@@ -43,6 +43,71 @@ let record_result stats ~failed =
   if failed then stats.failed <- stats.failed + 1;
   Stdlib.Mutex.unlock stats_lock
 
+type worker_metrics = {
+  start_time : float;
+  mutable processed : int;
+  mutable failed : int;
+  mutable fen_chars : float;
+}
+
+let worker_metrics =
+  {
+    start_time = Unix.gettimeofday ();
+    processed = 0;
+    failed = 0;
+    fen_chars = 0.0;
+  }
+
+let worker_metrics_lock = Stdlib.Mutex.create ()
+let metrics_path = Stdlib.Sys.getenv_opt "CHESSMATE_WORKER_METRICS_PATH"
+
+let write_metrics_file ~processed ~failed ~jobs_per_min ~chars_per_sec =
+  match metrics_path with
+  | None -> ()
+  | Some path -> (
+      try
+        let body =
+          Printf.sprintf
+            "embedding_jobs_processed_total %d\n\
+             embedding_jobs_failed_total %d\n\
+             embedding_worker_jobs_per_min %.6f\n\
+             embedding_worker_characters_per_sec %.6f\n"
+            processed failed jobs_per_min chars_per_sec
+        in
+        Stdio.Out_channel.write_all path ~data:body
+      with exn ->
+        warn
+          (Printf.sprintf "failed to write metrics file %s: %s" path
+             (Exn.to_string exn)))
+
+let snapshot_metrics () =
+  Stdlib.Mutex.lock worker_metrics_lock;
+  let processed = worker_metrics.processed in
+  let failed = worker_metrics.failed in
+  let fen_chars = worker_metrics.fen_chars in
+  let start_time = worker_metrics.start_time in
+  Stdlib.Mutex.unlock worker_metrics_lock;
+  let elapsed = Float.max 0.001 (Unix.gettimeofday () -. start_time) in
+  let jobs_per_min = Float.of_int processed /. (elapsed /. 60.) in
+  let chars_per_sec = fen_chars /. elapsed in
+  (processed, failed, jobs_per_min, chars_per_sec)
+
+let update_worker_metrics ~failed ~fen_length =
+  Stdlib.Mutex.lock worker_metrics_lock;
+  worker_metrics.processed <- worker_metrics.processed + 1;
+  if failed then worker_metrics.failed <- worker_metrics.failed + 1;
+  worker_metrics.fen_chars <- worker_metrics.fen_chars +. fen_length;
+  let processed = worker_metrics.processed in
+  let failed_count = worker_metrics.failed in
+  let start_time = worker_metrics.start_time in
+  let fen_chars = worker_metrics.fen_chars in
+  Stdlib.Mutex.unlock worker_metrics_lock;
+  let elapsed = Float.max 0.001 (Unix.gettimeofday () -. start_time) in
+  let jobs_per_min = Float.of_int processed /. (elapsed /. 60.) in
+  let chars_per_sec = fen_chars /. elapsed in
+  write_metrics_file ~processed ~failed:failed_count ~jobs_per_min
+    ~chars_per_sec
+
 type exit_condition = {
   limit : int option;
   mutable empty_streak : int;
@@ -143,6 +208,11 @@ let mark_announced exit_condition =
   first
 
 let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
+  let mark_completion ~failed =
+    let fen_length = Float.of_int (String.length job.fen) in
+    update_worker_metrics ~failed ~fen_length;
+    record_result stats ~failed
+  in
   match Embedding_client.embed_fens embedding_client [ job.fen ] with
   | Error err ->
       let message = sanitize_error err in
@@ -156,7 +226,7 @@ let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
             (Printf.sprintf "job %d failed to persist failure state: %s" job.id
                (sanitize_error persist_err)));
       error ?label (Printf.sprintf "job %d failed: %s" job.id message);
-      record_result stats ~failed:true
+      mark_completion ~failed:true
   | Ok [] ->
       let message = "embedding client returned no vectors" in
       let mark_result =
@@ -169,7 +239,7 @@ let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
             (Printf.sprintf "job %d failed to persist failure state: %s" job.id
                (sanitize_error persist_err)));
       error ?label (Printf.sprintf "job %d failed: %s" job.id message);
-      record_result stats ~failed:true
+      mark_completion ~failed:true
   | Ok (vector :: _ as embeddings) -> (
       if List.length embeddings > 1 then
         warn ?label
@@ -191,7 +261,7 @@ let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
                    job.id
                    (sanitize_error persist_err)));
           error ?label (Printf.sprintf "job %d failed: %s" job.id message);
-          record_result stats ~failed:true
+          mark_completion ~failed:true
       | Ok context -> (
           let payload =
             context.Repo_postgres.json
@@ -209,7 +279,7 @@ let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
               with
               | Ok () ->
                   log ?label (Printf.sprintf "job %d completed" job.id);
-                  record_result stats ~failed:false
+                  mark_completion ~failed:false
               | Error err ->
                   let message = sanitize_error err in
                   let mark_result =
@@ -225,7 +295,7 @@ let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
                            (sanitize_error persist_err)));
                   error ?label
                     (Printf.sprintf "job %d failed: %s" job.id message);
-                  record_result stats ~failed:true)
+                  mark_completion ~failed:true)
           | Error err ->
               let message = sanitize_error err in
               let mark_result =
@@ -239,7 +309,7 @@ let process_job repo embedding_client ~label stats (job : Embedding_job.t) =
                        job.id
                        (sanitize_error persist_err)));
               error ?label (Printf.sprintf "job %d failed: %s" job.id message);
-              record_result stats ~failed:true))
+              mark_completion ~failed:true))
 
 let default_batch_size = 16
 let jobs_per_batch = ref default_batch_size
@@ -391,9 +461,12 @@ let run () =
             warn (Exn.to_string exn);
             force_stop exit_condition);
         let elapsed = Unix.gettimeofday () -. start_time in
+        let _, _, jobs_per_min, chars_per_sec = snapshot_metrics () in
         log
-          (Printf.sprintf "summary: processed=%d failures=%d duration=%.2fs"
-             stats.processed stats.failed elapsed))
+          (Printf.sprintf
+             "summary: processed=%d failures=%d duration=%.2fs \
+              jobs_per_min=%.2f chars_per_sec=%.2f"
+             stats.processed stats.failed elapsed jobs_per_min chars_per_sec))
       else (
         log
           (Printf.sprintf
@@ -427,8 +500,11 @@ let run () =
            List.iter threads ~f:(fun thread ->
                try Thread.join thread with _ -> ()));
         let elapsed = Unix.gettimeofday () -. start_time in
+        let _, _, jobs_per_min, chars_per_sec = snapshot_metrics () in
         log
-          (Printf.sprintf "summary: processed=%d failures=%d duration=%.2fs"
-             stats.processed stats.failed elapsed))
+          (Printf.sprintf
+             "summary: processed=%d failures=%d duration=%.2fs \
+              jobs_per_min=%.2f chars_per_sec=%.2f"
+             stats.processed stats.failed elapsed jobs_per_min chars_per_sec))
 
 let () = run ()

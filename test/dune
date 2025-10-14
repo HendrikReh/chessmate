@@ -10,6 +10,7 @@
   test_config
   test_embedding_client
   test_openai_common
+  test_api_metrics
   test_integration_support
   test_integration
   test_sql_filters

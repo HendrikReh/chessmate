@@ -23,6 +23,7 @@
 open! Base
 open Chessmate
 open Opium.Std
+module Api_metrics = Api_metrics
 
 module Result = struct
   type t = Hybrid_executor.result
@@ -393,6 +394,30 @@ let openapi_handler _req =
                  ^ Sanitizer.sanitize_string message) );
            ])
 
+let request_metrics_middleware =
+  Rock.Middleware.create ~name:"request-metrics" ~filter:(fun handler req ->
+      let start = Unix.gettimeofday () in
+      let method_name = Cohttp.Code.string_of_method (Request.meth req) in
+      let path = Uri.path (Request.uri req) in
+      let route =
+        if String.is_empty path then method_name ^ " /"
+        else method_name ^ " " ^ path
+      in
+      Lwt.catch
+        (fun () ->
+          handler req
+          |> Lwt.map (fun response ->
+                 let latency_ms = (Unix.gettimeofday () -. start) *. 1000.0 in
+                 let status =
+                   response |> Rock.Response.code |> Cohttp.Code.code_of_status
+                 in
+                 Api_metrics.record_request ~route ~latency_ms ~status;
+                 response))
+        (fun exn ->
+          let latency_ms = (Unix.gettimeofday () -. start) *. 1000.0 in
+          Api_metrics.record_request ~route ~latency_ms ~status:500;
+          Lwt.fail exn))
+
 let health_handler _req = respond_plain_text "ok"
 
 let metrics_handler _req =
@@ -415,6 +440,8 @@ let metrics_handler _req =
           Printf.sprintf "db_pool_wait_ratio %.3f" wait_ratio;
         ]
       in
+      let request_metrics = Api_metrics.render () in
+      let base_metrics = base_metrics @ request_metrics in
       let all_metrics =
         match Lazy.force rate_limiter with
         | None -> base_metrics
@@ -512,7 +539,7 @@ let query_handler req =
           respond_json payload)
 
 let routes =
-  let base = App.empty in
+  let base = App.empty |> App.middleware request_metrics_middleware in
   let base =
     match Lazy.force rate_limit_middleware with
     | Some middleware -> App.middleware middleware base

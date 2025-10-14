@@ -35,8 +35,7 @@ The codebase demonstrates:
 - ✅ Comprehensive error handling with sanitization
 - ✅ Good separation of concerns (pure chess logic isolated from IO)
 - ✅ Extensive documentation and runbooks
-- ⚠️ Some modules missing `.mli` interface files
-- ⚠️ Minor inconsistencies in copyright headers
+- ✅ Public modules now expose `.mli` interfaces and share a consistent GPL header template
 
 ### Critical Issues Identified
 | Priority | Issue | Location | Risk |
@@ -50,6 +49,37 @@ The codebase demonstrates:
 | 🟠 Medium | Embedding model hard-coded | `lib/embedding/embedding_client.ml:85` | Can't switch to newer models |
 | 🟠 Medium | Qdrant retry config hard-coded | `services/embedding_worker/embedding_worker.ml:109-112` | Inconsistent with OpenAI retry pattern |
 | 🟠 Medium | Request body size unlimited | `services/api/chessmate_api.ml` | Potential DoS vector |
+| 🟢 Addressed | Public modules lacking `.mli` interfaces | repo-wide | Resolved; `.mli` coverage complete |
+
+---
+
+## Implementation Plan & Issue IDs
+
+| Issue ID | Phase | Title | Priority | Status |
+| --- | --- | --- | --- | --- |
+| GH-001 | Phase 0 | Fix rate limiter race condition | Critical | ✅ Completed (2025-10-13) |
+| GH-002 | Phase 0 | Implement agent evaluation timeout | Critical | ✅ Completed (2025-10-13) |
+| GH-003 | Phase 0 | Validate worker batch size | Critical | ✅ Completed (2025-10-13) |
+| GH-004 | Phase 0 | Audit SQL injection risks | Critical | ✅ Completed (2025-10-13) |
+| GH-010 | Phase 1 | Prometheus metrics expansion | High | ✅ Completed (2025-10-14) |
+| GH-011 | Phase 1 | Deep health checks | High | Open |
+| GH-012 | Phase 1 | Agent circuit breaker | High | Open |
+| GH-013 | Phase 1 | Query pagination support | High | Open |
+| GH-020 | Phase 2 | Configuration enhancements | Medium | Open |
+| GH-021 | Phase 2 | Request security hardening | Medium | Open |
+| GH-022 | Phase 2 | Module interface completeness | Medium | ✅ Completed (2025-10-13) |
+| GH-023 | Phase 2 | Copyright header standardization | Medium | Open |
+| GH-024 | Phase 2 | Temp file cleanup hardening | Medium | Open |
+| GH-025 | Phase 2 | Worker health endpoint | Medium | Open |
+| GH-030 | Phase 3 | Enhanced test coverage | Medium-Low | Open |
+| GH-031 | Phase 3 | Documentation infrastructure | Medium-Low | Open |
+| GH-032 | Phase 3 | Bootstrap script improvements | Medium-Low | Open |
+| GH-033 | Phase 3 | Operational runbooks | Medium-Low | Open |
+| GH-040 | Phase 4 | Performance optimizations | Low | Open |
+| GH-041 | Phase 4 | Enhanced load testing | Low | Open |
+| GH-042 | Phase 4 | Embedding collection management | Low | Open |
+
+_See `docs/roadmap_issues_v5.md` for full issue descriptions, acceptance criteria, and suggested GitHub metadata._
 
 ---
 
@@ -58,44 +88,42 @@ The codebase demonstrates:
 ### Phase 0 – Critical Bug Fixes (NEW)
 **Priority: Immediate** | **ETA: ~8h**
 
-1. **Fix rate limiter race condition** (ETA: ~2h)
+1. **Fix rate limiter race condition** (GH-001, ETA: ~2h) **— ✅ Completed**
    - **Issue**: `Hashtbl.filteri_inplace` in `prune_if_needed` can conflict with concurrent `ensure_bucket` calls
    - **Location**: `lib/api/rate_limiter.ml:77`
    - **Fix**: Hold mutex for entire prune operation or redesign with immutable data structures
-   - **Test**: Add concurrent access test simulating multiple IPs under load
+   - **Done**: Introduced `with_lock` helper, ensured pruning occurs under the mutex, and replaced in-place filtering with a safe removal pass.
+   - **Verification**: `dune runtest --no-buffer`
 
-2. **Implement agent evaluation timeout** (ETA: ~4h)
-   - **Issue**: GPT-5 calls lack timeout, blocking query pipeline
-   - **Location**: `lib/query/agent_evaluator.ml:164`
-   - **Fix**: Wrap `Agents_gpt5_client.generate` with `Lwt_unix.with_timeout`
-   - **Config**: Add `AGENT_REQUEST_TIMEOUT_SECONDS` (default: 15s)
-   - **Fallback**: Return heuristic-only results with warning in JSON response
-   - **Test**: Simulate slow agent responses and verify timeout behavior
+2. **Implement agent evaluation timeout** (GH-002, ETA: ~4h) **— ✅ Completed**
+   - **Issue**: GPT-5 calls lacked a timeout, blocking the query pipeline
+   - **Location**: `lib/query/agent_evaluator.ml`, `lib/agents/agents_gpt5_client.ml`
+   - **Fix**: Added `AGENT_REQUEST_TIMEOUT_SECONDS` (default 15s), plumbed the value through `Config.Api`, and enforced it via curl's `--max-time` with friendly timeout messaging
+   - **Fallback**: Timeouts surface as warnings and the executor falls back to heuristic scoring
+   - **Verification**: `dune runtest --no-buffer`
 
-3. **Validate worker batch size** (ETA: ~1h)
+3. **Validate worker batch size** (GH-003, ETA: ~1h) **— ✅ Completed**
    - **Issue**: Hard-coded 16-job batch could exceed limits during shutdown
-   - **Location**: `services/embedding_worker/embedding_worker.ml:248`
-   - **Fix**: Add `CHESSMATE_WORKER_BATCH_SIZE` env var with validation
-   - **Test**: Verify batch size respected under various exit conditions
+   - **Location**: `services/embedding_worker/embedding_worker.ml`
+   - **Fix**: Added `CHESSMATE_WORKER_BATCH_SIZE` with config validation, CLI flag, and runtime safety checks; worker logs now report the effective batch size.
+   - **Verification**: `dune runtest --no-buffer`
 
-4. **Audit SQL injection risks** (ETA: ~1h)
+4. **Audit SQL injection risks** (GH-004, ETA: ~1h) **— ✅ Completed**
    - **Task**: Review all Caqti query construction for proper parameterization
-   - **Focus**: `lib/storage/repo_postgres_caqti.ml` and dynamic SQL building
-   - **Expected**: No issues (Caqti enforces parameterization), but verify
+   - **Outcome**: Confirmed dynamic query builder only emits whitelisted clauses, added support for vector filters without string interpolation, and left the rest of the codebase parameterised
+   - **Verification**: `dune runtest --no-buffer`
 
 ### Phase 1 – High Priority Infrastructure
 **Priority: Before production rollout** | **ETA: ~40h**
 
-1. **Prometheus metrics expansion** (ETA: ~14h)
-   - Instrument request latency histograms (p50, p95, p99)
-   - Add error rate counters by endpoint and error type
-   - Track agent cache hits/misses with labels
-   - Monitor embedding throughput (jobs/minute, char/second)
-   - Introduce `lib/api/metrics` helper module for consistency
-   - Export circuit breaker state and timeout counts
-   - Add `health_dependency_status{service}` gauge for each dependency
+1. **Prometheus metrics expansion** (GH-010, ETA: ~14h) **— ✅ Completed**
+   - Instrumented request latency histograms (p50/p95/p99) and per-route error counts via the new `Api_metrics` helper.
+   - Exported agent cache hit/miss totals, evaluation statistics, and circuit breaker state placeholders.
+   - Added embedding worker metrics (jobs/minute, characters/second) with optional textfile output.
+   - Middleware now captures metrics for every API route; `/metrics` aggregates DB pool, request, agent, and rate limiter data.
+   - Updated README/operations docs to reflect the expanded metrics surface.
 
-2. **Deep health checks** (ETA: ~8h)
+2. **Deep health checks** (GH-011, ETA: ~8h)
    - Implement `lib/api/health` module with dependency probes:
      - Postgres: test query (`SELECT 1`)
      - Qdrant: `/healthz` endpoint check
@@ -118,7 +146,7 @@ The codebase demonstrates:
    - Unit tests cover success/failure paths
    - Integration tests trigger degraded state and verify fallback
 
-3. **Agent circuit breaker** (ETA: ~6h)
+3. **Agent circuit breaker** (GH-012, ETA: ~6h)
    - Track consecutive agent failures/timeouts
    - Open circuit after N failures (configurable via `AGENT_CIRCUIT_BREAKER_THRESHOLD`, default: 5)
    - Cool-off period before attempting recovery (configurable via `AGENT_CIRCUIT_BREAKER_COOLOFF_SECONDS`, default: 60s)
@@ -127,7 +155,7 @@ The codebase demonstrates:
    - JSON responses include circuit status: `{"agent": {"status": "circuit_open", "fallback": "heuristic"}}`
    - Tests simulate cascading failures and verify recovery
 
-4. **Query pagination** (ETA: ~12h)
+4. **Query pagination** (GH-013, ETA: ~12h)
    - Add `offset` and `limit` parameters to SQL queries
    - API schema accepts `offset` (default: 0) and `limit` (default: 50, max: 500)
    - CLI gains `--offset` and `--limit` flags
@@ -146,36 +174,36 @@ The codebase demonstrates:
 ### Phase 2 – Code Quality & Hardening
 **Priority: Medium** | **ETA: ~20h**
 
-1. **Configuration enhancements** (ETA: ~5h)
+1. **Configuration enhancements** (GH-020, ETA: ~5h)
    - Make embedding model configurable: `OPENAI_EMBEDDING_MODEL` (default: `text-embedding-3-small`)
    - Extract Qdrant retry config to use `Common.retry_config` pattern
    - Add `CHESSMATE_WORKER_DB_POOL_SIZE` separate from API pool
    - Make agent candidate limits configurable: `AGENT_CANDIDATE_MULTIPLIER`, `AGENT_CANDIDATE_MAX`
    - Validate Qdrant collection name matches `[a-zA-Z0-9_-]+`
 
-2. **Request security hardening** (ETA: ~4h)
+2. **Request security hardening** (GH-021, ETA: ~4h)
    - Add Opium middleware for max request body size (default: 1MB)
    - Configure via `CHESSMATE_MAX_REQUEST_BODY_BYTES`
    - Return 413 Payload Too Large for violations
    - Add rate limit by body size (e.g., no more than 10MB/minute per IP)
 
-3. **Module interface completeness** (ETA: ~6h)
+3. **Module interface completeness** (GH-022, ✅ Completed Oct 2025)
    - Add `.mli` files for all public modules missing explicit interfaces
    - Focus on `lib/query/*`, `lib/storage/*`, `lib/chess/*`
    - Document public API contracts with module-level docstrings
    - Run `dune build @doc` and verify generated documentation
 
-4. **Copyright header standardization** (ETA: ~1h)
+4. **Copyright header standardization** (GH-023, ETA: ~1h)
    - Audit all source files for consistent GPL v3 headers
    - Fix shortened header in `lib/query/agent_evaluator.ml:3`
    - Add pre-commit hook to verify headers on new files
 
-5. **Temp file cleanup hardening** (ETA: ~2h)
+5. **Temp file cleanup hardening** (GH-024, ETA: ~2h)
    - Register embedding client temp files with `at_exit` handler
    - Use `Filename.temp_dir_name` for proper OS-specific temp directory
    - Add signal handlers to clean temp files on SIGTERM/SIGINT
 
-6. **Worker health endpoint** (ETA: ~2h)
+6. **Worker health endpoint** (GH-025, ETA: ~2h)
    - Add lightweight HTTP server to worker for `/health` and `/metrics`
    - Bind to `CHESSMATE_WORKER_HEALTH_PORT` (default: 8081)
    - Report worker-specific metrics: jobs processed, failures, queue depth
@@ -183,14 +211,14 @@ The codebase demonstrates:
 ### Phase 3 – Testing & Documentation
 **Priority: Medium-Low** | **ETA: ~18h**
 
-1. **Enhanced test coverage** (ETA: ~10h)
+1. **Enhanced test coverage** (GH-030, ETA: ~10h)
    - Integration test for rate limiter (actual API endpoint under load)
    - Load test scenarios with agent evaluation enabled
    - Chaos engineering tests: simulate Qdrant/Postgres/Redis failures
    - Test circuit breaker recovery under various failure patterns
    - Test pagination edge cases (empty results, offset > total)
 
-2. **Documentation infrastructure** (ETA: ~4h)
+2. **Documentation infrastructure** (GH-031, ETA: ~4h)
    - Create `docs/ADR/` directory with template (per GUIDELINES.md)
    - Create `docs/INCIDENTS/` directory with incident report template
    - Document key architectural decisions:
@@ -199,13 +227,13 @@ The codebase demonstrates:
      - ADR-003: Token bucket rate limiting approach
      - ADR-004: Caqti migration for SQL safety
 
-3. **Bootstrap script improvements** (ETA: ~2h)
+3. **Bootstrap script improvements** (GH-032, ETA: ~2h)
    - Add retry logic for `docker compose up` (wait for services)
    - Verify Postgres/Qdrant/Redis health after startup
    - Print clear error messages if services fail to start
    - Add `--skip-tests` flag for faster iteration
 
-4. **Operational runbooks** (ETA: ~2h)
+4. **Operational runbooks** (GH-033, ETA: ~2h)
    - Document circuit breaker recovery procedures
    - Add runbook for agent evaluation timeouts
    - Create incident response checklist
@@ -214,19 +242,19 @@ The codebase demonstrates:
 ### Phase 4 – Optimizations & Enhancements
 **Priority: Low** | **ETA: ~16h**
 
-1. **Performance optimizations** (ETA: ~8h)
+1. **Performance optimizations** (GH-040, ETA: ~8h)
    - Cache `rating_matches` result in `hybrid_executor` to avoid duplicate checks
    - Optimize tokenization in `hybrid_executor.ml:98-101` (single-pass)
    - Profile agent evaluation path and optimize hot loops
    - Consider connection pooling for curl-based HTTP calls
 
-2. **Enhanced load testing** (ETA: ~4h)
+2. **Enhanced load testing** (GH-041, ETA: ~4h)
    - Add alert threshold configurations to load test script
    - Test various agent/vector/keyword weighting scenarios
    - Benchmark embedding worker throughput under different concurrency levels
    - Document performance baselines and regression thresholds
 
-3. **Embedding collection management** (ETA: ~4h)
+3. **Embedding collection management** (GH-042, ETA: ~4h)
    - Support snapshot/versioning of Qdrant collections for reindexing
    - Add CLI command: `chessmate collection snapshot --name <name>`
    - Add CLI command: `chessmate collection restore --snapshot <id>`
@@ -245,7 +273,9 @@ The codebase demonstrates:
 - **Impact**: Data corruption, incorrect rate limiting under high concurrency
 - **Root Cause**: Mutex released before pruning completes
 - **Fix Strategy**: Hold mutex during entire prune or use lock-free data structure
-- **Test Plan**: Concurrent access test with 100+ threads hammering rate limiter
+- **Implementation**: Added `with_lock` helper, converted pruning to a two-phase removal under the mutex, and ensured all callers use the shared lock helper.
+- **Test Plan**: `dune runtest --no-buffer`
+- **GitHub Issue**: GH-001 (Status: Closed – resolved in v0.6.3 cycle)
 
 #### BUG-002: Missing Agent Timeout
 - **Severity**: Critical
@@ -253,9 +283,9 @@ The codebase demonstrates:
 - **Description**: GPT-5 agent calls lack timeout mechanism, can block query pipeline indefinitely
 - **Impact**: Single slow agent response wedges entire query processing
 - **Root Cause**: No timeout wrapper around `Agents_gpt5_client.generate`
-- **Fix Strategy**: Wrap with `Lwt_unix.with_timeout`, implement fallback to heuristic scoring
-- **Config**: `AGENT_REQUEST_TIMEOUT_SECONDS` (default: 15)
-- **Test Plan**: Mock slow agent responses, verify timeout and fallback behavior
+- **Fix Strategy**: Enforce curl `--max-time` via `AGENT_REQUEST_TIMEOUT_SECONDS`, propagate config through `Agent_evaluator`, and emit warnings when the agent times out so heuristic scoring is used instead
+- **Status**: ✅ Completed (GH-002 closed)
+- **Verification**: `dune runtest --no-buffer`
 
 #### BUG-003: Worker Batch Size Unbounded
 - **Severity**: High
@@ -264,16 +294,27 @@ The codebase demonstrates:
 - **Impact**: Could claim more jobs than worker can process during shutdown
 - **Root Cause**: No configuration or validation of batch size
 - **Fix Strategy**: Add `CHESSMATE_WORKER_BATCH_SIZE` env var with validation
-- **Test Plan**: Verify batch size respected under exit-after-empty conditions
+- **Status**: ✅ Completed (GH-003 closed)
+- **Verification**: `dune runtest --no-buffer`
+
+#### BUG-004: SQL Injection Audit
+- **Severity**: Critical
+- **File**: `lib/storage/repo_postgres_caqti.ml` (and other repository modules)
+- **Description**: Need a one-time audit confirming all SQL paths remain parameterized after recent Caqti migration
+- **Impact**: Undetected dynamic SQL string concatenation could reintroduce injection risk
+- **Root Cause**: Legacy helper functions may bypass Caqti’s safe APIs
+- **Fix Strategy**: Review codebase for raw SQL fragments, ensure dynamic filters use whitelisted fields, and tidy the vector-only filter handling without string interpolation
+- **Status**: ✅ Completed (GH-004 closed)
+- **Verification**: `dune runtest --no-buffer`
 
 ### High Priority Issues (Phase 1)
 
-#### ISSUE-001: Sparse Metrics
+#### ISSUE-001: Sparse Metrics _(Closed)_
 - **Severity**: High
 - **Description**: No request latency histograms, limited error tracking
 - **Impact**: Cannot detect performance degradation or diagnose slowdowns
-- **ETA**: 14h
-- **Dependencies**: None
+- **Outcome**: Addressed via GH-010 – API middleware now records per-route latency histograms/error counts, and `/metrics` exposes the aggregated series alongside agent data.
+- **Verification**: `dune runtest --no-buffer`
 
 #### ISSUE-002: Missing Health Endpoint
 - **Severity**: High
@@ -281,6 +322,7 @@ The codebase demonstrates:
 - **Impact**: Poor operational visibility, can't integrate with monitoring systems
 - **ETA**: 8h
 - **Dependencies**: None
+- **GitHub Issue**: GH-011 (Status: Open)
 
 #### ISSUE-003: No Query Pagination
 - **Severity**: High
@@ -288,6 +330,7 @@ The codebase demonstrates:
 - **Impact**: OOM risk for queries matching thousands of games
 - **ETA**: 12h
 - **Dependencies**: None
+- **GitHub Issue**: GH-013 (Status: Open)
 
 #### ISSUE-004: No Circuit Breaker
 - **Severity**: High
@@ -295,6 +338,7 @@ The codebase demonstrates:
 - **Impact**: One flaky agent endpoint can degrade entire service
 - **ETA**: 6h
 - **Dependencies**: BUG-002 (agent timeout)
+- **GitHub Issue**: GH-012 (Status: Open)
 
 ### Medium Priority Issues (Phase 2)
 
@@ -304,6 +348,7 @@ The codebase demonstrates:
 - **Description**: Model fixed to `text-embedding-3-small`, can't upgrade to `-large`
 - **Impact**: Can't leverage improved embedding models without code change
 - **Fix**: Add `OPENAI_EMBEDDING_MODEL` env var
+- **GitHub Issue**: GH-020 (Status: Open)
 
 #### ISSUE-006: Qdrant Retry Config Inconsistent
 - **Severity**: Medium
@@ -311,6 +356,7 @@ The codebase demonstrates:
 - **Description**: Qdrant retries use hard-coded values, OpenAI uses config pattern
 - **Impact**: Inconsistent retry behavior, harder to tune for production
 - **Fix**: Refactor to use `Common.retry_config`
+- **GitHub Issue**: GH-021 (Status: Open)
 
 #### ISSUE-007: Request Body Size Unlimited
 - **Severity**: Medium
@@ -318,28 +364,85 @@ The codebase demonstrates:
 - **Description**: No middleware limiting request body size
 - **Impact**: Large POST bodies could DoS the service
 - **Fix**: Add Opium middleware with configurable limit
+- **GitHub Issue**: GH-021 (Status: Open)
 
 #### ISSUE-008: Missing Module Interfaces
 - **Severity**: Medium
-- **Description**: Some modules lack `.mli` files (violates GUIDELINES.md)
-- **Impact**: Harder to understand public API, risks accidental breaking changes
-- **Fix**: Add `.mli` for all public modules, document contracts
+- **Status**: ✅ Completed (2025-10-13)
+- **Description**: Audit ensured all public modules expose `.mli` files per guidelines
+- **Impact**: Improves API clarity and prevents accidental exports
+- **Follow-up**: Continue to enforce via review checklist
+- **GitHub Issue**: GH-022 (Closed)
+
+#### ISSUE-009: Temp File Cleanup Not Guaranteed
+- **Severity**: Medium
+- **File**: `lib/embedding/embedding_client.ml:133-135`
+- **Description**: If process killed during curl, temp files may leak
+- **Impact**: Disk space slowly consumed over time
+- **Fix**: Register files with `at_exit` handler and ensure signal-safe cleanup
+- **GitHub Issue**: GH-024 (Status: Open)
+
+#### ISSUE-010: Worker Health Endpoint Missing Telemetry
+- **Severity**: Medium
+- **File**: `services/embedding_worker/embedding_worker.ml`
+- **Description**: Worker lacks `/health` endpoint with per-worker metrics
+- **Impact**: Hard to monitor worker progress or detect stalls
+- **Fix**: Add lightweight HTTP server exposing health + metrics gauges
+- **GitHub Issue**: GH-025 (Status: Open)
+
+### Medium-Low Priority Issues (Phase 3)
+
+#### ISSUE-011: Enhanced Test Coverage
+- **Severity**: Medium-Low
+- **Description**: Additional integration, load, and chaos tests required to validate new infrastructure
+- **Impact**: Without coverage, regressions may ship unnoticed
+- **Fix**: Implement test scenarios enumerated in Phase 3 plan
+- **GitHub Issue**: GH-030 (Status: Open)
+
+#### ISSUE-012: Documentation Infrastructure
+- **Severity**: Medium-Low
+- **Description**: ADR and incident templates missing; operational knowledge dispersed
+- **Impact**: Slows onboarding and incident response
+- **Fix**: Create doc scaffolding and seed key ADRs/runbooks
+- **GitHub Issue**: GH-031 (Status: Open)
+
+#### ISSUE-013: Bootstrap Script Improvements
+- **Severity**: Medium-Low
+- **Description**: Current bootstrap lacks retries and helpful diagnostics
+- **Impact**: Developer onboarding friction, flaky CI bootstrap
+- **Fix**: Add retries, health validation, and CLI flags per plan
+- **GitHub Issue**: GH-032 (Status: Open)
+
+#### ISSUE-014: Operational Runbooks
+- **Severity**: Medium-Low
+- **Description**: No documented procedures for circuit breaker recovery, agent outages, or capacity planning
+- **Impact**: Increases MTTR during incidents
+- **Fix**: Author runbooks/checklists and publish in `docs/operations/`
+- **GitHub Issue**: GH-033 (Status: Open)
 
 ### Low Priority Issues (Phase 4)
 
-#### ISSUE-009: Suboptimal Vector Score Calculation
+#### ISSUE-015: Suboptimal Vector Score Calculation
 - **Severity**: Low
 - **File**: `lib/query/hybrid_executor.ml:133-142`
 - **Description**: `fallback_vector_score` recalculates `rating_matches` redundantly
 - **Impact**: Minor performance overhead on every query
 - **Fix**: Cache rating match result before branching
+- **GitHub Issue**: GH-040 (Status: Open)
 
-#### ISSUE-010: Temp File Cleanup Not Guaranteed
+#### ISSUE-016: Enhanced Load Testing
 - **Severity**: Low
-- **File**: `lib/embedding/embedding_client.ml:133-135`
-- **Description**: If process killed during curl, temp files may leak
-- **Impact**: Disk space slowly consumed over time
-- **Fix**: Register files with `at_exit` handler
+- **Description**: Load testing scripts lack alert thresholds and scenario coverage
+- **Impact**: Hard to detect regressions during performance testing
+- **Fix**: Expand load test tooling and document baseline results
+- **GitHub Issue**: GH-041 (Status: Open)
+
+#### ISSUE-017: Embedding Collection Management
+- **Severity**: Low
+- **Description**: No tooling for snapshotting/restoring Qdrant collections
+- **Impact**: Risky to reindex or migrate embeddings
+- **Fix**: Implement snapshot/restore CLI commands and document workflow
+- **GitHub Issue**: GH-042 (Status: Open)
 
 ---
 

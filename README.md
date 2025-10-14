@@ -161,7 +161,7 @@ data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
   TOOL=oha DURATION=60s CONCURRENCY=50 TARGET_URL=http://localhost:8080/query \
     scripts/load_test.sh
   ```
-- The script prints latency/throughput summary and then fetches `/metrics`; keep an eye on `db_pool_wait_ratio`. Healthy runs stay near zero—use the value to decide whether to scale Postgres pool size or API replicas. See `docs/TESTING.md` for extended guidance and troubleshooting.
+- The script prints latency/throughput summary and then fetches `/metrics`; keep an eye on `db_pool_wait_ratio`, `api_request_latency_ms_p95{route="..."}`, `agent_cache_hits_total`, and the embedding worker throughput gauges. Healthy runs keep wait ratio near zero and latency within expectations—use the values to decide whether to scale Postgres pool size or API replicas. See `docs/TESTING.md` for extended guidance and troubleshooting.
 
 ### Agent Configuration
 - `AGENT_API_KEY`: required to enable GPT-5 ranking (absent → agent disabled).
