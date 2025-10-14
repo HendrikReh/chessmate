@@ -23,6 +23,16 @@ type decision =
   | Allowed of { remaining : float }
   | Limited of { retry_after : float; remaining : float }
 
+let with_lock t f =
+  Stdlib.Mutex.lock t.mutex;
+  match f () with
+  | result ->
+      Stdlib.Mutex.unlock t.mutex;
+      result
+  | exception ex ->
+      Stdlib.Mutex.unlock t.mutex;
+      raise ex
+
 let sanitize_identifier value =
   String.map value ~f:(fun ch ->
       if
@@ -74,8 +84,12 @@ let refill_bucket t bucket now =
 let prune_if_needed t now =
   if Float.(now -. t.last_prune >= t.prune_interval) then (
     t.last_prune <- now;
-    Hashtbl.filteri_inplace t.buckets ~f:(fun ~key:_ ~data:bucket ->
-        Float.(now -. bucket.last_seen < t.idle_timeout)))
+    let stale_keys =
+      Hashtbl.fold t.buckets ~init:[] ~f:(fun ~key ~data:bucket acc ->
+          if Float.(now -. bucket.last_seen >= t.idle_timeout) then key :: acc
+          else acc)
+    in
+    List.iter stale_keys ~f:(fun key -> Hashtbl.remove t.buckets key))
 
 let ensure_bucket t ip now =
   Hashtbl.find_or_add t.buckets ip ~default:(fun () ->
@@ -89,53 +103,46 @@ let ensure_bucket t ip now =
 let check t ~remote_addr =
   let key = remote_addr |> normalize_remote_addr |> sanitize_identifier in
   let now = t.now () in
-  Stdlib.Mutex.lock t.mutex;
-  prune_if_needed t now;
-  let bucket = ensure_bucket t key now in
-  refill_bucket t bucket now;
-  bucket.last_seen <- now;
-  let decision =
-    if Float.(bucket.tokens >= 1.) then (
-      bucket.tokens <- bucket.tokens -. 1.;
-      Allowed { remaining = bucket.tokens })
-    else
-      let deficit = 1.0 -. bucket.tokens in
-      let retry_after =
-        if Float.(t.tokens_per_second = 0.) then Float.infinity
-        else deficit /. t.tokens_per_second
-      in
-      bucket.limited_count <- bucket.limited_count + 1;
-      t.total_limited := !(t.total_limited) + 1;
-      Limited { retry_after; remaining = bucket.tokens }
-  in
-  Stdlib.Mutex.unlock t.mutex;
-  decision
+  with_lock t (fun () ->
+      prune_if_needed t now;
+      let bucket = ensure_bucket t key now in
+      refill_bucket t bucket now;
+      bucket.last_seen <- now;
+      if Float.(bucket.tokens >= 1.) then (
+        bucket.tokens <- bucket.tokens -. 1.;
+        Allowed { remaining = bucket.tokens })
+      else
+        let deficit = 1.0 -. bucket.tokens in
+        let retry_after =
+          if Float.(t.tokens_per_second = 0.) then Float.infinity
+          else deficit /. t.tokens_per_second
+        in
+        bucket.limited_count <- bucket.limited_count + 1;
+        t.total_limited := !(t.total_limited) + 1;
+        Limited { retry_after; remaining = bucket.tokens })
 
 let metrics t =
   let now = t.now () in
-  Stdlib.Mutex.lock t.mutex;
-  prune_if_needed t now;
-  let per_ip_lines =
-    Hashtbl.fold t.buckets ~init:[] ~f:(fun ~key ~data acc ->
-        if data.limited_count = 0 then acc
-        else
-          let line =
-            Printf.sprintf "api_rate_limited_total{ip=\"%s\"} %d" key
-              data.limited_count
-          in
-          line :: acc)
-  in
-  let per_ip_lines = List.sort per_ip_lines ~compare:String.compare in
-  let total_line =
-    Printf.sprintf "api_rate_limited_total %d" !(t.total_limited)
-  in
-  Stdlib.Mutex.unlock t.mutex;
-  total_line :: per_ip_lines
+  with_lock t (fun () ->
+      prune_if_needed t now;
+      let per_ip_lines =
+        Hashtbl.fold t.buckets ~init:[] ~f:(fun ~key ~data acc ->
+            if data.limited_count = 0 then acc
+            else
+              let line =
+                Printf.sprintf "api_rate_limited_total{ip=\"%s\"} %d" key
+                  data.limited_count
+              in
+              line :: acc)
+      in
+      let per_ip_lines = List.sort per_ip_lines ~compare:String.compare in
+      let total_line =
+        Printf.sprintf "api_rate_limited_total %d" !(t.total_limited)
+      in
+      total_line :: per_ip_lines)
 
 let active_bucket_count t =
   let now = t.now () in
-  Stdlib.Mutex.lock t.mutex;
-  prune_if_needed t now;
-  let count = Hashtbl.length t.buckets in
-  Stdlib.Mutex.unlock t.mutex;
-  count
+  with_lock t (fun () ->
+      prune_if_needed t now;
+      Hashtbl.length t.buckets)
