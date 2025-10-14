@@ -1,0 +1,60 @@
+(*  Chessmate - Hybrid chess tutor combining Postgres metadata with Qdrant
+    vector search
+    Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*)
+
+open! Base
+open Alcotest
+open Chessmate
+
+let require_path = function
+  | Ok path -> path
+  | Error err ->
+      failf "failed to create temp file: %s" (Error.to_string_hum err)
+
+let file_exists path = Stdlib.Sys.file_exists path
+let ensure_cleanup () = Temp_file_guard.cleanup_now ()
+
+let test_create_uses_system_temp () =
+  ensure_cleanup ();
+  let path =
+    require_path
+      (Temp_file_guard.create ~prefix:"temp_guard_test" ~suffix:".tmp" ())
+  in
+  check bool "file created" true (file_exists path);
+  let dir = Stdlib.Filename.dirname path in
+  check string "uses system temp dir" (Stdlib.Filename.get_temp_dir_name ()) dir;
+  ensure_cleanup ();
+  (* cleanup should remove the file *)
+  check bool "file removed" false (file_exists path)
+
+let test_remove_unregisters () =
+  ensure_cleanup ();
+  let path =
+    require_path
+      (Temp_file_guard.create ~prefix:"temp_guard_remove" ~suffix:".tmp" ())
+  in
+  check bool "file exists before remove" true (file_exists path);
+  Temp_file_guard.remove path;
+  check bool "file removed" false (file_exists path);
+  (* cleanup should be a no-op now *)
+  ensure_cleanup ()
+
+let suite =
+  [
+    ("create files in system temp dir", `Quick, test_create_uses_system_temp);
+    ("remove unregisters tracked files", `Quick, test_remove_unregisters);
+  ]

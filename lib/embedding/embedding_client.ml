@@ -94,9 +94,16 @@ let create ~api_key ~endpoint =
     Or_error.return { api_key; endpoint; model = default_model; retry }
 
 let call_curl ~endpoint ~api_key ~body =
-  let payload_file = Stdlib.Filename.temp_file "chessmate_embedding" ".json" in
-  let response_file =
-    Stdlib.Filename.temp_file "chessmate_embedding_response" ".json"
+  let* payload_file =
+    Temp_file_guard.create ~prefix:"chessmate_embedding" ~suffix:".json" ()
+  in
+  let* response_file =
+    Temp_file_guard.create ~prefix:"chessmate_embedding_response"
+      ~suffix:".json" ()
+  in
+  let cleanup () =
+    Temp_file_guard.remove payload_file;
+    Temp_file_guard.remove response_file
   in
   Exn.protect
     ~f:(fun () ->
@@ -130,9 +137,7 @@ let call_curl ~endpoint ~api_key ~body =
           Or_error.errorf "curl terminated by signal %d" signal
       | Unix.WSTOPPED signal ->
           Or_error.errorf "curl stopped by signal %d" signal)
-    ~finally:(fun () ->
-      (try Stdlib.Sys.remove payload_file with _ -> ());
-      try Stdlib.Sys.remove response_file with _ -> ())
+    ~finally:cleanup
 
 let parse_embeddings json =
   try

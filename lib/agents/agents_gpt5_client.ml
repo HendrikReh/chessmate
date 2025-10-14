@@ -142,11 +142,15 @@ let non_empty_env name =
          if String.is_empty value then None else Some value)
 
 let call_api ~endpoint ~api_key ~body ?timeout_secs () =
-  let payload_file =
-    Stdlib.Filename.temp_file "chessmate_gpt5_payload" ".json"
+  let* payload_file =
+    Temp_file_guard.create ~prefix:"chessmate_gpt5_payload" ~suffix:".json" ()
   in
-  let response_file =
-    Stdlib.Filename.temp_file "chessmate_gpt5_response" ".json"
+  let* response_file =
+    Temp_file_guard.create ~prefix:"chessmate_gpt5_response" ~suffix:".json" ()
+  in
+  let cleanup () =
+    Temp_file_guard.remove payload_file;
+    Temp_file_guard.remove response_file
   in
   Exn.protect
     ~f:(fun () ->
@@ -193,9 +197,7 @@ let call_api ~endpoint ~api_key ~body ?timeout_secs () =
           Or_error.errorf "curl terminated by signal %d" signal
       | Unix.WSTOPPED signal ->
           Or_error.errorf "curl stopped by signal %d" signal)
-    ~finally:(fun () ->
-      (try Stdlib.Sys.remove payload_file with _ -> ());
-      try Stdlib.Sys.remove response_file with _ -> ())
+    ~finally:cleanup
 
 let ensure_non_empty name value =
   if String.is_empty (String.strip value) then
