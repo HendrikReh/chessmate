@@ -13,6 +13,8 @@ let sample_agent =
     cache =
       Config.Api.Agent_cache.Redis
         { url = "redis://localhost:6379"; namespace = None; ttl_seconds = None };
+    candidate_multiplier = 5;
+    candidate_max = 25;
   }
 
 let sample_api_config =

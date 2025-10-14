@@ -48,9 +48,30 @@ let test_api_config_success () =
             Float.(
               abs (config.Config.Api.agent.request_timeout_seconds -. 12.5)
               < 1e-6);
+          check int "default candidate multiplier" 5
+            config.Config.Api.agent.candidate_multiplier;
+          check int "default candidate max" 25
+            config.Config.Api.agent.candidate_max;
           match config.Config.Api.agent.cache with
           | Config.Api.Agent_cache.Redis _ -> ()
           | _ -> fail "expected redis cache"))
+
+let test_api_config_candidate_limits_override () =
+  with_env
+    [
+      ("DATABASE_URL", Some "postgres://user:pass@localhost:5432/db");
+      ("QDRANT_URL", Some "http://localhost:6333");
+      ("AGENT_CANDIDATE_MULTIPLIER", Some "3");
+      ("AGENT_CANDIDATE_MAX", Some "40");
+    ]
+    (fun () ->
+      match Config.Api.load () with
+      | Error err ->
+          failf "unexpected config failure: %s" (Error.to_string_hum err)
+      | Ok config ->
+          check int "candidate multiplier" 3
+            config.Config.Api.agent.candidate_multiplier;
+          check int "candidate max" 40 config.Config.Api.agent.candidate_max)
 
 let test_api_config_missing_database () =
   with_env
@@ -183,6 +204,8 @@ let test_cli_guard_limit_invalid () =
 let suite =
   [
     test_case "api config loads" `Quick test_api_config_success;
+    test_case "api candidate limits configurable" `Quick
+      test_api_config_candidate_limits_override;
     test_case "api config fails when database missing" `Quick
       test_api_config_missing_database;
     test_case "worker config requires openai key" `Quick

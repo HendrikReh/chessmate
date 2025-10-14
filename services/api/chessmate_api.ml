@@ -157,9 +157,11 @@ let api_config : Config.Api.t =
       in
       Stdio.eprintf
         "[chessmate-api][config] port=%d database=present qdrant=present \
-         agent=%s cache=%s rate_limit=%s\n\
+         agent=%s cache=%s rate_limit=%s agent_candidates=%dx%d\n\
          %!"
-        config.port agent_mode cache_mode rate_limit_mode;
+        config.port agent_mode cache_mode rate_limit_mode
+        config.Config.Api.agent.candidate_multiplier
+        config.Config.Api.agent.candidate_max;
       config
   | Error err ->
       Stdio.eprintf "[chessmate-api][fatal] %s\n%!" (Error.to_string_hum err);
@@ -623,7 +625,10 @@ let query_handler req =
           ?fetch_game_pgns:fetch_game_pgns_opt ?agent_client:agent_client_opt
           ?agent_cache:agent_cache_opt
           ~agent_timeout_seconds:
-            api_config.Config.Api.agent.request_timeout_seconds plan
+            api_config.Config.Api.agent.request_timeout_seconds
+          ~agent_candidate_multiplier:
+            api_config.Config.Api.agent.candidate_multiplier
+          ~agent_candidate_max:api_config.Config.Api.agent.candidate_max plan
       with
       | Error err ->
           respond_json ~status:`Internal_server_error

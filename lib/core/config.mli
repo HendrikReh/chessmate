@@ -57,6 +57,8 @@ module Api : sig
     verbosity : Agents_gpt5_client.Verbosity.t option;
     request_timeout_seconds : float;
     cache : Agent_cache.t;
+    candidate_multiplier : int;
+    candidate_max : int;
   }
 
   type t = {

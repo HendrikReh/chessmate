@@ -67,6 +67,8 @@ module Api = struct
     verbosity : Agents_gpt5_client.Verbosity.t option;
     request_timeout_seconds : float;
     cache : Agent_cache.t;
+    candidate_multiplier : int;
+    candidate_max : int;
   }
 
   type t = {
@@ -84,6 +86,8 @@ module Api = struct
   let default_vector_size = 1536
   let default_distance = "Cosine"
   let default_agent_timeout_seconds = 15.
+  let default_agent_candidate_multiplier = 5
+  let default_agent_candidate_max = 25
 
   let load_port () =
     match Helpers.optional "CHESSMATE_API_PORT" with
@@ -139,6 +143,20 @@ module Api = struct
     | Some raw ->
         Helpers.parse_positive_float "AGENT_REQUEST_TIMEOUT_SECONDS" raw
 
+  let load_candidate_multiplier () =
+    match Helpers.optional "AGENT_CANDIDATE_MULTIPLIER" with
+    | None -> Or_error.return default_agent_candidate_multiplier
+    | Some raw when String.is_empty raw ->
+        Or_error.return default_agent_candidate_multiplier
+    | Some raw -> Helpers.parse_positive_int "AGENT_CANDIDATE_MULTIPLIER" raw
+
+  let load_candidate_max () =
+    match Helpers.optional "AGENT_CANDIDATE_MAX" with
+    | None -> Or_error.return default_agent_candidate_max
+    | Some raw when String.is_empty raw ->
+        Or_error.return default_agent_candidate_max
+    | Some raw -> Helpers.parse_positive_int "AGENT_CANDIDATE_MAX" raw
+
   let load_agent () =
     let api_key = Helpers.optional "AGENT_API_KEY" in
     let endpoint =
@@ -147,28 +165,30 @@ module Api = struct
         ~default:default_agent_endpoint
     in
     let model = Helpers.optional "AGENT_MODEL" in
-    match load_reasoning_effort () with
-    | Error err -> Error err
-    | Ok reasoning_effort -> (
-        match load_verbosity () with
-        | Error err -> Error err
-        | Ok verbosity -> (
-            match load_agent_cache () with
-            | Error err -> Error err
-            | Ok cache -> (
-                match load_agent_timeout () with
-                | Error err -> Error err
-                | Ok request_timeout_seconds ->
-                    Or_error.return
-                      {
-                        api_key;
-                        endpoint;
-                        model;
-                        reasoning_effort;
-                        verbosity;
-                        request_timeout_seconds;
-                        cache;
-                      })))
+    load_reasoning_effort ()
+    |> Or_error.bind ~f:(fun reasoning_effort ->
+           load_verbosity ()
+           |> Or_error.bind ~f:(fun verbosity ->
+                  load_agent_cache ()
+                  |> Or_error.bind ~f:(fun cache ->
+                         load_agent_timeout ()
+                         |> Or_error.bind ~f:(fun request_timeout_seconds ->
+                                load_candidate_multiplier ()
+                                |> Or_error.bind ~f:(fun candidate_multiplier ->
+                                       load_candidate_max ()
+                                       |> Or_error.bind ~f:(fun candidate_max ->
+                                              Or_error.return
+                                                {
+                                                  api_key;
+                                                  endpoint;
+                                                  model;
+                                                  reasoning_effort;
+                                                  verbosity;
+                                                  request_timeout_seconds;
+                                                  cache;
+                                                  candidate_multiplier;
+                                                  candidate_max;
+                                                }))))))
 
   let load_rate_limit () =
     match Helpers.optional "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE" with

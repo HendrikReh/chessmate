@@ -197,8 +197,8 @@ type execution = {
   warnings : string list;
 }
 
-let agent_candidate_multiplier = 5
-let agent_candidate_max = 25
+let default_agent_candidate_multiplier = 5
+let default_agent_candidate_max = 25
 
 let build_result plan summary plan_phases plan_themes vector_hit agent_eval =
   let summary_tokens = summary_tokens_with_vector summary vector_hit in
@@ -239,7 +239,9 @@ let build_result plan summary plan_phases plan_themes vector_hit agent_eval =
   }
 
 let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
-    ?agent_client ?agent_cache ?agent_timeout_seconds plan =
+    ?agent_client ?agent_cache ?agent_timeout_seconds
+    ?(agent_candidate_multiplier = default_agent_candidate_multiplier)
+    ?(agent_candidate_max = default_agent_candidate_max) plan =
   match fetch_games plan with
   | Error err -> Error err
   | Ok { Repo_postgres.games = summaries; total } ->
