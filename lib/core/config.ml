@@ -264,16 +264,24 @@ module Worker = struct
     openai_api_key : string;
     openai_endpoint : string;
     batch_size : int;
+    health_port : int;
   }
 
   let default_endpoint = "https://api.openai.com/v1/embeddings"
   let default_batch_size = 16
+  let default_health_port = 8081
 
   let load_batch_size () =
     match Helpers.optional "CHESSMATE_WORKER_BATCH_SIZE" with
     | None -> Or_error.return default_batch_size
     | Some raw when String.is_empty raw -> Or_error.return default_batch_size
     | Some raw -> Helpers.parse_positive_int "CHESSMATE_WORKER_BATCH_SIZE" raw
+
+  let load_health_port () =
+    match Helpers.optional "CHESSMATE_WORKER_HEALTH_PORT" with
+    | None -> Or_error.return default_health_port
+    | Some raw when String.is_empty raw -> Or_error.return default_health_port
+    | Some raw -> Helpers.parse_positive_int "CHESSMATE_WORKER_HEALTH_PORT" raw
 
   let load () =
     match Helpers.require "DATABASE_URL" with
@@ -289,10 +297,18 @@ module Worker = struct
             in
             match load_batch_size () with
             | Error err -> Error err
-            | Ok batch_size ->
-                Or_error.return
-                  { database_url; openai_api_key; openai_endpoint; batch_size })
-        )
+            | Ok batch_size -> (
+                match load_health_port () with
+                | Error err -> Error err
+                | Ok health_port ->
+                    Or_error.return
+                      {
+                        database_url;
+                        openai_api_key;
+                        openai_endpoint;
+                        batch_size;
+                        health_port;
+                      })))
 end
 
 module Cli = struct

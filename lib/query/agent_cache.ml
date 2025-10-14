@@ -263,6 +263,22 @@ let with_connection cache ~f =
           Out_channel.close oc;
           try Unix.close socket with _ -> ())
 
+let ping cache =
+  match cache with
+  | Memory _ -> Or_error.return ()
+  | Redis redis -> (
+      match
+        with_connection redis ~f:(fun ic oc ->
+            let* reply = send_command ic oc [ "PING" ] in
+            match reply with
+            | Simple "PONG" -> Or_error.return ()
+            | Integer _ -> Or_error.return ()
+            | Bulk (Some _) -> Or_error.return ()
+            | _ -> Or_error.error_string "redis PING returned unexpected reply")
+      with
+      | Ok () -> Or_error.return ()
+      | Error err -> Error err)
+
 let usage_to_json = function
   | None -> `Null
   | Some usage ->

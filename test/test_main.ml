@@ -1,4 +1,4 @@
 open! Base
 open Alcotest
 
-let () = run "chessmate" []
+let () = run "chessmate" [ ("health", Test_health.suite) ]

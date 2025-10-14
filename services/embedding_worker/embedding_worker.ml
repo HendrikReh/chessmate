@@ -356,9 +356,10 @@ let worker_config : Config.Worker.t =
       Stdlib.exit 1
 
 let () = jobs_per_batch := worker_config.Config.Worker.batch_size
+let api_config_lazy : Config.Api.t Or_error.t Lazy.t = lazy (Config.Api.load ())
 
 let ensure_qdrant_collection () =
-  match Config.Api.load () with
+  match Lazy.force api_config_lazy with
   | Ok api_config -> (
       match api_config.Config.Api.qdrant_collection with
       | None -> ()
@@ -372,6 +373,41 @@ let ensure_qdrant_collection () =
                 (Sanitizer.sanitize_error err);
               Stdlib.exit 1))
   | Error _ -> ()
+
+let start_health_server ~postgres =
+  let port = worker_config.Config.Worker.health_port in
+  let summary () =
+    Health.Worker.summary ~postgres ~config:worker_config
+      ~api_config:api_config_lazy ()
+  in
+  let callback _conn req _body =
+    let uri = Cohttp.Request.uri req in
+    match (Cohttp.Request.meth req, Uri.path uri) with
+    | `GET, "/health" ->
+        let summary = summary () in
+        let status = Health.http_status_of summary.Health.status in
+        let status_code = (status :> Cohttp.Code.status_code) in
+        let headers =
+          Cohttp.Header.init_with "Content-Type" "application/json"
+        in
+        let body =
+          summary |> Health.summary_to_yojson |> Yojson.Safe.to_string
+        in
+        Cohttp_lwt_unix.Server.respond_string ~status:status_code ~headers ~body
+          ()
+    | _ -> Cohttp_lwt_unix.Server.respond_not_found ()
+  in
+  Thread.create
+    (fun () ->
+      let mode = `TCP (`Port port) in
+      let server = Cohttp_lwt_unix.Server.make ~callback () in
+      try
+        eprintf "[worker][health] listening on 0.0.0.0:%d\n%!" port;
+        Lwt_main.run (Cohttp_lwt_unix.Server.create ~mode server)
+      with exn ->
+        eprintf "[worker][health] server exception: %s\n%!"
+          (Sanitizer.sanitize_string (Exn.to_string exn)))
+    ()
 
 let usage_msg =
   "Usage: embedding_worker [--poll-sleep SECONDS] [--workers COUNT] \\ \n\
@@ -430,6 +466,8 @@ let run () =
       eprintf "[worker][fatal] %s\n%!" (Sanitizer.sanitize_error err);
       Stdlib.exit 1
   | Ok (repo, embedding_client) ->
+      let postgres_lazy = lazy (Ok repo) in
+      let (_ : Thread.t) = start_health_server ~postgres:postgres_lazy in
       let start_time = Unix.gettimeofday () in
       let stats = { processed = 0; failed = 0 } in
       let exit_condition = make_exit_condition !exit_after_empty in

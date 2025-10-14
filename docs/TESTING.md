@@ -64,6 +64,37 @@ This manual probe verifies that oddball request paths cannot break the `/metrics
 
 ---
 
+### 4b. Health Endpoint Snapshot
+
+1. With the API running, fetch the structured health payload:
+   ```sh
+   curl -s http://localhost:8080/health | jq
+   ```
+   Expect `status: "ok"` under normal conditions. Required dependency failures return `status: "error"` and HTTP 503; optional failures surface as `"degraded"` (also 503) with details for triage.
+2. If the embedding worker is running, repeat against its endpoint:
+   ```sh
+   curl -s "http://localhost:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/health" | jq
+   ```
+   Confirm that the worker reports Postgres/Qdrant/OpenAI probes and mirrors the API schema.
+
+---
+
+### 4c. Hook Health Into Monitoring
+
+1. **API probe**: point your HTTP monitor to `http://<host>:8080/health`. Treat any HTTP status ≠ 200 as an alert. Parse the JSON body for `status` and surface it as a primary metric (`ok`, `degraded`, `error`) plus per-check details for dashboards.
+2. **Worker probe**: target `http://<host>:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/health`. If you run multiple workers on the same host, assign unique ports via `CHESSMATE_WORKER_HEALTH_PORT` and configure the monitor per instance.
+3. **Sample curl** (useful for local smoke tests or scripted checks):
+   ```sh
+   for port in 8080 "${CHESSMATE_WORKER_HEALTH_PORT:-8081}"; do
+     echo "# probing ${port}"
+     curl -sf "http://localhost:${port}/health" \
+       | jq -r '.status as $s | ["health_status=" + $s] + (.checks[] | .name + ":" + .status) | @tsv'
+   done
+   ```
+   This prints the overall status followed by each check’s outcome (e.g., `postgres:ok`). Integrate the command (or equivalent agent) into your monitoring stack to capture both the aggregate health and individual dependency signals.
+
+---
+
 ## 5. Redis Cache Behaviour
 Repeat the query. On second run, logs should show cache hits (no fresh GPT-5 call). Optional: `redis-cli --scan --pattern 'chessmate:agent:*'` to inspect stored keys.
 

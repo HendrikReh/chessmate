@@ -87,7 +87,9 @@ let test_worker_config_batch_size_defaults () =
       match Config.Worker.load () with
       | Error err ->
           failf "unexpected worker config failure: %s" (Error.to_string_hum err)
-      | Ok config -> check int "default batch size" 16 config.batch_size)
+      | Ok config ->
+          check int "default batch size" 16 config.batch_size;
+          check int "default health port" 8081 config.health_port)
 
 let test_worker_config_batch_size_override () =
   with_env
@@ -100,7 +102,37 @@ let test_worker_config_batch_size_override () =
       match Config.Worker.load () with
       | Error err ->
           failf "unexpected worker config failure: %s" (Error.to_string_hum err)
-      | Ok config -> check int "override batch size" 32 config.batch_size)
+      | Ok config ->
+          check int "override batch size" 32 config.batch_size;
+          check int "default health port" 8081 config.health_port)
+
+let test_worker_config_health_port_override () =
+  with_env
+    [
+      ("DATABASE_URL", Some "postgres://localhost/db");
+      ("OPENAI_API_KEY", Some "abc");
+      ("CHESSMATE_WORKER_HEALTH_PORT", Some "9090");
+    ]
+    (fun () ->
+      match Config.Worker.load () with
+      | Error err ->
+          failf "unexpected worker config failure: %s" (Error.to_string_hum err)
+      | Ok config -> check int "override health port" 9090 config.health_port)
+
+let test_worker_config_health_port_invalid () =
+  with_env
+    [
+      ("DATABASE_URL", Some "postgres://localhost/db");
+      ("OPENAI_API_KEY", Some "abc");
+      ("CHESSMATE_WORKER_HEALTH_PORT", Some "0");
+    ]
+    (fun () ->
+      match Config.Worker.load () with
+      | Ok _ -> fail "expected health port validation failure"
+      | Error err ->
+          check bool "mentions env" true
+            (String.is_substring (Error.to_string_hum err)
+               ~substring:"CHESSMATE_WORKER_HEALTH_PORT"))
 
 let test_worker_config_batch_size_invalid () =
   with_env

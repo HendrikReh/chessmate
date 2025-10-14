@@ -50,3 +50,6 @@ val find : t -> key -> entry option
 
 val store : t -> key -> entry -> unit
 (** Insert or update an evaluation. *)
+
+val ping : t -> unit Or_error.t
+(** Check backend availability; returns an error if Redis connectivity fails. *)

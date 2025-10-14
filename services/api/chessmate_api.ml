@@ -418,7 +418,14 @@ let request_metrics_middleware =
           Api_metrics.record_request ~route ~latency_ms ~status:500;
           Lwt.fail exn))
 
-let health_handler _req = respond_plain_text "ok"
+let health_handler _req =
+  let summary =
+    Health.Api.summary ~postgres:postgres_repo ~config:api_config ()
+  in
+  let status = Health.http_status_of summary.Health.status in
+  respond_json
+    ~status:(status :> Cohttp.Code.status_code)
+    (Health.summary_to_yojson summary)
 
 let metrics_handler _req =
   match Lazy.force postgres_repo with

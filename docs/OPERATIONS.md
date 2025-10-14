@@ -10,7 +10,7 @@ Pair this runbook with the [Developer Handbook](DEVELOPER.md) for environment se
 | **postgres** | Canonical store for PGNs, players/games/positions, embedding jobs (`data/postgres`). |
 | **qdrant** | Vector database for FEN embeddings (`data/qdrant`). API/worker ensure collection on startup. |
 | **redis** | Optional GPT‑5 evaluation cache (`data/redis`). |
-| **chessmate-api** | Opium HTTP service exposing `/query`, `/metrics`, `/openapi.yaml`. Includes per-IP rate limiting and (planned) deep health probes. |
+| **chessmate-api** | Opium HTTP service exposing `/query`, `/metrics`, `/openapi.yaml`, `/health`. Includes per-IP rate limiting and structured dependency probes. |
 | **embedding-worker** | Batches embedding jobs, calls OpenAI Embeddings, writes vectors to Qdrant, marks jobs complete. |
 
 ---
@@ -40,8 +40,36 @@ docker compose exec postgres psql -U chess -c "ALTER ROLE chess WITH CREATEDB;"
 | `dune exec chessmate -- query "..."` | CLI queries; add `--json` for raw payloads. Prints `[health] ...` lines before execution. |
 | `curl http://localhost:8080/metrics` | Inspect Prometheus gauges/counters (DB pool usage, per-route latency histograms, agent cache stats, rate limiter). |
 | `curl http://localhost:8080/openapi.yaml` | Retrieve the OpenAPI spec (override path with `CHESSMATE_OPENAPI_SPEC`). |
+| `curl http://localhost:8080/health` | Structured JSON health report (HTTP 200 on `status=ok`, 503 otherwise). Worker exposes `http://localhost:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/health`. |
 
-Upcoming `/health` JSON endpoint will surface per-dependency status for API and worker.
+### Health Endpoints
+
+`/health` returns sanitized dependency probes with per-check latency:
+
+```sh
+curl -s http://localhost:8080/health | jq
+```
+
+```json
+{
+  "status": "ok",
+  "checks": [
+    { "name": "postgres", "status": "ok", "required": true, "latency_ms": 2.1, "detail": "pending_jobs=0 in_use=0 waiting=0 capacity=10" },
+    { "name": "qdrant", "status": "ok", "required": true, "latency_ms": 15.4, "detail": "200 /healthz" },
+    { "name": "redis", "status": "skipped", "required": false, "detail": "agent disabled" },
+    { "name": "openai", "status": "ok", "required": false, "detail": "model=gpt-5" }
+  ]
+}
+```
+
+Required dependency failures drive `status="error"` (HTTP 503). Optional failures flip the status to `degraded` (also 503) so dashboards can alert without dropping traffic entirely. The embedding worker exposes the same schema:
+
+```sh
+PORT=${CHESSMATE_WORKER_HEALTH_PORT:-8081}
+curl -s "http://localhost:${PORT}/health" | jq
+```
+
+Override the listener via `CHESSMATE_WORKER_HEALTH_PORT` when co-locating multiple workers.
 
 ---
 
@@ -56,8 +84,8 @@ Exercises ingest → embedding pipeline → hybrid query. Vector hits are stubbe
 ---
 
 ## 5. Runtime Operations
-- **Health checks**: `curl /health` (planned structured JSON), `pg_isready`, `curl http://qdrant:6333/healthz`, `redis-cli PING`.
-- **Metrics**: `/metrics` now exposes DB pool usage, per-route latency/error histograms (`api_request_latency_ms_pXX{route="..."}`), agent cache hit/miss totals, circuit breaker state, and rate limiter counters. Dependency probes arrive with GH-011.
+- **Health checks**: `curl http://localhost:8080/health`, `curl http://localhost:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/health`, `pg_isready`, `curl http://qdrant:6333/healthz`, `redis-cli PING`.
+- **Metrics**: `/metrics` exposes DB pool usage, per-route latency/error histograms (`api_request_latency_ms_pXX{route="..."}`), agent cache hit/miss totals, circuit breaker state, and rate limiter counters.
 - **Rate limiter**: 429 responses include `Retry-After`. Tune `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` (and optional `..._BUCKET_SIZE`) as needed during load tests.
 - **Embedding queue monitoring**: `scripts/embedding_metrics.sh --interval 120` (processed, pending, ETA). Worker quits automatically if `--exit-after-empty` is set. Jobs/minute and characters/sec are also written to the optional `CHESSMATE_WORKER_METRICS_PATH` textfile for Prometheus textfile scraping.
 - **Graceful shutdown**: API/worker handle SIGINT/SIGTERM; look for `[shutdown]` logs confirming clean exit.
@@ -104,7 +132,7 @@ Log details and mitigation in `docs/INCIDENTS/<date>.md` after an incident.
 ---
 
 ## 11. Monitoring & Alerting (Targets)
-- **Metrics to watch**: `/metrics` latency histograms (once added), DB pool usage, rate limiter counters, embedding throughput, queue depth, GPT‑5 timeout counts.
+- **Metrics to watch**: `/metrics` latency histograms, DB pool usage, rate limiter counters, embedding throughput, queue depth, GPT‑5 timeout counts.
 - **Alerts**:
   - API p95 > 2s sustained.
   - Embedding backlog > 500 jobs for >10 min.
