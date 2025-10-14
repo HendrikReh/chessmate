@@ -28,7 +28,7 @@ type rating_filter = {
 }
 
 type metadata_filter = { field : string; value : string }
-type request = { text : string }
+type request = { text : string; limit : int option; offset : int option }
 
 type plan = {
   original : request;
@@ -37,9 +37,12 @@ type plan = {
   filters : metadata_filter list;
   rating : rating_filter;
   limit : int;
+  offset : int;
 }
 
-let default_limit = 5
+let default_limit = 50
+let max_limit = 500
+let default_offset = 0
 
 let stopwords =
   let words =
@@ -371,7 +374,19 @@ let parse_rating tokens =
 let analyse request =
   let cleaned_text = normalize request.text in
   let tokens = tokenize cleaned_text in
-  let limit = Option.value (limit_from_tokens tokens) ~default:default_limit in
+  let natural_limit = limit_from_tokens tokens in
+  let clamp_limit value = Int.clamp_exn value ~min:1 ~max:max_limit in
+  let limit =
+    match request.limit with
+    | Some override -> clamp_limit override
+    | None -> (
+        match natural_limit with
+        | Some value -> clamp_limit value
+        | None -> default_limit)
+  in
+  let offset =
+    request.offset |> Option.value ~default:default_offset |> Int.max 0
+  in
   let filters =
     let metadata = metadata_from_phrases cleaned_text in
     let result = result_filters cleaned_text in
@@ -379,4 +394,4 @@ let analyse request =
   in
   let keywords = extract_keywords tokens in
   let rating = parse_rating tokens in
-  { original = request; cleaned_text; keywords; filters; rating; limit }
+  { original = request; cleaned_text; keywords; filters; rating; limit; offset }

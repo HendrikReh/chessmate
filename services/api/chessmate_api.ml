@@ -291,6 +291,7 @@ let plan_to_json (plan : Query_intent.plan) =
     [
       ("cleaned_text", `String plan.cleaned_text);
       ("limit", `Int plan.limit);
+      ("offset", `Int plan.offset);
       ( "filters",
         `List
           (List.map plan.filters ~f:(fun filter ->
@@ -320,7 +321,8 @@ let fetch_games_impl plan =
   | Error err -> Error err
   | Ok repo ->
       Repo_postgres.search_games repo ~filters:plan.Query_intent.filters
-        ~rating:plan.rating ~limit:plan.limit
+        ~rating:plan.rating ~limit:plan.Query_intent.limit
+        ~offset:plan.Query_intent.offset
 
 let fetch_game_pgns_impl ids =
   match Lazy.force postgres_repo with
@@ -457,33 +459,157 @@ let metrics_handler _req =
       let body = String.concat ~sep:"\n" all_metrics ^ "\n" in
       respond_plain_text body
 
-let extract_question req =
+type incoming_query = {
+  question : string;
+  limit : int option;
+  offset : int option;
+}
+
+let normalize_question text =
+  let trimmed = String.strip text in
+  if String.is_empty trimmed then
+    Or_error.error_string "question parameter missing"
+  else Or_error.return trimmed
+
+let parse_int_string field value =
+  let stripped = String.strip value in
+  if String.is_empty stripped then Or_error.errorf "%s must not be empty" field
+  else
+    match Int.of_string_opt stripped with
+    | Some parsed -> Or_error.return parsed
+    | None -> Or_error.errorf "%s must be an integer" field
+
+let validate_limit value =
+  if value < 1 then Or_error.error_string "limit must be >= 1"
+  else if value > Query_intent.max_limit then
+    Or_error.errorf "limit must be <= %d" Query_intent.max_limit
+  else Or_error.return value
+
+let validate_offset value =
+  if value < 0 then Or_error.error_string "offset must be >= 0"
+  else Or_error.return value
+
+let parse_limit_param raw =
+  match raw with
+  | None -> Or_error.return None
+  | Some text -> (
+      match parse_int_string "limit" text with
+      | Error _ as err -> err
+      | Ok parsed -> (
+          match validate_limit parsed with
+          | Error _ as err -> err
+          | Ok sanitized -> Or_error.return (Some sanitized)))
+
+let parse_offset_param raw =
+  match raw with
+  | None -> Or_error.return None
+  | Some text -> (
+      match parse_int_string "offset" text with
+      | Error _ as err -> err
+      | Ok parsed -> (
+          match validate_offset parsed with
+          | Error _ as err -> err
+          | Ok sanitized -> Or_error.return (Some sanitized)))
+
+let parse_limit_json json =
+  match json with
+  | `Null -> Or_error.return None
+  | `Int value -> (
+      match validate_limit value with
+      | Error _ as err -> err
+      | Ok sanitized -> Or_error.return (Some sanitized))
+  | `String text -> (
+      match parse_int_string "limit" text with
+      | Error _ as err -> err
+      | Ok parsed -> (
+          match validate_limit parsed with
+          | Error _ as err -> err
+          | Ok sanitized -> Or_error.return (Some sanitized)))
+  | _ -> Or_error.error_string "limit must be an integer"
+
+let parse_offset_json json =
+  match json with
+  | `Null -> Or_error.return None
+  | `Int value -> (
+      match validate_offset value with
+      | Error _ as err -> err
+      | Ok sanitized -> Or_error.return (Some sanitized))
+  | `String text -> (
+      match parse_int_string "offset" text with
+      | Error _ as err -> err
+      | Ok parsed -> (
+          match validate_offset parsed with
+          | Error _ as err -> err
+          | Ok sanitized -> Or_error.return (Some sanitized)))
+  | _ -> Or_error.error_string "offset must be an integer"
+
+let parse_json body =
+  try Or_error.return (Yojson.Safe.from_string body)
+  with Yojson.Json_error _ -> Or_error.error_string "invalid JSON payload"
+
+let extract_query req =
   let open Lwt.Syntax in
   match Request.meth req with
-  | `GET -> Lwt.return (Uri.get_query_param (Request.uri req) "q")
-  | `POST ->
-      let* body = App.string_of_body_exn req in
-      let json_opt =
-        try Some (Yojson.Safe.from_string body)
-        with Yojson.Json_error _ -> None
+  | `GET -> (
+      let uri = Request.uri req in
+      let question_param = Uri.get_query_param uri "q" in
+      let limit_param = Uri.get_query_param uri "limit" in
+      let offset_param = Uri.get_query_param uri "offset" in
+      let question_result =
+        match question_param with
+        | Some q -> normalize_question q
+        | None -> Or_error.error_string "question parameter missing"
       in
-      Lwt.return
-        (Option.bind json_opt ~f:(fun json ->
-             Yojson.Safe.Util.(json |> member "question" |> to_string_option)))
-  | _ -> Lwt.return None
+      match question_result with
+      | Error _ as err -> Lwt.return err
+      | Ok question -> (
+          match parse_limit_param limit_param with
+          | Error _ as err -> Lwt.return err
+          | Ok limit -> (
+              match parse_offset_param offset_param with
+              | Error _ as err -> Lwt.return err
+              | Ok offset ->
+                  Lwt.return (Or_error.return { question; limit; offset }))))
+  | `POST -> (
+      let* body = App.string_of_body_exn req in
+      match parse_json body with
+      | Error _ as err -> Lwt.return err
+      | Ok json -> (
+          match Yojson.Safe.Util.member "question" json with
+          | `Null ->
+              Lwt.return (Or_error.error_string "question parameter missing")
+          | `String q -> (
+              match normalize_question q with
+              | Error _ as err -> Lwt.return err
+              | Ok question -> (
+                  match
+                    parse_limit_json (Yojson.Safe.Util.member "limit" json)
+                  with
+                  | Error _ as err -> Lwt.return err
+                  | Ok limit -> (
+                      match
+                        parse_offset_json
+                          (Yojson.Safe.Util.member "offset" json)
+                      with
+                      | Error _ as err -> Lwt.return err
+                      | Ok offset ->
+                          Lwt.return
+                            (Or_error.return { question; limit; offset }))))
+          | _ -> Lwt.return (Or_error.error_string "question must be a string"))
+      )
+  | _ -> Lwt.return (Or_error.error_string "unsupported method")
 
 let query_handler req =
   let open Lwt.Syntax in
-  let* question_opt = extract_question req in
-  match
-    Option.bind question_opt ~f:(fun q ->
-        if String.is_empty (String.strip q) then None else Some q)
-  with
-  | None ->
+  let* parsed_request = extract_query req in
+  match parsed_request with
+  | Error err ->
       respond_json ~status:`Bad_request
-        (`Assoc [ ("error", `String "question parameter missing") ])
-  | Some question -> (
-      let plan = Query_intent.analyse { Query_intent.text = question } in
+        (`Assoc [ ("error", `String (Sanitizer.sanitize_error err)) ])
+  | Ok { question; limit; offset } -> (
+      let plan =
+        Query_intent.analyse { Query_intent.text = question; limit; offset }
+      in
       let agent_client_opt = Lazy.force agent_client in
       let agent_cache_opt = Lazy.force agent_cache in
       let fetch_game_pgns_opt =
@@ -540,6 +666,10 @@ let query_handler req =
                  ("plan", plan_to_json execution.Hybrid_executor.plan);
                  ("summary", `String summary_text);
                  ("results", `List results_json);
+                 ("offset", `Int execution.Hybrid_executor.plan.offset);
+                 ("limit", `Int execution.Hybrid_executor.plan.limit);
+                 ("total", `Int execution.Hybrid_executor.total);
+                 ("has_more", `Bool execution.Hybrid_executor.has_more);
                ]
               @ warning_field)
           in

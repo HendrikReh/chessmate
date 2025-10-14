@@ -68,8 +68,13 @@ type vector_payload = Caqti_repo.vector_payload = {
 let insert_game repo ~metadata ~pgn ~moves =
   Caqti_repo.insert_game repo.caqti ~metadata ~pgn ~moves
 
-let search_games repo ~filters ~rating ~limit =
-  Caqti_repo.search_games repo.caqti ~filters ~rating ~limit
+type search_page = Caqti_repo.search_page = {
+  games : game_summary list;
+  total : int;
+}
+
+let search_games repo ~filters ~rating ~limit ~offset =
+  Caqti_repo.search_games repo.caqti ~filters ~rating ~limit ~offset
 
 let fetch_games_with_pgn repo ~ids =
   Caqti_repo.fetch_games_with_pgn repo.caqti ~ids

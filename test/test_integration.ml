@@ -110,11 +110,16 @@ let test_hybrid_executor_pipeline () =
             in
             let plan =
               Query_intent.analyse
-                { Query_intent.text = "Find sample games with e4" }
+                {
+                  Query_intent.text = "Find sample games with e4";
+                  limit = None;
+                  offset = None;
+                }
             in
             let fetch_games plan =
               Repo_postgres.search_games repo ~filters:plan.Query_intent.filters
                 ~rating:plan.rating ~limit:plan.limit
+                ~offset:plan.Query_intent.offset
             in
             let vector_hit =
               {

@@ -34,8 +34,9 @@ type metadata_filter = { field : string; value : string }
 (** Each filter is a concrete predicate the storage layer understands—for
     example [{ field = "opening"; value = "kings_indian_defense" }]. *)
 
-type request = { text : string }
-(** Raw user input. The planner currently accepts only the free-text field. *)
+type request = { text : string; limit : int option; offset : int option }
+(** Raw user input alongside optional pagination overrides surfaced by the API /
+    CLI. *)
 
 type plan = {
   original : request;
@@ -44,15 +45,19 @@ type plan = {
   filters : metadata_filter list;
   rating : rating_filter;
   limit : int;
+  offset : int;
 }
-(** Parsed representation of a question. [cleaned_text] lowercases and removes
-    punctuation; [keywords] drives fallback scoring; [filters]/[rating] feed SQL
-    and vector payload predicates; [limit] caps the number of results. *)
+(** Parsed representation of a question. [cleaned_text] lowers/strips
+    punctuation; [keywords] drive fallback scoring; [filters]/[rating] feed SQL
+    predicates; [limit]/[offset] drive pagination. *)
 
 val default_limit : int
 (** Default result cap when the user does not specify one (currently 50). *)
 
+val max_limit : int
+(** Maximum page size accepted via query parameters (currently 500). *)
+
 val analyse : request -> plan
 (** [analyse request] normalises the question, extracts openings/ECO ranges,
-    rating bounds, keywords, and an optional limit. The output feeds the hybrid
-    planner and ultimately the API response. *)
+    rating bounds, keywords, and optional pagination details. The output feeds
+    the hybrid planner and ultimately the API response. *)

@@ -61,12 +61,15 @@ type game_summary = Repo_postgres_caqti.game_summary = {
   played_on : string option;
 }
 
+type search_page = { games : game_summary list; total : int }
+
 val search_games :
   t ->
   filters:Query_intent.metadata_filter list ->
   rating:Query_intent.rating_filter ->
   limit:int ->
-  game_summary list Or_error.t
+  offset:int ->
+  search_page Or_error.t
 
 val pending_embedding_job_count : t -> int Or_error.t
 val fetch_games_with_pgn : t -> ids:int list -> (int * string) list Or_error.t

@@ -233,9 +233,11 @@ type game_summary = {
 }
 
 type vector_payload = { position_id : int; game_id : int; json : Yojson.Safe.t }
+type search_page = { games : game_summary list; total : int }
 
-let search_games repo ~filters ~rating ~limit =
+let search_games repo ~filters ~rating ~limit ~offset =
   let limit = Int.max 1 limit in
+  let offset = Int.max 0 offset in
   let build_result = build_conditions_internal ~filters ~rating in
   let where_clause_line =
     match build_result.conditions with
@@ -243,20 +245,39 @@ let search_games repo ~filters ~rating ~limit =
     | conditions ->
         Printf.sprintf "WHERE %s\n" (String.concat ~sep:" AND " conditions)
   in
-  let params = build_result.parameters @ [ Param_int limit ] in
-  let params_pack =
-    List.fold params ~init:Dynparam.empty ~f:(fun pack -> function
-      | Param_string value -> Dynparam.add_string value pack
-      | Param_int value -> Dynparam.add_int value pack)
+  let base_params = build_result.parameters in
+  let add_param params param =
+    match param with
+    | Param_string value -> Dynparam.add_string value params
+    | Param_int value -> Dynparam.add_int value params
   in
-  let (Dynparam.Pack (param_type, param_value)) = params_pack in
+  let count_params_pack =
+    List.fold base_params ~init:Dynparam.empty ~f:add_param
+  in
+  let (Dynparam.Pack (count_param_type, count_param_value)) =
+    count_params_pack
+  in
+  let data_params = base_params @ [ Param_int limit; Param_int offset ] in
+  let data_params_pack =
+    List.fold data_params ~init:Dynparam.empty ~f:add_param
+  in
+  let (Dynparam.Pack (data_param_type, data_param_value)) = data_params_pack in
   let row_type =
     Std.t11 Std.int Std.string Std.string (Std.option Std.string)
       (Std.option Std.string) (Std.option Std.string) (Std.option Std.string)
       (Std.option Std.string) (Std.option Std.int) (Std.option Std.int)
       (Std.option Std.string)
   in
-  let sql =
+  let base_from =
+    String.concat
+      [
+        "FROM games g\n";
+        "LEFT JOIN players w ON g.white_player_id = w.id\n";
+        "LEFT JOIN players b ON g.black_player_id = b.id\n";
+        where_clause_line;
+      ]
+  in
+  let data_sql =
     String.concat
       [
         "SELECT g.id,\n";
@@ -270,47 +291,54 @@ let search_games repo ~filters ~rating ~limit =
         "       g.white_rating,\n";
         "       g.black_rating,\n";
         "       TO_CHAR(g.played_on, 'YYYY-MM-DD')\n";
-        "FROM games g\n";
-        "LEFT JOIN players w ON g.white_player_id = w.id\n";
-        "LEFT JOIN players b ON g.black_player_id = b.id\n";
-        where_clause_line;
+        base_from;
         "ORDER BY g.played_on DESC NULLS LAST, g.id DESC\n";
-        "LIMIT ?";
+        "LIMIT ? OFFSET ?\n";
       ]
   in
-  let request = Request.(param_type ->* row_type) ~oneshot:true sql in
+  let count_sql = "SELECT COUNT(*)\n" ^ base_from in
+  let data_request =
+    Request.(data_param_type ->* row_type) ~oneshot:true data_sql
+  in
+  let count_request =
+    Request.(count_param_type ->! Std.int) ~oneshot:true count_sql
+  in
   with_connection repo (fun conn ->
       let module Conn = (val conn : Blocking.CONNECTION) in
-      Conn.collect_list request param_value)
-  |> Or_error.map
-       ~f:
-         (List.map
-            ~f:(fun
-                ( id,
-                  white,
-                  black,
-                  result,
-                  event,
-                  opening_slug,
-                  opening_name,
-                  eco_code,
-                  white_rating,
-                  black_rating,
-                  played_on )
-              ->
-              {
-                id;
-                white;
-                black;
-                result;
-                event;
-                opening_slug;
-                opening_name;
-                eco_code;
-                white_rating;
-                black_rating;
-                played_on;
-              }))
+      let* total = Conn.find count_request count_param_value in
+      let* rows = Conn.collect_list data_request data_param_value in
+      Ok (total, rows))
+  |> Or_error.map ~f:(fun (total, rows) ->
+         let games =
+           List.map rows
+             ~f:(fun
+                 ( id,
+                   white,
+                   black,
+                   result,
+                   event,
+                   opening_slug,
+                   opening_name,
+                   eco_code,
+                   white_rating,
+                   black_rating,
+                   played_on )
+               ->
+               {
+                 id;
+                 white;
+                 black;
+                 result;
+                 event;
+                 opening_slug;
+                 opening_name;
+                 eco_code;
+                 white_rating;
+                 black_rating;
+                 played_on;
+               })
+         in
+         { games; total })
 
 let pending_embedding_job_count_request =
   Request.(Std.unit ->! Std.int)

@@ -42,12 +42,14 @@ type result = {
 type execution = {
   plan : Query_intent.plan;
   results : result list;
+  total : int;
+  has_more : bool;
   warnings : string list;
 }
 (** The outcome of executing a hybrid plan. *)
 
 val execute :
-  fetch_games:(Query_intent.plan -> Repo_postgres.game_summary list Or_error.t) ->
+  fetch_games:(Query_intent.plan -> Repo_postgres.search_page Or_error.t) ->
   fetch_vector_hits:
     (Query_intent.plan -> Hybrid_planner.vector_hit list Or_error.t) ->
   ?fetch_game_pgns:(int list -> (int * string) list Or_error.t) ->

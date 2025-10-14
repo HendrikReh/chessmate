@@ -92,6 +92,11 @@ This manual probe verifies that oddball request paths cannot break the `/metrics
    done
    ```
    This prints the overall status followed by each check’s outcome (e.g., `postgres:ok`). Integrate the command (or equivalent agent) into your monitoring stack to capture both the aggregate health and individual dependency signals.
+4. **CLI pagination spot-check** (optional):
+   ```sh
+   dune exec -- chessmate -- query --limit 5 --offset 10 "Find Queens Gambit games"
+   ```
+   The `Limit:`/`Offset:` lines in the CLI output reflect the effective pagination parameters; compare them with `total`/`has_more` to confirm behaviour.
 
 ---
 

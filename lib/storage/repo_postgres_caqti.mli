@@ -67,15 +67,19 @@ type game_summary = {
   played_on : string option;
 }
 
+type search_page = { games : game_summary list; total : int }
+
 val search_games :
   t ->
   filters:Query_intent.metadata_filter list ->
   rating:Query_intent.rating_filter ->
   limit:int ->
-  game_summary list Or_error.t
+  offset:int ->
+  search_page Or_error.t
 (** Search the [games] table using the same metadata filters the hybrid planner
     produces (opening slug, ECO range, rating bounds, etc.). Results are ordered
-    by [played_on DESC, id DESC] and limited to [limit]. *)
+    by [played_on DESC, id DESC], constrained to [limit], offset by [offset],
+    and accompanied by the total number of matching games. *)
 
 val pending_embedding_job_count : t -> int Or_error.t
 (** Count jobs in [embedding_jobs] that are still marked [pending]. *)

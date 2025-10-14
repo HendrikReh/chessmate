@@ -53,17 +53,68 @@ let run_twic_precheck path =
   | Ok () -> ()
   | Error err -> exit_with_error err
 
-let run_query parts ~as_json =
-  let question = String.concat ~sep:" " parts |> String.strip in
-  if String.is_empty question then
-    exit_with_error (Error.of_string "query requires a question")
-  else
-    match Service_health.ensure_all () with
-    | Error err -> exit_with_error err
-    | Ok () -> (
-        match Search_command.run ~as_json question with
-        | Ok () -> ()
-        | Error err -> exit_with_error err)
+let parse_limit_flag value =
+  let stripped = String.strip value in
+  match Int.of_string_opt stripped with
+  | None -> Or_error.error_string "limit must be an integer"
+  | Some parsed ->
+      if parsed < 1 then Or_error.error_string "limit must be >= 1"
+      else if parsed > Query_intent.max_limit then
+        Or_error.errorf "limit must be <= %d" Query_intent.max_limit
+      else Or_error.return parsed
+
+let parse_offset_flag value =
+  let stripped = String.strip value in
+  match Int.of_string_opt stripped with
+  | None -> Or_error.error_string "offset must be an integer"
+  | Some parsed ->
+      if parsed < 0 then Or_error.error_string "offset must be >= 0"
+      else Or_error.return parsed
+
+type query_options = {
+  as_json : bool;
+  limit : int option;
+  offset : int option;
+  question : string;
+}
+
+let rec parse_query_parts as_json limit offset remaining =
+  match remaining with
+  | [] -> Or_error.error_string "query requires a question to ask"
+  | "--json" :: rest -> parse_query_parts true limit offset rest
+  | "--limit" :: [] -> Or_error.error_string "--limit expects a value"
+  | "--limit" :: value :: rest -> (
+      match parse_limit_flag value with
+      | Ok parsed -> parse_query_parts as_json (Some parsed) offset rest
+      | Error _ as err -> err)
+  | "--offset" :: [] -> Or_error.error_string "--offset expects a value"
+  | "--offset" :: value :: rest -> (
+      match parse_offset_flag value with
+      | Ok parsed -> parse_query_parts as_json limit (Some parsed) rest
+      | Error _ as err -> err)
+  | "--" :: rest ->
+      let question = String.concat ~sep:" " rest |> String.strip in
+      if String.is_empty question then
+        Or_error.error_string "query requires a question to ask"
+      else Or_error.return { as_json; limit; offset; question }
+  | flag :: _ when String.is_prefix flag ~prefix:"--" ->
+      Or_error.errorf "unknown flag %s" flag
+  | remaining ->
+      let question = String.concat ~sep:" " remaining |> String.strip in
+      if String.is_empty question then
+        Or_error.error_string "query requires a question to ask"
+      else Or_error.return { as_json; limit; offset; question }
+
+let run_query parts =
+  match parse_query_parts false None None parts with
+  | Error err -> exit_with_error err
+  | Ok { as_json; limit; offset; question } -> (
+      match Service_health.ensure_all () with
+      | Error err -> exit_with_error err
+      | Ok () -> (
+          match Search_command.run ~as_json ?limit ?offset question with
+          | Ok () -> ()
+          | Error err -> exit_with_error err))
 
 let run_fen parts =
   match parts with
@@ -98,11 +149,7 @@ let run ?argv () =
           exit_with_error
             (Error.of_string "twic-precheck requires a PGN file path")
       | "twic-precheck" :: path :: _ -> run_twic_precheck path
-      | "query" :: [] ->
-          exit_with_error (Error.of_string "query requires a question to ask")
-      | "query" :: "--json" :: question_parts ->
-          run_query question_parts ~as_json:true
-      | "query" :: question_parts -> run_query question_parts ~as_json:false
+      | "query" :: args -> run_query args
       | "fen" :: args -> run_fen args
       | "embedding-worker" :: _ ->
           exit_with_error

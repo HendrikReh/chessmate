@@ -11,6 +11,8 @@ let test_query_intent_opening () =
       Query_intent.text =
         "Find top 3 King's Indian games where white is rated at least 2500 and \
          black is 100 points lower";
+      limit = None;
+      offset = None;
     }
   in
   let plan = Query_intent.analyse request in
@@ -34,6 +36,8 @@ let test_query_intent_draw () =
     {
       Query_intent.text =
         "Show me five games that end in a draw in the French Defense endgame";
+      limit = None;
+      offset = None;
     }
   in
   let plan = Query_intent.analyse request in
@@ -66,6 +70,8 @@ let sample_summary =
     played_on = Some "2014-11-11";
   }
 
+let summary_with_id id = { sample_summary with Repo_postgres.id }
+
 let make_vector_points game_id score ~phases ~themes ~keywords =
   let payload =
     `Assoc
@@ -83,8 +89,13 @@ let test_hybrid_executor_merges_vector_hits () =
     "Show me King's Indian games where white is rated at least 2800 and \
      highlight middlegame tactics"
   in
-  let plan = Query_intent.analyse { Query_intent.text = question } in
-  let fetch_games _ = Or_error.return [ sample_summary ] in
+  let plan =
+    Query_intent.analyse
+      { Query_intent.text = question; limit = None; offset = None }
+  in
+  let fetch_games _ =
+    Or_error.return Repo_postgres.{ games = [ sample_summary ]; total = 1 }
+  in
   let vector_hits =
     make_vector_points sample_summary.Repo_postgres.id 0.92
       ~phases:[ "middlegame" ] ~themes:[ "tactics" ]
@@ -115,9 +126,13 @@ let test_hybrid_executor_warns_on_vector_failure () =
       {
         Query_intent.text =
           "Find King's Indian games with white above 2800 rating";
+        limit = None;
+        offset = None;
       }
   in
-  let fetch_games _ = Or_error.return [ sample_summary ] in
+  let fetch_games _ =
+    Or_error.return Repo_postgres.{ games = [ sample_summary ]; total = 1 }
+  in
   let fetch_vectors _ = Or_error.error_string "boom" in
   match
     Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors plan
@@ -135,12 +150,18 @@ let test_hybrid_executor_with_agent () =
   in
   let plan =
     {
-      Query_intent.original = { Query_intent.text = "Agent evaluation test" };
+      Query_intent.original =
+        {
+          Query_intent.text = "Agent evaluation test";
+          limit = None;
+          offset = None;
+        };
       cleaned_text = "agent evaluation test";
       keywords = [ "agent"; "evaluation" ];
       filters = [];
       rating;
       limit = 5;
+      offset = 0;
     }
   in
   let make_summary id name =
@@ -159,7 +180,10 @@ let test_hybrid_executor_with_agent () =
     }
   in
   let summaries = [ make_summary 1 "Alpha"; make_summary 2 "Beta" ] in
-  let fetch_games _ = Or_error.return summaries in
+  let fetch_games _ =
+    Or_error.return
+      Repo_postgres.{ games = summaries; total = List.length summaries }
+  in
   let fetch_vectors _ = Or_error.return [] in
   let fetch_game_pgns ids =
     let pgn = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 1-0" in
@@ -217,7 +241,8 @@ let test_hybrid_executor_with_agent () =
 let test_hybrid_executor_agent_cache () =
   let plan =
     {
-      Query_intent.original = { Query_intent.text = "Agent cache test" };
+      Query_intent.original =
+        { Query_intent.text = "Agent cache test"; limit = None; offset = None };
       cleaned_text = "agent cache test";
       keywords = [ "cache" ];
       filters = [];
@@ -228,6 +253,7 @@ let test_hybrid_executor_agent_cache () =
           max_rating_delta = None;
         };
       limit = 2;
+      offset = 0;
     }
   in
   let summaries =
@@ -247,7 +273,10 @@ let test_hybrid_executor_agent_cache () =
       };
     ]
   in
-  let fetch_games _ = Or_error.return summaries in
+  let fetch_games _ =
+    Or_error.return
+      Repo_postgres.{ games = summaries; total = List.length summaries }
+  in
   let fetch_vectors _ = Or_error.return [] in
   let fetch_game_pgns _ = Or_error.return [ (10, "1. e4 e5 2. Nf3 Nc6") ] in
   let cache = Agent_cache.create ~capacity:8 in
@@ -286,6 +315,51 @@ let test_hybrid_executor_agent_cache () =
   | Ok _ -> ());
   check int "agent evaluator invoked once" 1 !call_count
 
+let test_hybrid_executor_pagination_has_more () =
+  let plan =
+    Query_intent.analyse
+      {
+        Query_intent.text = "Find aggressive games";
+        limit = Some 2;
+        offset = Some 0;
+      }
+  in
+  let summaries = [ summary_with_id 11; summary_with_id 12 ] in
+  let fetch_games _ =
+    Or_error.return Repo_postgres.{ games = summaries; total = 5 }
+  in
+  let fetch_vectors _ = Or_error.return [] in
+  match
+    Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors plan
+  with
+  | Error err -> failf "unexpected failure: %s" (Error.to_string_hum err)
+  | Ok execution ->
+      check int "returned count" 2
+        (List.length execution.Hybrid_executor.results);
+      check int "total" 5 execution.Hybrid_executor.total;
+      check bool "has more" true execution.Hybrid_executor.has_more
+
+let test_hybrid_executor_offset_exceeds_total () =
+  let plan =
+    Query_intent.analyse
+      {
+        Query_intent.text = "Offset pagination";
+        limit = Some 2;
+        offset = Some 10;
+      }
+  in
+  let fetch_games _ = Or_error.return Repo_postgres.{ games = []; total = 3 } in
+  let fetch_vectors _ = Or_error.return [] in
+  match
+    Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors plan
+  with
+  | Error err -> failf "unexpected failure: %s" (Error.to_string_hum err)
+  | Ok execution ->
+      check int "empty results" 0
+        (List.length execution.Hybrid_executor.results);
+      check int "total" 3 execution.Hybrid_executor.total;
+      check bool "has_more false" false execution.Hybrid_executor.has_more
+
 let test_agent_response_parse_valid () =
   let json =
     "{\"evaluations\": [{\"game_id\": 42, \"score\": 0.87, \"explanation\": \
@@ -322,6 +396,12 @@ let suite =
       test_hybrid_executor_warns_on_vector_failure );
     ("hybrid executor integrates agent", `Quick, test_hybrid_executor_with_agent);
     ("hybrid executor cache", `Quick, test_hybrid_executor_agent_cache);
+    ( "hybrid executor pagination has_more",
+      `Quick,
+      test_hybrid_executor_pagination_has_more );
+    ( "hybrid executor offset exceeds total",
+      `Quick,
+      test_hybrid_executor_offset_exceeds_total );
     ("agent response parser", `Quick, test_agent_response_parse_valid);
     ( "agent response parser invalid",
       `Quick,

@@ -192,6 +192,8 @@ type result = {
 type execution = {
   plan : Query_intent.plan;
   results : result list;
+  total : int;
+  has_more : bool;
   warnings : string list;
 }
 
@@ -240,7 +242,7 @@ let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
     ?agent_client ?agent_cache ?agent_timeout_seconds plan =
   match fetch_games plan with
   | Error err -> Error err
-  | Ok summaries ->
+  | Ok { Repo_postgres.games = summaries; total } ->
       let vector_hits, warnings =
         match fetch_vector_hits plan with
         | Ok hits -> (hits, [])
@@ -414,4 +416,6 @@ let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
                Float.compare b.total_score a.total_score)
       in
       let limited = List.take scored_results plan.Query_intent.limit in
-      Or_error.return { plan; results = limited; warnings }
+      let returned = List.length limited in
+      let has_more = Int.(plan.Query_intent.offset + returned < total) in
+      Or_error.return { plan; results = limited; total; has_more; warnings }

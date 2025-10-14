@@ -24,16 +24,23 @@ paths:
         '200':
           description: Service is healthy
           content:
-            text/plain:
+            application/json:
               schema:
-                type: string
-                example: ok
+                $ref: '#/components/schemas/HealthSummary'
+        '503':
+          description: One or more dependencies are degraded or unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthSummary'
   /query:
     get:
       tags: [query]
       summary: Execute a chess search using a query string
       parameters:
         - $ref: '#/components/parameters/QuestionQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/OffsetQuery'
       responses:
         '200':
           $ref: '#/components/responses/QueryResponse'
@@ -72,6 +79,23 @@ components:
       schema:
         type: string
         minLength: 1
+    LimitQuery:
+      name: limit
+      in: query
+      description: Maximum number of results to return (1-500).
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+    OffsetQuery:
+      name: offset
+      in: query
+      description: Number of results to skip before returning matches.
+      required: false
+      schema:
+        type: integer
+        minimum: 0
   responses:
     QueryResponse:
       description: Successful query execution
@@ -87,6 +111,7 @@ components:
                 plan:
                   cleaned_text: find kings indian games where white is 2500 and black 100 points lower
                   limit: 5
+                  offset: 0
                   filters:
                     - field: opening
                       value: kings_indian_defense
@@ -132,6 +157,10 @@ components:
                       input_tokens: 1200
                       output_tokens: 400
                       reasoning_tokens: 256
+                offset: 0
+                limit: 5
+                total: 3
+                has_more: false
                 warnings:
                   - Vector search unavailable (falling back to metadata heuristics)
     BadRequest:
@@ -163,6 +192,15 @@ components:
           type: string
           description: Natural-language search string.
           minLength: 1
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 500
+          description: Optional override for the page size (default 50).
+        offset:
+          type: integer
+          minimum: 0
+          description: Optional number of results to skip before returning matches.
     QueryResponse:
       type: object
       required:
@@ -170,6 +208,10 @@ components:
         - plan
         - summary
         - results
+        - offset
+        - limit
+        - total
+        - has_more
       properties:
         question:
           type: string
@@ -181,6 +223,20 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/QueryResult'
+        offset:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 500
+        total:
+          type: integer
+          minimum: 0
+          description: Total number of matching games available for the query.
+        has_more:
+          type: boolean
+          description: True when additional pages are available beyond this response.
         warnings:
           type: array
           description: Non-fatal issues encountered while processing the query.
@@ -191,6 +247,7 @@ components:
       required:
         - cleaned_text
         - limit
+        - offset
         - filters
         - keywords
         - rating
@@ -201,6 +258,10 @@ components:
         limit:
           type: integer
           minimum: 1
+          maximum: 500
+        offset:
+          type: integer
+          minimum: 0
         filters:
           type: array
           items:
@@ -341,6 +402,35 @@ components:
           nullable: true
         reasoning_tokens:
           type: integer
+          nullable: true
+    HealthSummary:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/HealthCheck'
+    HealthCheck:
+      type: object
+      required: [name, status, required]
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [ok, error, skipped]
+        required:
+          type: boolean
+        latency_ms:
+          type: number
+          format: float
+          nullable: true
+        detail:
+          type: string
           nullable: true
     ErrorResponse:
       type: object

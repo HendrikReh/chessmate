@@ -37,7 +37,7 @@ docker compose exec postgres psql -U chess -c "ALTER ROLE chess WITH CREATEDB;"
 | --- | --- |
 | `dune exec -- services/api/chessmate_api.exe --port 8080` | Start the query API. Logs include rate-limiter quota and Qdrant bootstrap status. |
 | `OPENAI_API_KEY=... dune exec -- embedding_worker -- --workers N --poll-sleep 1.0 --exit-after-empty 3` | Run embedding worker loops. Adjust `N` gradually; monitor queue via `scripts/embedding_metrics.sh --interval 120`. |
-| `dune exec chessmate -- query "..."` | CLI queries; add `--json` for raw payloads. Prints `[health] ...` lines before execution. |
+| `dune exec chessmate -- query [--limit N] [--offset N] [--json] "..."` | CLI queries; paginate with `--limit/--offset` and use `--json` for raw payloads. Prints `[health] ...` lines before execution. |
 | `curl http://localhost:8080/metrics` | Inspect Prometheus gauges/counters (DB pool usage, per-route latency histograms, agent cache stats, rate limiter). |
 | `curl http://localhost:8080/openapi.yaml` | Retrieve the OpenAPI spec (override path with `CHESSMATE_OPENAPI_SPEC`). |
 | `curl http://localhost:8080/health` | Structured JSON health report (HTTP 200 on `status=ok`, 503 otherwise). Worker exposes `http://localhost:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/health`. |

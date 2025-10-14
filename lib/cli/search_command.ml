@@ -28,8 +28,15 @@ let build_uri () =
   let normalised = String.rstrip base ~drop:(Char.equal '/') in
   Uri.of_string (normalised ^ "/query")
 
-let request_body query =
-  `Assoc [ ("question", `String query) ] |> Yojson.Safe.to_string
+let request_body ~question ?limit ?offset () =
+  let fields = ref [ ("question", `String question) ] in
+  (match limit with
+  | Some value -> fields := ("limit", `Int value) :: !fields
+  | None -> ());
+  (match offset with
+  | Some value -> fields := ("offset", `Int value) :: !fields
+  | None -> ());
+  `Assoc (List.rev !fields) |> Yojson.Safe.to_string
 
 let perform_request uri body =
   let open Lwt.Syntax in
@@ -50,6 +57,10 @@ let parse_success body =
     let summary = json |> member "summary" |> to_string in
     let plan = json |> member "plan" in
     let limit = plan |> member "limit" |> to_int in
+    let offset = json |> member "offset" |> to_int in
+    let total = json |> member "total" |> to_int in
+    let has_more = json |> member "has_more" |> to_bool in
+    let has_more_str = if has_more then "yes" else "no" in
     let filters =
       plan |> member "filters" |> to_list
       |> List.map ~f:(fun filter ->
@@ -137,7 +148,10 @@ let parse_success body =
     let summary_bits =
       [
         Printf.sprintf "Summary: %s" summary;
+        Printf.sprintf "Offset: %d" offset;
         Printf.sprintf "Limit: %d" limit;
+        Printf.sprintf "Total matches: %d" total;
+        Printf.sprintf "Has more: %s" has_more_str;
         Printf.sprintf "Filters: %s" filters_line;
         (match rating_bits with
         | [] -> "Ratings: none"
@@ -165,13 +179,16 @@ let parse_response status body =
         | Some message -> Or_error.error_string message
         | None -> Or_error.errorf "query API responded with status %d" status)
 
-let run ?(as_json = false) query =
+let run ?(as_json = false) ?limit ?offset query =
   if String.is_empty (String.strip query) then
     Or_error.error_string "query cannot be empty"
   else
     let uri = build_uri () in
     (* Run the Lwt promise to completion; capture the HTTP status and response body. *)
-    match Lwt_main.run (perform_request uri (request_body query)) with
+    match
+      Lwt_main.run
+        (perform_request uri (request_body ~question:query ?limit ?offset ()))
+    with
     | status, body ->
         if as_json then
           if Int.equal status 200 then (
