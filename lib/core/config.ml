@@ -65,6 +65,7 @@ module Api = struct
     model : string option;
     reasoning_effort : Agents_gpt5_client.Effort.t;
     verbosity : Agents_gpt5_client.Verbosity.t option;
+    request_timeout_seconds : float;
     cache : Agent_cache.t;
   }
 
@@ -82,6 +83,7 @@ module Api = struct
   let default_collection_name = "positions"
   let default_vector_size = 1536
   let default_distance = "Cosine"
+  let default_agent_timeout_seconds = 15.
 
   let load_port () =
     match Helpers.optional "CHESSMATE_API_PORT" with
@@ -129,6 +131,14 @@ module Api = struct
                   (Agent_cache.Memory { capacity = Some capacity })
             | Error err -> Error err))
 
+  let load_agent_timeout () =
+    match Helpers.optional "AGENT_REQUEST_TIMEOUT_SECONDS" with
+    | None -> Or_error.return default_agent_timeout_seconds
+    | Some raw when String.is_empty raw ->
+        Or_error.return default_agent_timeout_seconds
+    | Some raw ->
+        Helpers.parse_positive_float "AGENT_REQUEST_TIMEOUT_SECONDS" raw
+
   let load_agent () =
     let api_key = Helpers.optional "AGENT_API_KEY" in
     let endpoint =
@@ -145,16 +155,20 @@ module Api = struct
         | Ok verbosity -> (
             match load_agent_cache () with
             | Error err -> Error err
-            | Ok cache ->
-                Or_error.return
-                  {
-                    api_key;
-                    endpoint;
-                    model;
-                    reasoning_effort;
-                    verbosity;
-                    cache;
-                  }))
+            | Ok cache -> (
+                match load_agent_timeout () with
+                | Error err -> Error err
+                | Ok request_timeout_seconds ->
+                    Or_error.return
+                      {
+                        api_key;
+                        endpoint;
+                        model;
+                        reasoning_effort;
+                        verbosity;
+                        request_timeout_seconds;
+                        cache;
+                      })))
 
   let load_rate_limit () =
     match Helpers.optional "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE" with

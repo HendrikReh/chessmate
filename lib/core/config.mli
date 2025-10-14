@@ -55,6 +55,7 @@ module Api : sig
     model : string option;
     reasoning_effort : Agents_gpt5_client.Effort.t;
     verbosity : Agents_gpt5_client.Verbosity.t option;
+    request_timeout_seconds : float;
     cache : Agent_cache.t;
   }
 

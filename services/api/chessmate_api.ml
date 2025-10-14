@@ -461,7 +461,9 @@ let query_handler req =
       match
         Hybrid_executor.execute ~fetch_games ~fetch_vector_hits
           ?fetch_game_pgns:fetch_game_pgns_opt ?agent_client:agent_client_opt
-          ?agent_cache:agent_cache_opt plan
+          ?agent_cache:agent_cache_opt
+          ~agent_timeout_seconds:
+            api_config.Config.Api.agent.request_timeout_seconds plan
       with
       | Error err ->
           respond_json ~status:`Internal_server_error

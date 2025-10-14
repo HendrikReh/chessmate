@@ -168,6 +168,7 @@ data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
 - `AGENT_MODEL`: optional, defaults to `gpt-5` (also supports `gpt-5-mini`, `gpt-5-nano`).
 - `AGENT_REASONING_EFFORT`: one of `minimal|low|medium|high`; defaults to `medium`.
 - `AGENT_VERBOSITY`: `low|medium|high` (choose higher values for verbose reports).
+- `AGENT_REQUEST_TIMEOUT_SECONDS`: optional positive float (seconds); defaults to `15` to bound agent latency.
 - `AGENT_ENDPOINT`: override the OpenAI Responses API endpoint (advanced setups).
 - `AGENT_CACHE_REDIS_URL`: optional `redis://` URL to persist GPT-5 evaluations (requires the Redis service in `docker-compose`).
 - `AGENT_CACHE_REDIS_NAMESPACE`: optional key namespace (defaults to `chessmate:agent:` when unset).

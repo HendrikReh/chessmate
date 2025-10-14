@@ -57,6 +57,7 @@ val execute :
     Agent_evaluator.evaluation list Or_error.t) ->
   ?agent_client:Agents_gpt5_client.t ->
   ?agent_cache:Agent_cache.t ->
+  ?agent_timeout_seconds:float ->
   Query_intent.plan ->
   execution Or_error.t
 (** Run a hybrid query using the supplied data providers. *)

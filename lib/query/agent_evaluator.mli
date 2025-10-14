@@ -38,6 +38,9 @@ val evaluate :
   client:Agents_gpt5_client.t ->
   plan:Query_intent.plan ->
   candidates:(Repo_postgres.game_summary * string) list ->
+  timeout_seconds:float option ->
   evaluation list Or_error.t
 (** Call GPT-5 for each candidate. Missing entries are ignored; callers handle
-    caching and error propagation. *)
+    caching and error propagation. When [timeout_seconds] is provided, the
+    underlying request is aborted if exceeded and an error is returned so
+    callers can fall back to heuristic scoring. *)

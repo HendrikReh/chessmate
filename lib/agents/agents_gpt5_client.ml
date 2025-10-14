@@ -142,7 +142,7 @@ let non_empty_env name =
   |> Option.bind ~f:(fun value ->
          if String.is_empty value then None else Some value)
 
-let call_api ~endpoint ~api_key ~body =
+let call_api ~endpoint ~api_key ~body ?timeout_secs () =
   let payload_file =
     Stdlib.Filename.temp_file "chessmate_gpt5_payload" ".json"
   in
@@ -152,15 +152,22 @@ let call_api ~endpoint ~api_key ~body =
   Exn.protect
     ~f:(fun () ->
       Out_channel.write_all payload_file ~data:body;
+      let timeout_arg =
+        match timeout_secs with
+        | Some seconds when Float.(seconds > 0.) ->
+            Printf.sprintf " --max-time %.1f" seconds
+        | _ -> ""
+      in
       let command =
         Printf.sprintf
           "curl -sS -X POST %s -H %s -H %s --data-binary @%s -o %s -w \
-           '%%{http_code}'"
+           '%%{http_code}'%s"
           (Stdlib.Filename.quote endpoint)
           (Stdlib.Filename.quote ("Authorization: Bearer " ^ api_key))
           (Stdlib.Filename.quote "Content-Type: application/json")
           (Stdlib.Filename.quote payload_file)
           (Stdlib.Filename.quote response_file)
+          timeout_arg
       in
       let ic, oc, ec = Unix.open_process_full command (Unix.environment ()) in
       Out_channel.close oc;
@@ -175,6 +182,12 @@ let call_api ~endpoint ~api_key ~body =
           | Some status ->
               let body = In_channel.read_all response_file in
               Or_error.return { status; body })
+      | Unix.WEXITED code when Int.equal code 28 -> (
+          match timeout_secs with
+          | Some seconds ->
+              Or_error.errorf "curl timed out after %.1fs (exit code 28)"
+                seconds
+          | None -> Or_error.error_string "curl timed out (exit code 28)")
       | Unix.WEXITED code ->
           Or_error.errorf "curl exited with code %d: %s" code stderr
       | Unix.WSIGNALED signal ->
@@ -323,7 +336,7 @@ let build_payload ~model ~messages ~effort ~verbosity ~max_output_tokens
   `Assoc all_fields |> Yojson.Safe.to_string
 
 let generate t ?reasoning_effort ?verbosity ?max_output_tokens ?response_format
-    (messages : Message.t list) =
+    ?timeout_seconds (messages : Message.t list) =
   if List.is_empty messages then
     Or_error.error_string "Agent prompt cannot be empty"
   else
@@ -334,7 +347,10 @@ let generate t ?reasoning_effort ?verbosity ?max_output_tokens ?response_format
         ~max_output_tokens ~response_format
     in
     let attempt ~attempt:_ =
-      match call_api ~endpoint:t.endpoint ~api_key:t.api_key ~body with
+      match
+        call_api ~endpoint:t.endpoint ~api_key:t.api_key ~body
+          ?timeout_secs:timeout_seconds ()
+      with
       | Error err -> Backoff.Retry (Error.tag err ~tag:"agent request failed")
       | Ok { status; _ } when Common.should_retry_status status ->
           let err =

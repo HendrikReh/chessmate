@@ -236,7 +236,7 @@ let build_result plan summary plan_phases plan_themes vector_hit agent_eval =
   }
 
 let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
-    ?agent_client ?agent_cache plan =
+    ?agent_client ?agent_cache ?agent_timeout_seconds plan =
   match fetch_games plan with
   | Error err -> Error err
   | Ok summaries ->
@@ -329,7 +329,9 @@ let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
                       match evaluators with
                       | Some custom, _ -> custom ~plan ~candidates
                       | None, Some client ->
-                          Agent_eval.evaluate ~client ~plan ~candidates
+                          Agent_eval.evaluate
+                            ~timeout_seconds:agent_timeout_seconds ~client ~plan
+                            ~candidates
                       | None, None -> Or_error.return []
                     in
                     match evaluate unresolved with

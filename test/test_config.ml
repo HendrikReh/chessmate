@@ -24,6 +24,7 @@ let test_api_config_success () =
       ("AGENT_MODEL", Some "gpt-5");
       ("AGENT_REASONING_EFFORT", Some "low");
       ("AGENT_VERBOSITY", Some "medium");
+      ("AGENT_REQUEST_TIMEOUT_SECONDS", Some "12.5");
       ("AGENT_CACHE_REDIS_URL", Some "redis://localhost:6379");
       ("AGENT_CACHE_REDIS_NAMESPACE", Some "chessmate:test:");
       ("AGENT_CACHE_TTL_SECONDS", Some "120");
@@ -43,6 +44,10 @@ let test_api_config_success () =
           | other ->
               failf "expected low effort, got %s"
                 (Agents_gpt5_client.Effort.to_string other));
+          check bool "agent timeout" true
+            Float.(
+              abs (config.Config.Api.agent.request_timeout_seconds -. 12.5)
+              < 1e-6);
           match config.Config.Api.agent.cache with
           | Config.Api.Agent_cache.Redis _ -> ()
           | _ -> fail "expected redis cache"))

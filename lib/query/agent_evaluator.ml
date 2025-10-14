@@ -145,7 +145,10 @@ let response_schema =
         }
       }|}
 
-let evaluate ~client ~plan ~candidates =
+let is_timeout_error err =
+  String.is_substring (Error.to_string_hum err) ~substring:"timed out"
+
+let evaluate ~client ~plan ~candidates ~timeout_seconds =
   let limited_candidates = List.take candidates max_candidates in
   if List.is_empty limited_candidates then Or_error.return []
   else
@@ -173,9 +176,25 @@ let evaluate ~client ~plan ~candidates =
     in
     let response_format = Response_format.Json_schema response_schema in
     let* response =
-      Agents_gpt5_client.generate client ~reasoning_effort:effort ?verbosity
-        ~response_format
-        [ system_message; user_message ]
+      match
+        Agents_gpt5_client.generate client ~reasoning_effort:effort ?verbosity
+          ~response_format ?timeout_seconds
+          [ system_message; user_message ]
+      with
+      | Ok response -> Or_error.return response
+      | Error err ->
+          let err =
+            match timeout_seconds with
+            | Some seconds when is_timeout_error err ->
+                Error.tag err
+                  ~tag:
+                    (Printf.sprintf
+                       "agent evaluation timed out after %.1fs; falling back \
+                        to heuristic scoring"
+                       seconds)
+            | _ -> err
+          in
+          Error err
     in
     let latency_ms = (Unix.gettimeofday () -. started_at) *. 1000.0 in
     let* parsed = Response_items.parse response.Response.content in

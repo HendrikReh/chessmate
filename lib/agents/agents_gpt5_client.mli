@@ -96,10 +96,12 @@ val generate :
   ?verbosity:Verbosity.t ->
   ?max_output_tokens:int ->
   ?response_format:Response_format.t ->
+  ?timeout_seconds:float ->
   Message.t list ->
   Response.t Or_error.t
 (** Execute a GPT-5 call with the supplied messages. Optional parameters
     override the client's defaults for reasoning effort, verbosity, response
-    format, and token limit. Transient failures (HTTP 429/5xx, server errors)
-    are retried automatically using exponential backoff obeying
+    format, token limit, and timeout. [timeout_seconds] maps to curl's
+    [--max-time] flag. Transient failures (HTTP 429/5xx, server errors) are
+    retried automatically using exponential backoff obeying
     [OPENAI_RETRY_MAX_ATTEMPTS] and [OPENAI_RETRY_BASE_DELAY_MS] when set. *)
