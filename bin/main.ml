@@ -82,10 +82,10 @@ let strip_dune_exec = function
   | first :: rest when String.equal first "--" -> rest
   | list -> list
 
-let () =
-  match Array.to_list Stdlib.Sys.argv with
-  | _ :: [] -> print_usage ()
-  | [] -> print_usage ()
+let run ?argv () =
+  let argv = Option.value argv ~default:Stdlib.Sys.argv in
+  match Array.to_list argv with
+  | [] | [ _ ] -> print_usage ()
   | _ :: rest -> (
       let rest = strip_dune_exec rest in
       match rest with
@@ -113,3 +113,5 @@ let () =
       | _ ->
           print_usage ();
           Stdlib.exit 1)
+
+let () = run ()
