@@ -26,6 +26,12 @@ Cmdliner-based executable (`dune exec -- chessmate -- ...`).
 - `lib/cli/collection_command.ml`: coordinates Qdrant snapshot creation,
   restoration, and metadata journaling for zero-downtime reindexing.
 
+- All commands understand the optional `--listen-prometheus <port>` flag
+  (mirrored by the `CHESSMATE_PROM_PORT` environment variable). When supplied,
+  a lightweight Prometheus exporter serves `http://localhost:<port>/metrics`
+  for the lifetime of the command—useful during long-running ingests or bulk
+  snapshot operations.
+
 {1 Usage Tips}
 
 {2 Ingest}

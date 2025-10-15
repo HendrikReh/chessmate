@@ -30,6 +30,30 @@ modules documented elsewhere in this guide.
 - Operational flags such as `--workers`, `--poll-sleep`, and optional exit
   streak limits make scaling and batching predictable across environments.
 
+{1 Observability}
+
+- Both services register their metrics with the shared `Metrics` facade. The
+  query API exposes the Prometheus text endpoint at `/metrics` on the main HTTP
+  port; the worker starts its own exporter when `--listen-prometheus <port>` (or
+  `CHESSMATE_WORKER_PROM_PORT`) is provided.
+- Exporter lifecycle: the worker installs `at_exit` hooks so CTRL-C and fatal
+  errors shut down the HTTP server cleanly. When the exporter is disabled no
+  extra threads are spawned.
+- Default payloads include HTTP request histograms, Postgres pool gauges,
+  embedding throughput/error counters, and agent cache statistics. These are
+  emitted automatically once a scrape is performed.
+- Runtime events (OCaml ≥5) were evaluated for deep GC instrumentation. The
+  conclusion: integrating the `Runtime_events` API would require a persistent
+  consumer loop to poll per-domain ring buffers and translate them into
+  Prometheus counters. That layer is not yet implemented; instead we rely on the
+  GC metrics already registered by `prometheus-app`. Follow-up work will explore
+  either a dedicated runtime-events sidecar or extending the worker with a
+  lightweight polling thread.
+- Operators can still record runtime events manually by setting
+  `OCAML_RUNTIME_EVENTS_START=1` (and optionally `OCAML_RUNTIME_EVENTS_DIR`) when
+  launching the service. This produces `*.events` ring buffers on disk for
+  offline analysis without impacting the in-process metrics path.
+
 {1 Deploying Services}
 
 - Use `dune exec services/api/chessmate_api.exe -- --port 8080` for local runs;

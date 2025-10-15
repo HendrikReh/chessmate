@@ -176,6 +176,7 @@ data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
   OPENAI_API_KEY=... DATABASE_URL=postgres://... \
     dune exec -- embedding_worker -- --listen-prometheus 9102 --workers 4
   ```
+- **Runtime events (evaluation):** OCaml 5's runtime-events API can emit fine-grained GC and allocation telemetry, but feeding those counters directly into Prometheus would require a dedicated consumer loop polling the per-domain ring buffers. We tested the APIs and deferred automation for now. You can still capture traces manually by launching processes with `OCAML_RUNTIME_EVENTS_START=1` (and optionally `OCAML_RUNTIME_EVENTS_DIR=/tmp/events`) and analysing the resulting `*.events` files with external tooling; the in-process exporters already publish standard GC metrics via `prometheus-app`.
 - **Recommended scrape config:**
   ```yaml
   scrape_configs:
