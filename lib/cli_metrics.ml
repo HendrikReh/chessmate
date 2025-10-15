@@ -1,6 +1,6 @@
 (*  Chessmate - Hybrid chess tutor combining Postgres metadata with Qdrant
     vector search
-   Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
+    Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
