@@ -1,0 +1,28 @@
+# Prometheus scrape configuration for local Chessmate development.
+# Copy to prometheus/prometheus.yml and adjust targets as needed.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: chessmate-api
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        labels:
+          role: api
+
+  - job_name: chessmate-cli
+    static_configs:
+      - targets: ['host.docker.internal:9101']
+        labels:
+          role: cli
+
+  - job_name: chessmate-worker
+    static_configs:
+      - targets: ['host.docker.internal:9102']
+        labels:
+          role: worker
+
+# On Linux hosts replace `host.docker.internal` with the bridge IP (for example `172.17.0.1`)
+# or attach Prometheus to the same Docker network as the Chessmate services.

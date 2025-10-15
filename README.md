@@ -196,6 +196,7 @@ data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
           labels: {role: worker}
   ```
   Adjust ports to match your deployment (for example, when running in Docker Compose expose the exporter via `ports:` or a `hostPort`). Pair these scrape jobs with alerting on `db_pool_wait_ratio`, request latency histograms, embedding queue depth, and worker failure counters.
+- **Quick start:** copy `prometheus/prometheus.yml.example` to `prometheus/prometheus.yml`, tweak targets, then run `scripts/run_prometheus.sh`. Combine with `PLAN.md` for the full setup walkthrough.
 
 ### Agent Configuration
 - `AGENT_API_KEY`: required to enable GPT-5 ranking (absent → agent disabled).

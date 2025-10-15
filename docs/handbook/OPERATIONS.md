@@ -190,4 +190,33 @@ Log details and mitigation in `INCIDENTS/<date>.md` after an incident.
 
 ---
 
+## 14. Local Prometheus Setup (Docker Desktop)
+
+1. **Config** – copy `prometheus/prometheus.yml.example` to `prometheus/prometheus.yml`. Targets default to:
+   - API: `host.docker.internal:8080`
+   - CLI exporter: `host.docker.internal:9101`
+   - Worker exporter: `host.docker.internal:9102`
+   Replace the hostname with the bridge IP (`172.17.0.1`) on Linux or attach the container to the same Docker network as Chessmate.
+
+2. **Run Prometheus** – execute `scripts/run_prometheus.sh`. Environment variables:
+   - `CONFIG_PATH` (default `prometheus/prometheus.yml`)
+   - `PORT` (default `9090`)
+   - `PROM_VERSION` (e.g. `v2.51.2`)
+   Prometheus UI is available at `http://localhost:9090`.
+
+3. **Expose metrics** – start Chessmate services with exporters enabled:
+   ```sh
+   dune exec -- services/api/chessmate_api.exe --port 8080
+   dune exec -- chessmate -- --listen-prometheus 9101 ingest test/fixtures/sample_game.pgn
+   OPENAI_API_KEY=... DATABASE_URL=... \
+     dune exec -- embedding_worker -- --listen-prometheus 9102
+   ```
+   Environment overrides `CHESSMATE_PROM_PORT` / `CHESSMATE_WORKER_PROM_PORT` achieve the same without flags.
+
+4. **Smoke test** – run `scripts/check_metrics.sh PORT=8080`, `scripts/check_metrics.sh PORT=9101 || true`, `scripts/check_metrics.sh PORT=9102 || true`. In the Prometheus UI check `Status → Targets` and explore metrics (`chessmate_api_requests_total`, `chessmate_worker_embedding_jobs_total`).
+
+5. **Optional** – integrate with Grafana, add Alertmanager, or expand scrape configs for staging/prod using service discovery.
+
+---
+
 Keep this playbook updated alongside system changes. Combine it with the architecture roadmap ([REVIEW_v5.md](REVIEW_v5.md)) to understand what's changing and why. Incident retrospectives live in `INCIDENTS/`; use the template in `INCIDENTS/incident-template.md` after each SEV event.

@@ -116,6 +116,7 @@ The executables validate configuration on startup; missing or malformed values r
   scripts/check_metrics.sh PORT=9101 HOST=localhost PATHNAME=/metrics
   ```
   The helper verifies `/metrics` responds with the Prometheus text banner (CLI exporter example assumes `--listen-prometheus 9101`).
+  To spin up a local Prometheus instance, copy `prometheus/prometheus.yml.example` to `prometheus/prometheus.yml` and run `scripts/run_prometheus.sh` (see Operations handbook §14 for full setup and rollout notes).
   Capture the output alongside `dune build && dune runtest` results in PR descriptions whenever instrumentation changes touch metrics.
 
 5. **Query from the CLI**
