@@ -95,11 +95,31 @@ let rating_matches summary rating =
   && meets rating.Query_intent.black_min summary.Repo_postgres.black_rating
   && meets_delta
 
-let tokenize text =
-  text |> String.lowercase
-  |> String.map ~f:(fun ch -> if Char.is_alphanum ch then ch else ' ')
-  |> String.split ~on:' '
-  |> List.filter ~f:(fun token -> String.length token >= 3)
+let tokenize_sources sources =
+  let buffer = Stdlib.Buffer.create 32 in
+  let flush acc =
+    if Stdlib.Buffer.length buffer >= 3 then (
+      let token = Stdlib.Buffer.contents buffer in
+      Stdlib.Buffer.clear buffer;
+      token :: acc)
+    else (
+      Stdlib.Buffer.clear buffer;
+      acc)
+  in
+  let push_char acc ch =
+    let lower = Char.lowercase ch in
+    if Char.is_alphanum lower then (
+      Stdlib.Buffer.add_char buffer lower;
+      acc)
+    else flush acc
+  in
+  let acc =
+    List.fold sources ~init:[] ~f:(fun acc source ->
+        let acc = String.fold source ~init:acc ~f:push_char in
+        flush acc)
+  in
+  let acc = flush acc in
+  acc |> List.dedup_and_sort ~compare:String.compare
 
 let summary_keyword_tokens summary =
   let sources =
@@ -111,17 +131,13 @@ let summary_keyword_tokens summary =
       summary.Repo_postgres.opening_slug;
     ]
   in
-  sources |> List.filter_map ~f:Fn.id
-  |> List.concat_map ~f:tokenize
-  |> List.dedup_and_sort ~compare:String.compare
+  sources |> List.filter_map ~f:Fn.id |> tokenize_sources
 
-let summary_tokens_with_vector summary vector_hit =
+let summary_tokens_with_vector summary_tokens vector_hit =
   match vector_hit with
-  | None -> summary_keyword_tokens summary
+  | None -> summary_tokens
   | Some hit ->
-      Hybrid_planner.merge_keywords
-        (summary_keyword_tokens summary)
-        hit.Hybrid_planner.keywords
+      Hybrid_planner.merge_keywords summary_tokens hit.Hybrid_planner.keywords
 
 let keyword_overlap plan token_set =
   let matches =
@@ -130,8 +146,8 @@ let keyword_overlap plan token_set =
   let total = Int.max 1 (List.length plan.Query_intent.keywords) in
   Float.of_int matches /. Float.of_int total
 
-let fallback_vector_score plan summary =
-  if not (rating_matches summary plan.Query_intent.rating) then 0.0
+let fallback_vector_score plan summary ~rating_match =
+  if not rating_match then 0.0
   else if List.is_empty plan.Query_intent.filters then 0.6
   else
     let matched =
@@ -142,15 +158,17 @@ let fallback_vector_score plan summary =
     +. 0.6 *. Float.of_int matched
        /. Float.of_int (List.length plan.Query_intent.filters)
 
-let vector_score plan summary vector_hit =
+let vector_score plan summary vector_hit ~rating_match =
   match vector_hit with
-  | Some hit when rating_matches summary plan.Query_intent.rating ->
+  | Some hit when rating_match ->
       Hybrid_planner.normalize_vector_score hit.Hybrid_planner.score
   | Some _ -> 0.0
-  | None -> fallback_vector_score plan summary
+  | None -> fallback_vector_score plan summary ~rating_match
 
-let score_result plan summary vector_hit summary_tokens =
-  let vector = Float.min 1.0 (vector_score plan summary vector_hit) in
+let score_result plan summary vector_hit summary_tokens ~rating_match =
+  let vector =
+    Float.min 1.0 (vector_score plan summary vector_hit ~rating_match)
+  in
   let keyword =
     keyword_overlap plan (Set.of_list (module String) summary_tokens)
   in
@@ -201,9 +219,13 @@ let default_agent_candidate_multiplier = 5
 let default_agent_candidate_max = 25
 
 let build_result plan summary plan_phases plan_themes vector_hit agent_eval =
-  let summary_tokens = summary_tokens_with_vector summary vector_hit in
+  let rating_match = rating_matches summary plan.Query_intent.rating in
+  let summary_tokens_base = summary_keyword_tokens summary in
+  let summary_tokens =
+    summary_tokens_with_vector summary_tokens_base vector_hit
+  in
   let base_total, vector_score, keyword_score =
-    score_result plan summary vector_hit summary_tokens
+    score_result plan summary vector_hit summary_tokens ~rating_match
   in
   let phases = combined_phases plan_phases vector_hit in
   let themes = combined_themes plan_themes vector_hit in
