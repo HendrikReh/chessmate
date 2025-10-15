@@ -70,6 +70,13 @@ let test_api_config_success () =
             config.Config.Api.agent.candidate_multiplier;
           check int "default candidate max" 25
             config.Config.Api.agent.candidate_max;
+          check int "breaker threshold" 5
+            config.Config.Api.agent.circuit_breaker_threshold;
+          check bool "breaker cooloff default"
+            Float.(
+              abs
+                (config.Config.Api.agent.circuit_breaker_cooloff_seconds -. 60.)
+              < 1e-6);
           match config.Config.Api.agent.cache with
           | Config.Api.Agent_cache.Redis _ -> ()
           | _ -> fail "expected redis cache"))
@@ -81,6 +88,8 @@ let test_api_config_candidate_limits_override () =
       ("QDRANT_URL", Some "http://localhost:6333");
       ("AGENT_CANDIDATE_MULTIPLIER", Some "3");
       ("AGENT_CANDIDATE_MAX", Some "40");
+      ("AGENT_CIRCUIT_BREAKER_THRESHOLD", Some "7");
+      ("AGENT_CIRCUIT_BREAKER_COOLOFF_SECONDS", Some "120");
     ]
     (fun () ->
       match Config.Api.load () with
@@ -89,7 +98,14 @@ let test_api_config_candidate_limits_override () =
       | Ok config ->
           check int "candidate multiplier" 3
             config.Config.Api.agent.candidate_multiplier;
-          check int "candidate max" 40 config.Config.Api.agent.candidate_max)
+          check int "candidate max" 40 config.Config.Api.agent.candidate_max;
+          check int "breaker threshold override" 7
+            config.Config.Api.agent.circuit_breaker_threshold;
+          check bool "breaker cooloff override"
+            Float.(
+              abs
+                (config.Config.Api.agent.circuit_breaker_cooloff_seconds -. 120.)
+              < 1e-6))
 
 let test_api_config_missing_database () =
   with_env

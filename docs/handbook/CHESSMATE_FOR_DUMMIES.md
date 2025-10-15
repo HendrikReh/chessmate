@@ -47,7 +47,7 @@ Chessmate ingests PGN games, stores metadata and FEN snapshots in PostgreSQL, em
    - Runs dependency health probes (Postgres, Qdrant, Redis), then enforces per-IP rate limiting (`lib/api/rate_limiter`). 429 responses include `Retry-After`.
 2. **Intent analysis** – `Query_intent.analyse` normalises text, extracts keywords/opening/rating filters, applies result limits.
 3. **Hybrid planning** – `Hybrid_planner` builds SQL predicates and optional Qdrant payload filters. `Hybrid_executor` fetches candidates from Postgres and parallel vector hits from Qdrant.
-4. **Agent scoring** – Redis cache checked first. On miss, GPT-5 is invoked (configurable effort/verbosity). Future iteration adds request timeouts, circuit breakers, and fallback warnings.
+4. **Agent scoring** – Redis cache checked first. On miss, GPT-5 is invoked (configurable effort/verbosity). Request timeouts and the circuit breaker ensure slow/failing calls fall back to heuristic results with clear warnings.
 5. **Response formatting** – `Result_formatter` merges heuristic/agent scores, themes, explanations, and produces JSON plus CLI summary.
 
 **CLI Health Bill**
@@ -67,7 +67,7 @@ Chessmate ingests PGN games, stores metadata and FEN snapshots in PostgreSQL, em
 | Rate limiting | ✅ | Token-bucket per IP via `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` (+ body budget `CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE`). Metrics: `api_rate_limited_total`, `api_rate_limited_body_total`. |
 | Qdrant bootstrap | ✅ | `Repo_qdrant.ensure_collection` runs at API/worker startup. |
 | Health probes | 🔄 | CLI covers Postgres/Qdrant/Redis; `/health` JSON + worker endpoint planned. |
-| GPT-5 timeout/breaker | 🔄 | Upcoming: per-request timeout, fallback warnings, circuit breaker, metrics. |
+| GPT-5 timeout/breaker | ✅ | Agent timeout (`AGENT_REQUEST_TIMEOUT_SECONDS`) and circuit breaker protect query latency, exposing status via `/metrics` and JSON warnings. |
 | Metrics | ☑️ | Caqti pool gauges, rate limiter counters; latency/error histograms to follow. |
 | Telemetry | ✅ | GPT-5 agent logs latency/tokens/cost; CLI/formatting uses ocamlformat `0.27.0`. |
 

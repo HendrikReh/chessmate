@@ -11,10 +11,12 @@
   test_config
   test_embedding_client
   test_openai_common
+  test_agent_circuit_breaker
   test_api_metrics
   test_integration_support
   test_integration
   test_sql_filters
+  test_hybrid_executor
   test_qdrant
   test_collection_command
   test_sanitizer

@@ -33,6 +33,8 @@ let sample_agent =
         { url = "redis://localhost:6379"; namespace = None; ttl_seconds = None };
     candidate_multiplier = 5;
     candidate_max = 25;
+    circuit_breaker_threshold = 5;
+    circuit_breaker_cooloff_seconds = 60.;
   }
 
 let sample_api_config =

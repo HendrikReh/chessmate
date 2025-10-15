@@ -25,6 +25,8 @@ open! Base
 (** Execute hybrid search by combining Postgres metadata with Qdrant vector
     hits. *)
 
+type agent_status = Agent_disabled | Agent_enabled | Agent_circuit_open
+
 type result = {
   summary : Repo_postgres.game_summary;
   total_score : float;
@@ -46,8 +48,12 @@ type execution = {
   total : int;
   has_more : bool;
   warnings : string list;
+  agent_status : agent_status;
 }
 (** The outcome of executing a hybrid plan. *)
+
+val agent_status_to_string : agent_status -> string
+(** Human-readable representation of agent status for logs and API output. *)
 
 val execute :
   fetch_games:(Query_intent.plan -> Repo_postgres.search_page Or_error.t) ->

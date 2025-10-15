@@ -207,12 +207,20 @@ type result = {
   keywords : string list;
 }
 
+type agent_status = Agent_disabled | Agent_enabled | Agent_circuit_open
+
+let agent_status_to_string = function
+  | Agent_disabled -> "disabled"
+  | Agent_enabled -> "enabled"
+  | Agent_circuit_open -> "circuit_open"
+
 type execution = {
   plan : Query_intent.plan;
   results : result list;
   total : int;
   has_more : bool;
   warnings : string list;
+  agent_status : agent_status;
 }
 
 let default_agent_candidate_multiplier = 5
@@ -277,6 +285,7 @@ let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
       let plan_phases = phases_from_plan plan in
       let plan_themes = themes_from_plan plan in
       let hit_index = Hybrid_planner.index_hits_by_game vector_hits in
+      let agent_status = ref Agent_disabled in
       let agent_map, agent_warnings =
         match (fetch_game_pgns, (agent_evaluator, agent_client)) with
         | None, _ | _, (None, None) -> (Map.empty (module Int), [])
@@ -288,8 +297,10 @@ let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
                    (plan.Query_intent.limit * agent_candidate_multiplier))
             in
             let candidate_summaries = List.take summaries candidate_count in
-            if List.is_empty candidate_summaries then
-              (Map.empty (module Int), [])
+            if List.is_empty candidate_summaries then (
+              agent_status := Agent_enabled;
+              Agent_circuit_breaker.record_success ();
+              (Map.empty (module Int), []))
             else
               let ids =
                 List.map candidate_summaries ~f:(fun summary ->
@@ -297,12 +308,14 @@ let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
               in
               match fetch_pgns ids with
               | Error err ->
+                  agent_status := Agent_enabled;
+                  Agent_circuit_breaker.record_failure ();
                   ( Map.empty (module Int),
                     [
                       Printf.sprintf "Agent disabled (PGN fetch failed): %s"
                         (Error.to_string_hum err);
                     ] )
-              | Ok id_pgns -> (
+              | Ok id_pgns ->
                   let pgn_map =
                     List.fold id_pgns
                       ~init:(Map.empty (module Int))
@@ -348,8 +361,19 @@ let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
                     | _ -> []
                   in
                   let pending = List.rev pending in
-                  if List.is_empty pending then (cached_map, cached_messages)
-                  else
+                  if List.is_empty pending then (
+                    agent_status := Agent_enabled;
+                    Agent_circuit_breaker.record_success ();
+                    (cached_map, cached_messages))
+                  else if not (Agent_circuit_breaker.should_allow ()) then (
+                    agent_status := Agent_circuit_open;
+                    ( cached_map,
+                      cached_messages
+                      @ [
+                          "Agent circuit breaker open; using cached evaluations";
+                        ] ))
+                  else (
+                    agent_status := Agent_enabled;
                     let unresolved =
                       List.map pending ~f:(fun (summary, pgn, _) ->
                           (summary, pgn))
@@ -365,6 +389,7 @@ let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
                     in
                     match evaluate unresolved with
                     | Error err ->
+                        Agent_circuit_breaker.record_failure ();
                         ( cached_map,
                           cached_messages
                           @ [
@@ -372,6 +397,7 @@ let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
                                 (Error.to_string_hum err);
                             ] )
                     | Ok evaluations ->
+                        Agent_circuit_breaker.record_success ();
                         let eval_map =
                           List.fold evaluations
                             ~init:(Map.empty (module Int))
@@ -442,4 +468,12 @@ let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
       let limited = List.take scored_results plan.Query_intent.limit in
       let returned = List.length limited in
       let has_more = Int.(plan.Query_intent.offset + returned < total) in
-      Or_error.return { plan; results = limited; total; has_more; warnings }
+      Or_error.return
+        {
+          plan;
+          results = limited;
+          total;
+          has_more;
+          warnings;
+          agent_status = !agent_status;
+        }

@@ -92,6 +92,8 @@ module Api = struct
     cache : Agent_cache.t;
     candidate_multiplier : int;
     candidate_max : int;
+    circuit_breaker_threshold : int;
+    circuit_breaker_cooloff_seconds : float;
   }
 
   type t = {
@@ -112,6 +114,8 @@ module Api = struct
   let default_agent_timeout_seconds = 15.
   let default_agent_candidate_multiplier = 5
   let default_agent_candidate_max = 25
+  let default_agent_circuit_breaker_threshold = 5
+  let default_agent_circuit_breaker_cooloff_seconds = 60.
   let default_max_request_body_bytes = 1_048_576
 
   let load_port () =
@@ -182,6 +186,21 @@ module Api = struct
         Or_error.return default_agent_candidate_max
     | Some raw -> Helpers.parse_positive_int "AGENT_CANDIDATE_MAX" raw
 
+  let load_circuit_breaker_threshold () =
+    match Helpers.optional "AGENT_CIRCUIT_BREAKER_THRESHOLD" with
+    | None -> Or_error.return default_agent_circuit_breaker_threshold
+    | Some raw when String.is_empty raw ->
+        Or_error.return default_agent_circuit_breaker_threshold
+    | Some raw -> Helpers.parse_int "AGENT_CIRCUIT_BREAKER_THRESHOLD" raw
+
+  let load_circuit_breaker_cooloff () =
+    match Helpers.optional "AGENT_CIRCUIT_BREAKER_COOLOFF_SECONDS" with
+    | None -> Or_error.return default_agent_circuit_breaker_cooloff_seconds
+    | Some raw when String.is_empty raw ->
+        Or_error.return default_agent_circuit_breaker_cooloff_seconds
+    | Some raw ->
+        Helpers.parse_positive_float "AGENT_CIRCUIT_BREAKER_COOLOFF_SECONDS" raw
+
   let load_max_request_body_bytes () =
     match Helpers.optional "CHESSMATE_MAX_REQUEST_BODY_BYTES" with
     | None -> Or_error.return (Some default_max_request_body_bytes)
@@ -216,18 +235,31 @@ module Api = struct
                                 |> Or_error.bind ~f:(fun candidate_multiplier ->
                                        load_candidate_max ()
                                        |> Or_error.bind ~f:(fun candidate_max ->
-                                              Or_error.return
-                                                {
-                                                  api_key;
-                                                  endpoint;
-                                                  model;
-                                                  reasoning_effort;
-                                                  verbosity;
-                                                  request_timeout_seconds;
-                                                  cache;
-                                                  candidate_multiplier;
-                                                  candidate_max;
-                                                }))))))
+                                              load_circuit_breaker_threshold ()
+                                              |> Or_error.bind
+                                                   ~f:(fun
+                                                       circuit_breaker_threshold
+                                                     ->
+                                                     load_circuit_breaker_cooloff
+                                                       ()
+                                                     |> Or_error.bind
+                                                          ~f:(fun
+                                                              circuit_breaker_cooloff_seconds
+                                                            ->
+                                                            Or_error.return
+                                                              {
+                                                                api_key;
+                                                                endpoint;
+                                                                model;
+                                                                reasoning_effort;
+                                                                verbosity;
+                                                                request_timeout_seconds;
+                                                                cache;
+                                                                candidate_multiplier;
+                                                                candidate_max;
+                                                                circuit_breaker_threshold;
+                                                                circuit_breaker_cooloff_seconds;
+                                                              }))))))))
 
   let load_rate_limit () =
     let parse_optional_positive name =

@@ -69,6 +69,8 @@ The executables validate configuration on startup; missing or malformed values r
 | `AGENT_API_KEY` | ⛏️ | — | API | Enables GPT‑5 re-ranking. |
 | `AGENT_REASONING_EFFORT`, `AGENT_VERBOSITY` | ⛏️ | `medium` | API | Tune GPT‑5 calls. |
 | `AGENT_CACHE_REDIS_URL` | ⛏️ | — | API | Redis-backed agent cache. |
+| `AGENT_CIRCUIT_BREAKER_THRESHOLD` | ⛏️ | `5` | API | Consecutive failures/timeouts before the breaker opens (`<= 0` disables). |
+| `AGENT_CIRCUIT_BREAKER_COOLOFF_SECONDS` | ⛏️ | `60` | API | Cool-off window (seconds) before retrying agent calls after tripping the breaker. |
 | `OPENAI_RETRY_MAX_ATTEMPTS` | ⛏️ | `5` | CLI/API/worker | Positive integer; overrides retry attempts for OpenAI calls. |
 | `OPENAI_RETRY_BASE_DELAY_MS` | ⛏️ | `200` | CLI/API/worker | Positive float (milliseconds) controlling initial retry backoff. |
 | `OPENAI_EMBEDDING_CHUNK_SIZE` | ⛏️ | `2048` | Worker | Positive integer; maximum FEN batch size per embedding request. |
@@ -162,7 +164,7 @@ More recipes live in [COOKBOOK.md](COOKBOOK.md).
 | --- | --- | --- |
 | `Rate limit exceeded` (429) | Per-IP quota hit | Check `CHESSMATE_RATE_LIMIT_*` env vars; inspect `/metrics`. |
 | Qdrant errors on ingest | Collection missing | Confirm bootstrap logs (`qdrant collection ensured`); check `QDRANT_URL`. |
-| Slow/blocked queries | GPT‑5 latency | Watch logs for `[agent-timeout]`; upcoming circuit breaker will auto-fallback. |
+| Slow/blocked queries | GPT‑5 latency | Watch logs for `[agent-timeout]`; the circuit breaker auto-fallback prevents cascading delays. |
 | Integration test fails immediately | DB permissions | Ensure `CHESSMATE_TEST_DATABASE_URL` user has `CREATEDB`. |
 | Agent cache misses unexpectedly | Redis not configured | Set `AGENT_CACHE_REDIS_URL` or fall back to in-memory cache. |
 

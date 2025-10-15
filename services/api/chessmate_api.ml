@@ -165,6 +165,9 @@ let body_bytes_key : int Opium.Hmap.key =
 let api_config : Config.Api.t =
   match Config.Api.load () with
   | Ok config ->
+      Agent_circuit_breaker.configure
+        ~threshold:config.Config.Api.agent.circuit_breaker_threshold
+        ~cooloff_seconds:config.Config.Api.agent.circuit_breaker_cooloff_seconds;
       let agent_mode =
         if Option.is_some config.Config.Api.agent.api_key then "enabled"
         else "disabled"
@@ -779,6 +782,10 @@ let query_handler req =
                  ("limit", `Int execution.Hybrid_executor.plan.limit);
                  ("total", `Int execution.Hybrid_executor.total);
                  ("has_more", `Bool execution.Hybrid_executor.has_more);
+                 ( "agent_status",
+                   `String
+                     (Hybrid_executor.agent_status_to_string
+                        execution.Hybrid_executor.agent_status) );
                ]
               @ warning_field)
           in

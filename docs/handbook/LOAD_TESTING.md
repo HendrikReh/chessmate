@@ -144,7 +144,7 @@ Document parameter changes alongside results so future tests can reproduce condi
 
 - Automate the script in CI (manual trigger) to produce periodic baselines.
 - Extend the harness with multiple payloads (different queries/opening filters).
-- Add alerting thresholds based on measured latency/error rate so the rate limiter and upcoming circuit breaker don’t hide issues.
+- Add alerting thresholds based on measured latency/error rate so the rate limiter and circuit breaker don’t hide issues.
 - Capture the `oha` summary, `/metrics`, and `docker stats` table in PRs that touch performance-sensitive paths so reviewers can track deltas over time.
 
 Keeping a consistent load-test regimen helps ensure Chessmate remains responsive as data volume and user traffic grow.

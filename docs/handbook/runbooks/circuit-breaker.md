@@ -25,14 +25,7 @@ The agent circuit breaker prevents cascading GPT-5 failures from impacting query
 
 ## Recovery Steps
 1. Ensure upstream GPT-5 service is healthy.
-2. If breaker remains open beyond expected cool-off:
-   ```sh
-   # Reset using environment override and API restart
-   export AGENT_CIRCUIT_BREAKER_FORCE_RESET=true
-   systemctl restart chessmate-api
-   unset AGENT_CIRCUIT_BREAKER_FORCE_RESET
-   ```
-   (_Replace with actual deployment restart command.)_
+2. If the breaker remains open beyond the configured cool-off window, restart the API process to reset counters (the breaker resets on start-up).
 3. Monitor `/metrics` and logs for closure confirmation.
 
 ## Follow-up

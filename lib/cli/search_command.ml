@@ -61,6 +61,11 @@ let parse_success body =
     let total = json |> member "total" |> to_int in
     let has_more = json |> member "has_more" |> to_bool in
     let has_more_str = if has_more then "yes" else "no" in
+    let agent_status =
+      match json |> member "agent_status" |> to_string_option with
+      | Some status when not (String.is_empty (String.strip status)) -> status
+      | _ -> "unknown"
+    in
     let filters =
       plan |> member "filters" |> to_list
       |> List.map ~f:(fun filter ->
@@ -152,6 +157,7 @@ let parse_success body =
         Printf.sprintf "Limit: %d" limit;
         Printf.sprintf "Total matches: %d" total;
         Printf.sprintf "Has more: %s" has_more_str;
+        Printf.sprintf "Agent status: %s" agent_status;
         Printf.sprintf "Filters: %s" filters_line;
         (match rating_bits with
         | [] -> "Ratings: none"

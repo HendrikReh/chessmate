@@ -64,6 +64,8 @@ module Api : sig
     cache : Agent_cache.t;
     candidate_multiplier : int;
     candidate_max : int;
+    circuit_breaker_threshold : int;
+    circuit_breaker_cooloff_seconds : float;
   }
 
   type t = {
