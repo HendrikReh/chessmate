@@ -150,7 +150,7 @@ flowchart TD
 ---
 
 ## Roadmap Snapshot
-Refer to [docs/REVIEW_v4.md](REVIEW_v4.md) for the detailed roadmap. Critical next steps:
+Refer to [REVIEW_v4.md](REVIEW_v4.md) for the detailed roadmap. Critical next steps:
 - Deep health checks (structured `/health`, dependency probes, worker health endpoint).
 - Agent evaluation timeout/circuit breaker with fallback warnings and metrics.
 - Expanded Prometheus instrumentation (request latency, error rates, cache statistics).

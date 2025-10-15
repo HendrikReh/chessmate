@@ -13,7 +13,7 @@ Right-size Postgres, Qdrant, Redis, and worker/API concurrency to meet latency S
 
 ## Procedure
 1. **Establish Baseline**
-   - Run load tests for agent-on and agent-off scenarios (`docs/LOAD_TESTING.md`).
+   - Run load tests for agent-on and agent-off scenarios (`../LOAD_TESTING.md`).
    - Capture metrics snapshots and note throughput/latency.
 2. **Evaluate Postgres Pool**
    - If `db_pool_wait_ratio > 0.2` or `waiting > 0`, increase `CHESSMATE_DB_POOL_SIZE` by increments of 5.

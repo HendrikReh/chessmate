@@ -6,7 +6,7 @@ This document complements the [Developer Handbook](DEVELOPER.md), [Testing Plan]
 
 ## 1. Communication & Planning
 - Track work in GitHub Issues; every PR references its parent issue.
-- Record design decisions in `docs/ADR/` (template: `ADR-000-template.md`). Seeded ADR-001..004 cover language choice, hybrid retrieval, rate limiting, and Caqti adoption.
+- Record design decisions in `ADR/` (template: `ADR-000-template.md`). Seeded ADR-001..004 cover language choice, hybrid retrieval, rate limiting, and Caqti adoption.
 - Share daily async updates (progress, blockers, next steps) in the team channel.
 
 ---
@@ -38,9 +38,9 @@ This document complements the [Developer Handbook](DEVELOPER.md), [Testing Plan]
 ---
 
 ## 5. Documentation & Runbooks
-- Keep `docs/IMPLEMENTATION_PLAN.md` and `docs/ARCHITECTURE.md` current.
+- Keep `IMPLEMENTATION_PLAN.md` and `ARCHITECTURE.md` current.
 - Maintain `.mld` odoc pages (`docs/*.mld`) alongside Markdown docs; they feed the generated documentation site.
-- Add runbooks under `docs/runbooks/` and incident retrospectives under `docs/INCIDENTS/`.
+- Add runbooks under `runbooks/` and incident retrospectives under `INCIDENTS/`.
 
 ---
 

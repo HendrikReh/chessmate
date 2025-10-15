@@ -475,10 +475,11 @@ let resolve_openapi_path () =
   | Some raw when not (String.is_empty (String.strip raw)) -> raw
   | _ ->
       let root_candidate =
-        Stdlib.Filename.concat (Lazy.force source_root) "docs/openapi.yaml"
+        Stdlib.Filename.concat (Lazy.force source_root)
+          "docs/handbook/openapi.yaml"
       in
       if Stdlib.Sys.file_exists root_candidate then root_candidate
-      else "docs/openapi.yaml"
+      else "docs/handbook/openapi.yaml"
 
 let openapi_spec : (string * string, string) Base.Result.t Lazy.t =
   lazy

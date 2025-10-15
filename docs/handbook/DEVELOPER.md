@@ -143,7 +143,7 @@ More recipes live in [COOKBOOK.md](COOKBOOK.md).
   TOOL=oha DURATION=60s CONCURRENCY=50 TARGET_URL=http://localhost:8080/query scripts/load_test.sh
   ```
 - The script detects legacy `oha` flags, minifies the JSON payload once (avoiding `@payload` 400s), and resolves Docker Compose container IDs before grabbing a stats snapshot. It also prints `/metrics` immediately after the run—capture the output for PR validation.
-- Monitor `api_request_latency_ms_p95`, `db_pool_wait_ratio`, `agent_cache_hits_total`, and Qdrant container CPU usage. Use `docs/LOAD_TESTING.md` for deeper analysis checklists.
+- Monitor `api_request_latency_ms_p95`, `db_pool_wait_ratio`, `agent_cache_hits_total`, and Qdrant container CPU usage. Use `LOAD_TESTING.md` for deeper analysis checklists.
 
 ---
 

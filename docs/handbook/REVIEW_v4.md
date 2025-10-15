@@ -86,7 +86,7 @@ Focus on the high-priority bucket before widening API access.
 ## 4. References
 - [ARCHITECTURE.md](ARCHITECTURE.md) – component/data flow diagrams.
 - [DEVELOPER.md](DEVELOPER.md) – setup, CLI usage, configuration knobs.
-- [docs/cli.mld](cli.mld) – odoc-rendered CLI reference.
+- [docs/cli.mld](../cli.mld) – odoc-rendered CLI reference.
 - [OPERATIONS.md](OPERATIONS.md) – runbooks, monitoring, incident response.
 
 Questions or contributions? Comment here or open a tracking issue so we keep the roadmap fresh.

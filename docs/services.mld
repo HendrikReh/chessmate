@@ -13,7 +13,7 @@ modules documented elsewhere in this guide.
   optional agent credentials, and cache modes (Redis or in-memory).
 - Structured logs tagged `[chessmate-api]` include configuration summaries,
   cache status, and agent failures—use them for operational debugging.
-- Planned enhancements (see `docs/ARCHITECTURE.md`) include richer metrics and
+- Planned enhancements (see `docs/handbook/ARCHITECTURE.md`) include richer metrics and
   tighter integration with Qdrant for live hybrid search. Snapshot management is
   exposed via the CLI (`chessmate collection …`) and invokes the same Qdrant
   HTTP endpoints used by the service.

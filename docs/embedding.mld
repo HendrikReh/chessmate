@@ -30,7 +30,7 @@ the query pipeline can incorporate semantic clues.
 {1 Operations}
 
 - Configure the worker via environment variables documented in
-  `docs/DEVELOPER.md` (e.g., `OPENAI_API_KEY`, `OPENAI_EMBEDDING_CHUNK_SIZE`).
+  `docs/handbook/DEVELOPER.md` (e.g., `OPENAI_API_KEY`, `OPENAI_EMBEDDING_CHUNK_SIZE`).
 - Use `scripts/embedding_metrics.sh` to monitor queue depth, throughput, and
   estimated completion times.
 - Worker logs prefixed with `[worker:*]` describe job lifecycle events and retry

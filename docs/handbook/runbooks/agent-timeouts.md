@@ -35,6 +35,6 @@ _Last updated: 2025-10-xx_
 
 ## Post-Mortem Actions
 1. Remove any temporary overrides after stability returns.
-2. File an incident report (`docs/INCIDENTS/incident-template.md`) if customer-facing degradation occurred.
+2. File an incident report (`../INCIDENTS/incident-template.md`) if customer-facing degradation occurred.
 3. Consider enabling the agent cache (`AGENT_CACHE_REDIS_URL`) or adjusting cache capacity/TTL to reduce repeated calls.
 4. Update `LOAD_TESTING.md` benchmarks if timeouts were caused by load tests or new traffic patterns.

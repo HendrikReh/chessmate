@@ -36,6 +36,6 @@ The agent circuit breaker prevents cascading GPT-5 failures from impacting query
 3. Monitor `/metrics` and logs for closure confirmation.
 
 ## Follow-up
-- Document the incident in `docs/INCIDENTS/` if user-visible impact occurred.
+- Document the incident in `../INCIDENTS/` if user-visible impact occurred.
 - Review breaker thresholds (`AGENT_CIRCUIT_BREAKER_THRESHOLD`, `AGENT_CIRCUIT_BREAKER_COOLOFF_SECONDS`) and adjust if triggers were too sensitive or too lax.
 - Evaluate whether retries or backoff need tuning (`OPENAI_RETRY_MAX_ATTEMPTS`, `OPENAI_RETRY_BASE_DELAY_MS`).

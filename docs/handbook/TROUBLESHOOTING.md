@@ -116,4 +116,4 @@ scripts/embedding_metrics.sh --interval 120
 TOOL=oha DURATION=60s CONCURRENCY=50 ./scripts/load_test.sh
 ```
 
-Document root causes and fixes in `docs/INCIDENTS/<date>.md` after major incidents. The quicker we capture proven remedies, the faster we recover next time.
+Document root causes and fixes in `INCIDENTS/<date>.md` after major incidents. The quicker we capture proven remedies, the faster we recover next time.

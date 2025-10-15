@@ -7,8 +7,8 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![GitHub Issues](https://img.shields.io/github/issues/HendrikReh/chessmate)](https://github.com/HendrikReh/chessmate/issues)
 [![GitHub Pull Requests](https://img.shields.io/github/issues-pr/HendrikReh/chessmate)](https://github.com/HendrikReh/chessmate/pulls)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](docs/GUIDELINES.md)
-[![Collaboration](https://img.shields.io/badge/Collaboration-Guidelines-blue.svg)](docs/GUIDELINES.md)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](docs/handbook/GUIDELINES.md)
+[![Collaboration](https://img.shields.io/badge/Collaboration-Guidelines-blue.svg)](docs/handbook/GUIDELINES.md)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-active-green.svg)](https://github.com/HendrikReh/chessmate/graphs/commit-activity)
 
 Self-hosted chess tutor that blends relational data (PostgreSQL) with vector search (Qdrant) to answer natural-language questions about annotated chess games. OCaml powers ingestion, hybrid retrieval, and CLI tooling.
@@ -58,7 +58,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    dune build
    dune runtest
    ```
-   To include the integration suite, provide `CHESSMATE_TEST_DATABASE_URL` (a Postgres connection string with `CREATEDB`) and rerun `dune exec -- test/test_main.exe -- test integration`. See `docs/TESTING.md` for the full testing matrix.
+   To include the integration suite, provide `CHESSMATE_TEST_DATABASE_URL` (a Postgres connection string with `CREATEDB`) and rerun `dune exec -- test/test_main.exe -- test integration`. See `docs/handbook/TESTING.md` for the full testing matrix.
 8. Validate configuration and dependencies:
    ```sh
    dune exec -- chessmate -- config
@@ -94,7 +94,7 @@ lib/            # OCaml libraries (chess, storage, embedding, query, cli)
 bin/            # CLI entry points
 scripts/        # Database migrations (`migrate.sh`, `migrations/`, seeds)
 services/       # Long-running services (e.g., embedding_worker)
-docs/           # Architecture, developer, ops, and planning docs
+docs/handbook/  # Architecture, developer, ops, and planning docs
 test/           # Alcotest suites
 data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
 ```
@@ -163,7 +163,7 @@ data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
     scripts/load_test.sh
   ```
 - The script detects whether your `oha` build supports long-form flags, minifies the JSON payload once (handling the `@payload` pitfall), and resolves running Docker Compose container IDs before calling `docker stats`. After the run it prints the `/metrics` payload for quick inspection.
-- Watch `db_pool_wait_ratio`, `api_request_latency_ms_p95{route="..."}`, `agent_cache_hits_total`, and embedding throughput gauges. Healthy runs keep wait ratio near zero and p95 latency within expectations—use the values to decide whether to scale Postgres/Qdrant or tweak concurrency. See `docs/TESTING.md` for extended guidance and troubleshooting.
+- Watch `db_pool_wait_ratio`, `api_request_latency_ms_p95{route="..."}`, `agent_cache_hits_total`, and embedding throughput gauges. Healthy runs keep wait ratio near zero and p95 latency within expectations—use the values to decide whether to scale Postgres/Qdrant or tweak concurrency. See `docs/handbook/TESTING.md` for extended guidance and troubleshooting.
 
 ### Agent Configuration
 - `AGENT_API_KEY`: required to enable GPT-5 ranking (absent → agent disabled).
@@ -335,25 +335,25 @@ Need a clean slate? Stop the containers (`docker compose down`), wipe the volume
 
 ## Documentation
 - **Roadmaps & Overviews**
-  - [Architecture](docs/ARCHITECTURE.md) – component diagrams, data flow, and responsibilities.
-  - [Review & Planning Notes](docs/REVIEW_v4.md) – open issues, prioritised work, and follow-up tasks.
+  - [Architecture](docs/handbook/ARCHITECTURE.md) – component diagrams, data flow, and responsibilities.
+  - [Review & Planning Notes](docs/handbook/REVIEW_v4.md) – open issues, prioritised work, and follow-up tasks.
 - **How-To Guides**
-  - [Developer Handbook](docs/DEVELOPER.md) – environment setup, CLI usage, and daily workflows.
-  - [Chessmate for Dummies](docs/CHESSMATE_FOR_DUMMIES.md) – narrative walkthrough of ingestion and search.
-  - [Cookbook](docs/COOKBOOK.md) – common command sequences and automation snippets.
+  - [Developer Handbook](docs/handbook/DEVELOPER.md) – environment setup, CLI usage, and daily workflows.
+  - [Chessmate for Dummies](docs/handbook/CHESSMATE_FOR_DUMMIES.md) – narrative walkthrough of ingestion and search.
+  - [Cookbook](docs/handbook/COOKBOOK.md) – common command sequences and automation snippets.
 - **Operations & Testing**
-  - [Operations Playbook](docs/OPERATIONS.md) – deployment, monitoring, and maintenance procedures.
-  - [Testing Guide](docs/TESTING.md) – test matrix, fixtures, and troubleshooting tips.
-  - [Load Testing](docs/LOAD_TESTING.md) – benchmarking harness and performance checklists.
+  - [Operations Playbook](docs/handbook/OPERATIONS.md) – deployment, monitoring, and maintenance procedures.
+  - [Testing Guide](docs/handbook/TESTING.md) – test matrix, fixtures, and troubleshooting tips.
+  - [Load Testing](docs/handbook/LOAD_TESTING.md) – benchmarking harness and performance checklists.
 - **Reference & Collaboration**
-  - [Troubleshooting](docs/TROUBLESHOOTING.md) – common failure modes and recovery steps.
-  - [Prompts](docs/PROMPTS.md) – prompt engineering notes and examples for agent tasks.
-  - [Collaboration Guidelines](docs/GUIDELINES.md) – coding standards, PR checklist, and review policy.
+  - [Troubleshooting](docs/handbook/TROUBLESHOOTING.md) – common failure modes and recovery steps.
+  - [Prompts](docs/handbook/PROMPTS.md) – prompt engineering notes and examples for agent tasks.
+  - [Collaboration Guidelines](docs/handbook/GUIDELINES.md) – coding standards, PR checklist, and review policy.
 - **Generated Guides**
   - `docs/*.mld` – odoc pages (e.g., CLI, pipeline, embedding) rendered via `opam exec -- dune build @doc` and served from `_build/default/_doc/_html/`.
 
 ## Contributing
-PRs welcome! See [Collaboration Guidelines](docs/GUIDELINES.md) for coding standards, testing expectations, and PR checklist. Please open an issue before large changes and include `dune build && dune test` output in your PR template.
+PRs welcome! See [Collaboration Guidelines](docs/handbook/GUIDELINES.md) for coding standards, testing expectations, and PR checklist. Please open an issue before large changes and include `dune build && dune test` output in your PR template.
 
 ## License
 Distributed under the [GNU General Public License v3.0](LICENSE).

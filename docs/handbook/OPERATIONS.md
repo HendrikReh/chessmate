@@ -98,10 +98,10 @@ Exercises ingest → embedding pipeline → hybrid query. Vector hits are stubbe
 
 | Scenario | Runbook |
 | --- | --- |
-| Circuit breaker opened, agent disabled | [docs/runbooks/circuit-breaker.md](runbooks/circuit-breaker.md) |
-| GPT‑5 agent timeouts | [docs/runbooks/agent-timeouts.md](runbooks/agent-timeouts.md) |
-| Capacity planning & scaling | [docs/runbooks/capacity-planning.md](runbooks/capacity-planning.md) |
-| Incident retrospectives | [docs/INCIDENTS/incident-template.md](INCIDENTS/incident-template.md) |
+| Circuit breaker opened, agent disabled | [runbooks/circuit-breaker.md](runbooks/circuit-breaker.md) |
+| GPT‑5 agent timeouts | [runbooks/agent-timeouts.md](runbooks/agent-timeouts.md) |
+| Capacity planning & scaling | [runbooks/capacity-planning.md](runbooks/capacity-planning.md) |
+| Incident retrospectives | [INCIDENTS/incident-template.md](INCIDENTS/incident-template.md) |
 
 ## 7. Degraded Modes & Incident Hints
 | Symptom | Behaviour | Remedy |
@@ -111,7 +111,7 @@ Exercises ingest → embedding pipeline → hybrid query. Vector hits are stubbe
 | GPT‑5 latency/timeouts (future) | Planned: warnings in response (`agent timeout`) + circuit-breaker logs. | Investigate OpenAI limits, fall back to heuristic mode, adjust timeout env (`AGENT_REQUEST_TIMEOUT_SECONDS`). |
 | Postgres saturation | High `db_pool_waiting`, CPU spikes. | Increase `CHESSMATE_DB_POOL_SIZE`, scale Postgres vertically/horizontally, audit slow queries. |
 
-Log details and mitigation in `docs/INCIDENTS/<date>.md` after an incident.
+Log details and mitigation in `INCIDENTS/<date>.md` after an incident.
 
 ---
 
@@ -179,4 +179,4 @@ Log details and mitigation in `docs/INCIDENTS/<date>.md` after an incident.
 
 ---
 
-Keep this playbook updated alongside system changes. Combine it with the architecture roadmap ([REVIEW_v4.md](REVIEW_v4.md)) to understand what’s changing and why. Incident retrospectives live in `docs/INCIDENTS/`; use the template in `docs/INCIDENTS/incident-template.md` after each SEV event.
+Keep this playbook updated alongside system changes. Combine it with the architecture roadmap ([REVIEW_v4.md](REVIEW_v4.md)) to understand what’s changing and why. Incident retrospectives live in `INCIDENTS/`; use the template in `INCIDENTS/incident-template.md` after each SEV event.

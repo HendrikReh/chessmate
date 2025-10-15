@@ -77,9 +77,11 @@ The codebase demonstrates:
 | GH-033 | Phase 3 | Operational runbooks | Medium-Low | Open |
 | GH-040 | Phase 4 | Performance optimizations | Low | Open |
 | GH-041 | Phase 4 | Enhanced load testing | Low | Open |
-| GH-042 | Phase 4 | Embedding collection management | Low | Open |
+| GH-042 | Phase 4 | Embedding collection management | Low | Done |
+| GH-051 | Phase 4 | Documentation audit & refresh | Low | Open |
+| GH-052 | Phase 4 | Source code documentation pass | Low | Open |
 
-_See `docs/roadmap_issues_v5.md` for full issue descriptions, acceptance criteria, and suggested GitHub metadata._
+_See `roadmap_issues_v5.md` for full issue descriptions, acceptance criteria, and suggested GitHub metadata._
 
 ---
 
@@ -219,8 +221,8 @@ _See `docs/roadmap_issues_v5.md` for full issue descriptions, acceptance criteri
    - Test pagination edge cases (empty results, offset > total)
 
 2. **Documentation infrastructure** (GH-031, ETA: ~4h)
-   - Create `docs/ADR/` directory with template (per GUIDELINES.md)
-   - Create `docs/INCIDENTS/` directory with incident report template
+   - Create `ADR/` directory with template (per GUIDELINES.md)
+   - Create `INCIDENTS/` directory with incident report template
    - Document key architectural decisions:
      - ADR-001: Choice of OCaml and functional architecture
      - ADR-002: Hybrid retrieval strategy (deterministic + vector + agent)
@@ -242,11 +244,10 @@ _See `docs/roadmap_issues_v5.md` for full issue descriptions, acceptance criteri
 ### Phase 4 – Optimizations & Enhancements
 **Priority: Low** | **ETA: ~16h**
 
-1. **Performance optimizations** (GH-040, ETA: ~8h)
-   - Cache `rating_matches` result in `hybrid_executor` to avoid duplicate checks
-   - Optimize tokenization in `hybrid_executor.ml:98-101` (single-pass)
-   - Profile agent evaluation path and optimize hot loops
-   - Consider connection pooling for curl-based HTTP calls
+1. **Performance optimizations** (GH-040, ✅ Completed 2025-10-15)
+   - Cached `rating_matches` results once per summary inside `hybrid_executor`
+   - Refactored tokenization to a single-pass buffer pipeline
+   - Documented profiling deltas in `PROFILING.md` (tokenization 1.83s → 1.58s over 200k iterations)
 
 2. **Enhanced load testing** (GH-041, ETA: ~4h)
    - Add alert threshold configurations to load test script
@@ -254,11 +255,16 @@ _See `docs/roadmap_issues_v5.md` for full issue descriptions, acceptance criteri
    - Benchmark embedding worker throughput under different concurrency levels
    - Document performance baselines and regression thresholds
 
-3. **Embedding collection management** (GH-042, ETA: ~4h)
-   - Support snapshot/versioning of Qdrant collections for reindexing
-   - Add CLI command: `chessmate collection snapshot --name <name>`
-   - Add CLI command: `chessmate collection restore --snapshot <id>`
-   - Document workflow for zero-downtime reindexing
+3. **Embedding collection management** (GH-042, ✅ Completed 2025-10-15)
+   - Added `chessmate collection snapshot|restore|list` commands with metadata logging
+   - Restore command resolves by name or explicit path and delegates to Qdrant recover API
+   - Operations guide updated with snapshot workflow for reindexing/rollback
+4. **Documentation audit & refresh** (GH-051, ETA: ~4h)
+   - Review README, architecture/runbook docs, and CLI references for accuracy
+   - Prune or update stale instructions; highlight new snapshot/load-test workflows
+5. **Source code documentation pass** (GH-052, ETA: ~4h)
+   - Refresh `.mli`/`.ml` docstrings and `docs/*.mld` entries to match current behaviour
+   - Add guidance for newer helpers (snapshot CLI, hybrid executor tweaks)
 
 ---
 
@@ -417,7 +423,7 @@ _See `docs/roadmap_issues_v5.md` for full issue descriptions, acceptance criteri
 - **Severity**: Medium-Low
 - **Description**: No documented procedures for circuit breaker recovery, agent outages, or capacity planning
 - **Impact**: Increases MTTR during incidents
-- **Fix**: Author runbooks/checklists and publish in `docs/operations/`
+- **Fix**: Author runbooks/checklists and publish in `runbooks/`
 - **GitHub Issue**: GH-033 (Status: Open)
 
 ### Low Priority Issues (Phase 4)
@@ -427,8 +433,8 @@ _See `docs/roadmap_issues_v5.md` for full issue descriptions, acceptance criteri
 - **File**: `lib/query/hybrid_executor.ml:133-142`
 - **Description**: `fallback_vector_score` recalculates `rating_matches` redundantly
 - **Impact**: Minor performance overhead on every query
-- **Fix**: Cache rating match result before branching
-- **GitHub Issue**: GH-040 (Status: Open)
+- **Fix**: Cache rating match results before branching and switch to a single-pass tokenizer
+- **GitHub Issue**: GH-040 (Status: ✅ Completed 2025-10-15; profiling notes in `PROFILING.md`)
 
 #### ISSUE-016: Enhanced Load Testing
 - **Severity**: Low
@@ -442,7 +448,21 @@ _See `docs/roadmap_issues_v5.md` for full issue descriptions, acceptance criteri
 - **Description**: No tooling for snapshotting/restoring Qdrant collections
 - **Impact**: Risky to reindex or migrate embeddings
 - **Fix**: Implement snapshot/restore CLI commands and document workflow
-- **GitHub Issue**: GH-042 (Status: Open)
+- **GitHub Issue**: GH-042 (Status: ✅ Completed 2025-10-15; see `OPERATIONS.md` for workflow)
+
+#### ISSUE-018: Documentation Audit & Refresh
+- **Severity**: Low
+- **Description**: Project documentation (README, cookbooks, runbooks) lags behind recent changes
+- **Impact**: Onboarding friction and inconsistent operational guidance
+- **Fix**: Review and update `docs/*.md`, removing stale sections and highlighting new tooling/workflows
+- **GitHub Issue**: GH-051 (Status: Open)
+
+#### ISSUE-019: Source Code Documentation Pass
+- **Severity**: Low
+- **Description**: Several public modules lack docstrings for new helpers; `.mld` files omit latest CLI/API additions
+- **Impact**: Increases cognitive load for contributors and API consumers
+- **Fix**: Refresh `.mli` and module-level comments, expand `docs/*.mld` references, and ensure examples reflect current behaviour
+- **GitHub Issue**: GH-052 (Status: Open)
 
 ---
 
@@ -454,8 +474,8 @@ _See `docs/roadmap_issues_v5.md` for full issue descriptions, acceptance criteri
 | Phase 1 | High | 4 | 40 |
 | Phase 2 | Medium | 6 | 20 |
 | Phase 3 | Medium-Low | 4 | 18 |
-| Phase 4 | Low | 3 | 16 |
-| **Total** | | **21** | **102** |
+| Phase 4 | Low | 5 | 24 |
+| **Total** | | **23** | **110** |
 
 ### Recommended Execution Order
 1. **Week 1**: Phase 0 (critical bugs) + Issue-002 (health checks)
@@ -522,7 +542,7 @@ _See `docs/roadmap_issues_v5.md` for full issue descriptions, acceptance criteri
 - [TESTING.md](TESTING.md) – test matrix, fixtures, troubleshooting
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) – common issues and fixes
 - [GUIDELINES.md](GUIDELINES.md) – coding standards, PR checklist
-- [docs/cli.mld](cli.mld) – odoc-rendered CLI reference
+- [docs/cli.mld](../cli.mld) – odoc-rendered CLI reference
 
 ### Related Files
 - [REVIEW_v4.md](REVIEW_v4.md) – previous roadmap (superseded)

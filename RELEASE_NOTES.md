@@ -30,7 +30,7 @@
 - Resolved SQL whitespace bug affecting query pagination defaults.
 
 ### Notes
-- Refreshed review roadmap (`docs/REVIEW_v4.md`) and consolidated CLI docs.
+- Refreshed review roadmap (`docs/handbook/REVIEW_v4.md`) and consolidated CLI docs.
 
 ## 0.6.0 – Caqti Repository Migration
 
