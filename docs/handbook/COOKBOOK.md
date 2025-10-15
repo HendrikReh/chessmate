@@ -81,7 +81,7 @@ Pair with Redoc or swagger-ui for docs/previews.
 curl http://localhost:8080/metrics
 CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query "Show 5 random games"
 ```
-Metrics include DB pool gauges and rate limiter counters. Planned `/health` JSON will provide per-dependency status (see [REVIEW_v4.md](REVIEW_v4.md)).
+Metrics include DB pool gauges and rate limiter counters. Planned `/health` JSON will provide per-dependency status (see [REVIEW_v5.md](REVIEW_v5.md)).
 
 ---
 

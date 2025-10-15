@@ -1,4 +1,4 @@
-# Troubleshooting Playbook (2025-10-xx)
+# Troubleshooting Playbook (2025-10-15)
 
 Quick diagnostics and fixes for common Chessmate issues. Use alongside [OPERATIONS.md](OPERATIONS.md), [DEVELOPER.md](DEVELOPER.md), and [TESTING.md](TESTING.md).
 

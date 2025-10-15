@@ -119,6 +119,6 @@ CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query --json "
 - Architecture diagrams and module breakdown: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Detailed operations guidance: [OPERATIONS.md](OPERATIONS.md)
 - Prompt engineering ideas for GPT-5 scoring: [PROMPTS.md](PROMPTS.md)
-- Outstanding work and future plans: [REVIEW_v4.md](REVIEW_v4.md)
+- Outstanding work and future plans: [REVIEW_v5.md](REVIEW_v5.md)
 
 Happy hacking! Chessmate blends classic chess knowledge with modern retrieval—keep the guardrails strong and the vectors fresh.

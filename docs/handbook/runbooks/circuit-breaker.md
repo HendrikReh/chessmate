@@ -1,6 +1,6 @@
 # Circuit Breaker Runbook
 
-_Last updated: 2025-10-xx_
+_Last updated: 2025-10-15_
 
 ## Overview
 The agent circuit breaker prevents cascading GPT-5 failures from impacting query latency. It opens when consecutive agent calls fail or exceed timeout thresholds and automatically closes once conditions improve.

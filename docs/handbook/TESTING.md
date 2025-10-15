@@ -1,4 +1,4 @@
-# Manual Test Plan (2025-10-xx)
+# Manual Test Plan (2025-10-15)
 
 Validates core Chessmate functionality: ingest, embedding, hybrid query, agent scoring, caching, and fallback behaviour. Use together with the [Developer Handbook](DEVELOPER.md) and [Operations Playbook](OPERATIONS.md).
 

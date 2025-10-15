@@ -14,7 +14,7 @@ Chessmate is a self-hosted chess tutor that ingests PGNs, stores structured meta
 - [Developer Handbook](DEVELOPER.md) – environment setup, CLI usage, configuration reference.
 - [Operations Playbook](OPERATIONS.md) – deployment, monitoring, incident response.
 - [Testing Plan](TESTING.md) – manual checklists and automation guidance.
-- [Review & Improvement Plan](REVIEW_v4.md) – roadmap and outstanding gaps.
+- [Review & Improvement Plan](REVIEW_v5.md) – roadmap and outstanding gaps.
 
 ---
 
@@ -150,7 +150,7 @@ flowchart TD
 ---
 
 ## Roadmap Snapshot
-Refer to [REVIEW_v4.md](REVIEW_v4.md) for the detailed roadmap. Critical next steps:
+Refer to [REVIEW_v5.md](REVIEW_v5.md) for the detailed roadmap. Critical next steps:
 - Deep health checks (structured `/health`, dependency probes, worker health endpoint).
 - Agent evaluation timeout/circuit breaker with fallback warnings and metrics.
 - Expanded Prometheus instrumentation (request latency, error rates, cache statistics).

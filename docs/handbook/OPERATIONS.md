@@ -1,4 +1,4 @@
-# Operations Playbook (2025-10-xx)
+# Operations Playbook (2025-10-15)
 
 Pair this runbook with the [Developer Handbook](DEVELOPER.md) for environment setup, the [Testing Plan](TESTING.md) for manual/automated checks, and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for deep dives.
 
@@ -179,4 +179,4 @@ Log details and mitigation in `INCIDENTS/<date>.md` after an incident.
 
 ---
 
-Keep this playbook updated alongside system changes. Combine it with the architecture roadmap ([REVIEW_v4.md](REVIEW_v4.md)) to understand what’s changing and why. Incident retrospectives live in `INCIDENTS/`; use the template in `INCIDENTS/incident-template.md` after each SEV event.
+Keep this playbook updated alongside system changes. Combine it with the architecture roadmap ([REVIEW_v5.md](REVIEW_v5.md)) to understand what's changing and why. Incident retrospectives live in `INCIDENTS/`; use the template in `INCIDENTS/incident-template.md` after each SEV event.

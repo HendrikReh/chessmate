@@ -1,6 +1,6 @@
 # Agent Timeout Runbook
 
-_Last updated: 2025-10-xx_
+_Last updated: 2025-10-15_
 
 ## Symptoms
 - API responses include `warnings` such as `agent timeout – falling back to heuristic results`.

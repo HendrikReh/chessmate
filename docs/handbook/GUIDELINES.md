@@ -69,4 +69,4 @@ This document complements the [Developer Handbook](DEVELOPER.md), [Testing Plan]
 
 ---
 
-Last updated: 2025-10-xx (v0.6.3). Keep this guide current alongside the roadmap.
+Last updated: 2025-10-15 (v0.7.0). Keep this guide current alongside the roadmap.

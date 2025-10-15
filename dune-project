@@ -17,8 +17,8 @@
 
 (package
  (name chessmate)
-(version "0.6.3")
- (synopsis "A short synopsis")
+(version "0.7.0")
+ (synopsis "Self-hosted chess tutor with hybrid retrieval combining Postgres, Qdrant vector search, and OCaml services")
  (description "Hybrid chess tutor combining Postgres metadata with Qdrant vector search and OCaml-powered ingestion/query services.")
  (depends
   ocaml

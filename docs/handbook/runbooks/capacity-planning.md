@@ -1,6 +1,6 @@
 # Capacity Planning Runbook
 
-_Last updated: 2025-10-xx_
+_Last updated: 2025-10-15_
 
 ## Goals
 Right-size Postgres, Qdrant, Redis, and worker/API concurrency to meet latency SLOs while keeping resource usage within budget.

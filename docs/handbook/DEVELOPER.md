@@ -2,7 +2,7 @@
 
 This handbook gets you from zero to productive with Chessmate: installing dependencies, understanding
 configuration, and running the core services. For architecture diagrams and reliability plans see
-[ARCHITECTURE.md](ARCHITECTURE.md) and [REVIEW_v4.md](REVIEW_v4.md).
+[ARCHITECTURE.md](ARCHITECTURE.md) and [REVIEW_v5.md](REVIEW_v5.md).
 
 ---
 
