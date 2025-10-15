@@ -17,7 +17,8 @@
 *)
 
 (** Coordinates fetching candidates, running agent evaluations, and scoring
-    results. *)
+    results. Rating predicates are cached per summary to avoid redundant work
+    and vector scores fall back gracefully when Qdrant is unavailable. *)
 
 open! Base
 

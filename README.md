@@ -28,6 +28,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 - **Embedding pipeline & safeguards:** worker polls `embedding_jobs`, calls OpenAI embeddings, records vector identifiers for Qdrant, and now benefits from an ingest guard that halts new PGNs when the queue crosses a configurable threshold. Requests are chunked by default (2,048 FENs / ~120k characters); tune via `OPENAI_EMBEDDING_CHUNK_SIZE` and `OPENAI_EMBEDDING_MAX_CHARS` if OpenAI adjusts limits.
 - **Agent ranking (optional):** when `AGENT_API_KEY` is set, a GPT-5 agent re-scores results, surfaces explanations/themes, honours the new `reasoning.effort`/verbosity controls, and now emits structured telemetry (latency, tokens, cost estimates).
 - **Diagnostics tooling:** `chessmate fen <game.pgn>` prints per-ply FENs; ingestion/worker CLIs emit structured logs for troubleshooting; `scripts/embedding_metrics.sh` surfaces queue depth, throughput, and ETA snapshots.
+- **Snapshot-aware operations:** the `chessmate collection` CLI can snapshot, list, and restore Qdrant collections while journaling metadata, making reindexing and rollback workflows predictable.
 
 ## Getting Started
 1. Clone and enter the repository.

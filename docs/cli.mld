@@ -53,9 +53,9 @@ Cmdliner-based executable (`dune exec -- chessmate -- ...`).
 {2 Collection Snapshots}
 - Create a named snapshot before major re-indexing: `dune exec -- chessmate --
   collection snapshot --name nightly-backup --note "before fen migration"`.
-- The CLI appends metadata to `snapshots/qdrant_snapshots.jsonl` (override with
-  `CHESSMATE_SNAPSHOT_LOG`), capturing creation time, size, and location as
-  reported by Qdrant.
+- Metadata is appended to `snapshots/qdrant_snapshots.jsonl`; override via the
+  `CHESSMATE_SNAPSHOT_LOG` environment variable when storing logs alongside
+  off-box backups.
 - Restore the latest recorded snapshot by name:
   `dune exec -- chessmate -- collection restore --snapshot nightly-backup`.
   Provide `--location` to restore from an explicit filesystem path.

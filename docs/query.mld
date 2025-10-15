@@ -11,7 +11,8 @@ LLM-based scoring.
 - `lib/query/hybrid_planner.ml` converts the plan into SQL predicates and
   optional Qdrant payload filters while supplying deterministic query vectors.
 - `lib/query/hybrid_executor.ml` fetches candidate games from Postgres, merges
-  vector hits (when enabled), and accumulates weighted scores.
+  vector hits (when enabled), caches rating predicates per summary, and
+  accumulates weighted scores.
 - `lib/query/agent_cache.ml` and `lib/query/agent_evaluator.ml` add GPT-5
   scores and explanations, backed by Redis or in-process caches.
 - `lib/query/result_formatter.ml` combines metadata, heuristic scores, and

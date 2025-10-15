@@ -52,19 +52,35 @@ val ensure_collection :
 
 val create_snapshot :
   ?collection:string -> ?snapshot_name:string -> unit -> snapshot Or_error.t
-(** Create a Qdrant snapshot for the target collection. When [snapshot_name] is
-    omitted, Qdrant generates a timestamped default. Returns metadata describing
-    the created snapshot. *)
+(** Request that Qdrant create a snapshot for the given collection.
+    @param collection
+      Optional collection name; defaults to {!Config.collection}.
+    @param snapshot_name
+      Optional label that Qdrant should apply to the snapshot; when omitted
+      Qdrant generates a timestamped identifier.
+    @return
+      The metadata payload returned by Qdrant, including name, location,
+      creation timestamp, and size in bytes. *)
 
 val list_snapshots : ?collection:string -> unit -> snapshot list Or_error.t
-(** List snapshots known to Qdrant for the target collection. Ordered as
-    returned by Qdrant (typically newest first). *)
+(** Retrieve the snapshot catalogue reported by Qdrant.
+    @param collection
+      Optional collection name; defaults to {!Config.collection}.
+    @return Snapshots in the order supplied by Qdrant (typically newest first).
+*)
 
 val restore_snapshot :
   ?collection:string -> location:string -> unit -> unit Or_error.t
-(** Restore the target collection from the snapshot located at [location]
-    (filesystem path as reported by Qdrant). The operation is delegated to
-    Qdrant; callers should ensure the API process is stopped or writable. *)
+(** Ask Qdrant to restore [collection] from the snapshot at [location].
+    @param collection
+      Optional collection name; defaults to {!Config.collection}.
+    @param location
+      Filesystem path (as reported by [create_snapshot] or the `qdrant` API)
+      identifying the snapshot to restore.
+    @return
+      [unit] on success. Callers should quiesce API/worker processes before
+      invoking this helper, as the restore is performed server-side by Qdrant.
+*)
 
 type test_hooks = {
   upsert : point list -> unit Or_error.t;
