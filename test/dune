@@ -18,6 +18,7 @@
   test_sanitizer
   test_health
   test_temp_file_guard
+  test_worker_health_endpoint
   test_main)
  (libraries chessmate alcotest stdio)
  (deps

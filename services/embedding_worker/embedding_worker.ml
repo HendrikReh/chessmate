@@ -380,34 +380,19 @@ let start_health_server ~postgres =
     Health.Worker.summary ~postgres ~config:worker_config
       ~api_config:api_config_lazy ()
   in
-  let callback _conn req _body =
-    let uri = Cohttp.Request.uri req in
-    match (Cohttp.Request.meth req, Uri.path uri) with
-    | `GET, "/health" ->
-        let summary = summary () in
-        let status = Health.http_status_of summary.Health.status in
-        let status_code = (status :> Cohttp.Code.status_code) in
-        let headers =
-          Cohttp.Header.init_with "Content-Type" "application/json"
-        in
-        let body =
-          summary |> Health.summary_to_yojson |> Yojson.Safe.to_string
-        in
-        Cohttp_lwt_unix.Server.respond_string ~status:status_code ~headers ~body
-          ()
-    | _ -> Cohttp_lwt_unix.Server.respond_not_found ()
+  let metrics () =
+    let processed, failed, jobs_per_min, chars_per_sec = snapshot_metrics () in
+    match Lazy.force postgres with
+    | Error err -> Error (sanitize_error err)
+    | Ok repo -> (
+        match Repo_postgres.pending_embedding_job_count repo with
+        | Ok queue_depth ->
+            Ok
+              Worker_health_server.Metrics.
+                { processed; failed; jobs_per_min; chars_per_sec; queue_depth }
+        | Error err -> Error (sanitize_error err))
   in
-  Thread.create
-    (fun () ->
-      let mode = `TCP (`Port port) in
-      let server = Cohttp_lwt_unix.Server.make ~callback () in
-      try
-        eprintf "[worker][health] listening on 0.0.0.0:%d\n%!" port;
-        Lwt_main.run (Cohttp_lwt_unix.Server.create ~mode server)
-      with exn ->
-        eprintf "[worker][health] server exception: %s\n%!"
-          (Sanitizer.sanitize_string (Exn.to_string exn)))
-    ()
+  Worker_health_server.start ~port ~summary ~metrics
 
 let usage_msg =
   "Usage: embedding_worker [--poll-sleep SECONDS] [--workers COUNT] \\ \n\
@@ -467,7 +452,18 @@ let run () =
       Stdlib.exit 1
   | Ok (repo, embedding_client) ->
       let postgres_lazy = lazy (Ok repo) in
-      let (_ : Thread.t) = start_health_server ~postgres:postgres_lazy in
+      let health_server_stop =
+        match start_health_server ~postgres:postgres_lazy with
+        | Ok stop -> Some stop
+        | Error err ->
+            warn
+              (Printf.sprintf "[worker][health] failed to start server: %s"
+                 (Error.to_string_hum err));
+            None
+      in
+      let stop_health_server () =
+        Option.iter health_server_stop ~f:(fun stop -> stop ())
+      in
       let start_time = Unix.gettimeofday () in
       let stats = { processed = 0; failed = 0 } in
       let exit_condition = make_exit_condition !exit_after_empty in
@@ -504,7 +500,8 @@ let run () =
           (Printf.sprintf
              "summary: processed=%d failures=%d duration=%.2fs \
               jobs_per_min=%.2f chars_per_sec=%.2f"
-             stats.processed stats.failed elapsed jobs_per_min chars_per_sec))
+             stats.processed stats.failed elapsed jobs_per_min chars_per_sec);
+        stop_health_server ())
       else (
         log
           (Printf.sprintf
@@ -543,6 +540,7 @@ let run () =
           (Printf.sprintf
              "summary: processed=%d failures=%d duration=%.2fs \
               jobs_per_min=%.2f chars_per_sec=%.2f"
-             stats.processed stats.failed elapsed jobs_per_min chars_per_sec))
+             stats.processed stats.failed elapsed jobs_per_min chars_per_sec);
+        stop_health_server ())
 
 let () = run ()

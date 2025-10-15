@@ -85,6 +85,7 @@ Exercises ingest → embedding pipeline → hybrid query. Vector hits are stubbe
 
 ## 5. Runtime Operations
 - **Health checks**: `curl http://localhost:8080/health`, `curl http://localhost:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/health`, `pg_isready`, `curl http://qdrant:6333/healthz`, `redis-cli PING`.
+- **Worker metrics**: `curl http://localhost:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/metrics` returns processed/failed job totals, throughput gauges, and current queue depth.
 - **Metrics**: `/metrics` exposes DB pool usage, per-route latency/error histograms (`api_request_latency_ms_pXX{route="..."}`), agent cache hit/miss totals, circuit breaker state, and rate limiter counters.
 - **Agent candidate tuning**: adjust `AGENT_CANDIDATE_MULTIPLIER` (default 5) and `AGENT_CANDIDATE_MAX` (default 25) to control how many games the GPT-5 evaluator inspects per query.
 - **Rate limiter**: 429 responses include `Retry-After`. Tune `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` (and optional `..._BUCKET_SIZE`) as needed. Enable per-IP body budgets via `CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE`; monitor `api_rate_limited_body_total`. `CHESSMATE_MAX_REQUEST_BODY_BYTES` caps individual request size (set `0` to disable).

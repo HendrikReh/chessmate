@@ -127,7 +127,7 @@ More recipes live in [COOKBOOK.md](COOKBOOK.md).
 
 - `/metrics` exposes Caqti pool gauges, rate-limiter counters, and (soon) per-dependency health/timeouts.
 - CLI prints `[health] postgres/qdrant/redis/api` lines before executing queries. Run `dune exec -- chessmate -- config` to see the full dependency report at any time.
-- Planned `/health` JSON endpoint will report dependency status and probe latency for both API and worker.
+- API and worker expose `/health` (JSON) and `/metrics` on their respective ports (worker defaults to `CHESSMATE_WORKER_HEALTH_PORT`, 8081). Worker metrics include processed/failed totals and current queue depth.
 - Use `scripts/embedding_metrics.sh` to monitor queue depth; rate limiter increments appear under `api_rate_limited_total`.
 
 ---
