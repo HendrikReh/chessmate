@@ -93,6 +93,32 @@ This manual probe verifies that oddball request paths cannot break the `/metrics
    ```
    This prints the overall status followed by each check’s outcome (e.g., `postgres:ok`). Integrate the command (or equivalent agent) into your monitoring stack to capture both the aggregate health and individual dependency signals.
 4. **CLI pagination spot-check** (optional):
+
+### 4d. Chaos Drill (Postgres/Qdrant/Redis)
+
+Exercise the health checks and failure handling by briefly removing dependencies while the API is running:
+
+1. **Postgres outage**
+   ```sh
+   docker compose stop postgres
+   curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/health
+   ```
+   Expect HTTP 503 with `status:"error"` and the `postgres` check flagged. Restart Postgres (`docker compose start postgres`) and confirm the endpoint returns to `200`.
+2. **Qdrant outage** – stop the container and confirm the worker `/health` transitions to `error` while the API reports `degraded`.
+   ```sh
+   docker compose stop qdrant
+   curl -s http://localhost:8080/health | jq '.checks[] | select(.name=="qdrant")'
+   docker compose start qdrant
+   ```
+3. **Redis outage** – stop Redis and verify the API reports `status:"degraded"` with the `redis` check marked `error`, while queries still succeed (agent caching is disabled).
+   ```sh
+   docker compose stop redis
+   curl -s http://localhost:8080/health | jq '.status'
+   docker compose start redis
+   ```
+
+Allow each dependency to come back online before moving to the next step. The health endpoints should recover without manual intervention; if they do not, capture logs and open an issue.
+
    ```sh
    dune exec -- chessmate -- query --limit 5 --offset 10 "Find Queens Gambit games"
    ```

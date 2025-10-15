@@ -59,6 +59,34 @@ For vegeta:
 echo "POST http://localhost:8080/query" |   vegeta attack -body scripts/fixtures/load_test_query.json -header "Content-Type: application/json"     -duration=60s -rate=0 -max-workers=50 | vegeta report
 ```
 
+### 3.1 Agent Disabled Baseline
+
+Run the API without GPT-5 to measure raw storage/vector performance:
+
+```sh
+AGENT_API_KEY="" \
+  oha --duration 60s --concurrency 50 \
+      --header 'Content-Type: application/json' \
+      --body @scripts/fixtures/load_test_query.json \
+      http://localhost:8080/query
+```
+
+Expect CPU-bound behaviour on Postgres/Qdrant, minimal variance in latency, and the absence of `[agent]` logs. Record the p95 latency/throughput pair as the lower bound for user-visible queries.
+
+### 3.2 Agent Enabled Scenario
+
+Repeat the run with GPT-5 enabled to capture end-to-end latency including re-ranking:
+
+```sh
+AGENT_API_KEY=sk-real-key \
+  oha --duration 60s --concurrency 30 \
+      --header 'Content-Type: application/json' \
+      --body @scripts/fixtures/load_test_query.json \
+      http://localhost:8080/query
+```
+
+Monitor `[agent-telemetry]` logs for token usage and latency, and compare throughput against the baseline. If variance is too high, reduce concurrency or provision more agent capacity before production rollout.
+
 ---
 
 ## 4. What to Watch
