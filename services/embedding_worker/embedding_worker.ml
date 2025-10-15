@@ -401,8 +401,7 @@ let start_health_server ~postgres =
 let set_prometheus_port value =
   if value <= 0 || value > 65_535 then
     raise
-      (Stdlib.Arg.Bad
-         "--listen-prometheus expects a port between 1 and 65535")
+      (Stdlib.Arg.Bad "--listen-prometheus expects a port between 1 and 65535")
   else prometheus_port := Some value
 
 let usage_msg =
@@ -489,8 +488,9 @@ let run () =
             | Error err ->
                 stop_health_server ();
                 eprintf
-                  "[worker][fatal] failed to start Prometheus exporter on \
-                   port %d: %s\n%!"
+                  "[worker][fatal] failed to start Prometheus exporter on port \
+                   %d: %s\n\
+                   %!"
                   port (Error.to_string_hum err);
                 Stdlib.exit 1)
       in

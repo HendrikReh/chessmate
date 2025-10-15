@@ -18,7 +18,6 @@
 
 open! Base
 open Stdio
-
 module Server = Prometheus_app.Cohttp (Cohttp_lwt_unix.Server)
 
 type t = {
@@ -33,11 +32,11 @@ let validate_port port =
   else Or_error.return port
 
 let run_server promise =
-  try Lwt_main.run promise
-  with
+  try Lwt_main.run promise with
   | Lwt.Canceled -> ()
   | exn ->
-      eprintf "[metrics][error] Prometheus exporter stopped unexpectedly: %s\n%!"
+      eprintf
+        "[metrics][error] Prometheus exporter stopped unexpectedly: %s\n%!"
         (Exn.to_string exn)
 
 let start ~port =
@@ -50,11 +49,7 @@ let start ~port =
         Cohttp_lwt_unix.Server.create ~mode
           (Cohttp_lwt_unix.Server.make ~callback ())
       in
-      let runner =
-        Thread.create
-          (fun promise -> run_server promise)
-          server
-      in
+      let runner = Thread.create (fun promise -> run_server promise) server in
       let active = Stdlib.Atomic.make true in
       eprintf "[metrics] Prometheus exporter listening on :%d\n%!" port;
       Or_error.return { thread = runner; promise = server; active }

@@ -205,7 +205,8 @@ let test_worker_config_prometheus_override () =
       | Error err ->
           failf "unexpected worker config failure: %s" (Error.to_string_hum err)
       | Ok config ->
-          check (option int) "prometheus port" (Some 9100) config.prometheus_port)
+          check (option int) "prometheus port" (Some 9100)
+            config.prometheus_port)
 
 let test_worker_config_prometheus_invalid () =
   with_env

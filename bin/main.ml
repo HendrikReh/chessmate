@@ -57,21 +57,21 @@ let parse_listen_prometheus_flag args =
     | [] -> Or_error.return (seen_port, List.rev acc)
     | "--listen-prometheus" :: [] ->
         Or_error.error_string "--listen-prometheus expects a port value"
-    | "--listen-prometheus" :: value :: rest ->
+    | "--listen-prometheus" :: value :: rest -> (
         if Option.is_some seen_port then
           Or_error.error_string "--listen-prometheus supplied more than once"
-        else (
+        else
           match parse_port_value value with
           | Error _ as err -> err
           | Ok port -> loop (Some port) acc rest)
-    | arg :: rest when String.is_prefix arg ~prefix:"--listen-prometheus=" ->
+    | arg :: rest when String.is_prefix arg ~prefix:"--listen-prometheus=" -> (
         if Option.is_some seen_port then
           Or_error.error_string "--listen-prometheus supplied more than once"
         else
           let value =
             String.drop_prefix arg (String.length "--listen-prometheus=")
           in
-          (match parse_port_value value with
+          match parse_port_value value with
           | Error _ as err -> err
           | Ok port -> loop (Some port) acc rest)
     | arg :: rest -> loop seen_port (arg :: acc) rest
@@ -266,7 +266,7 @@ let run ?argv () =
       | Ok (flag_port, args) -> (
           match Cli_common.prometheus_port_from_env () with
           | Error err -> exit_with_error err
-          | Ok env_port ->
+          | Ok env_port -> (
               let effective_port =
                 match flag_port with Some _ -> flag_port | None -> env_port
               in
@@ -299,6 +299,6 @@ let run ?argv () =
               | [] -> print_usage ()
               | _ ->
                   print_usage ();
-                  Stdlib.exit 1))
+                  Stdlib.exit 1)))
 
 let () = run ()
