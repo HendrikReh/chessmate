@@ -39,6 +39,7 @@ docker compose exec postgres psql -U chess -c "ALTER ROLE chess WITH CREATEDB;"
 | `OPENAI_API_KEY=... dune exec -- embedding_worker -- --workers N --poll-sleep 1.0 --exit-after-empty 3` | Run embedding worker loops. Adjust `N` gradually; monitor queue via `scripts/embedding_metrics.sh --interval 120`. |
 | `dune exec chessmate -- query [--limit N] [--offset N] [--json] "..."` | CLI queries; paginate with `--limit/--offset` and use `--json` for raw payloads. Prints `[health] ...` lines before execution. |
 | `curl http://localhost:8080/metrics` | Inspect Prometheus gauges/counters (DB pool usage, per-route latency histograms, agent cache stats, rate limiter). |
+| `dune exec -- chessmate -- --listen-prometheus 9101 ingest …` | Drop-in Prometheus exporter for long-running CLI workflows. Exposes `http://localhost:9101/metrics` until the command exits. |
 | `curl http://localhost:8080/openapi.yaml` | Retrieve the OpenAPI spec (override path with `CHESSMATE_OPENAPI_SPEC`). |
 | `curl http://localhost:8080/health` | Structured JSON health report (HTTP 200 on `status=ok`, 503 otherwise). Worker exposes `http://localhost:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/health`. |
 
@@ -161,12 +162,15 @@ Log details and mitigation in `INCIDENTS/<date>.md` after an incident.
 
 ## 11. Monitoring & Alerting (Targets)
 - **Metrics to watch**: `/metrics` latency histograms, DB pool usage, rate limiter counters, embedding throughput, queue depth, GPT‑5 timeout counts.
+- **CLI exporter smoke test**: run `scripts/check_metrics.sh PORT=9101 HOST=localhost PATHNAME=/metrics` after enabling the CLI exporter to verify it responds with the Prometheus header.
 - **Alerts**:
   - API p95 > 2s sustained.
   - Embedding backlog > 500 jobs for >10 min.
   - Embedding failure rate > 5%/h.
   - Disk usage on `data/` volumes > 80%.
   - Postgres/Qdrant health probe failures.
+  - Prometheus scrape failures (`up == 0`) for API, CLI exporters, or worker endpoints.
+  - Metrics banner mismatch (optional: curl response body contains anything other than `Prometheus text format`).
 - Dashboards: combine Postgres exporter, Qdrant metrics, OCaml counters, and logs from `scripts/embedding_metrics.sh`.
 
 ---
@@ -176,6 +180,13 @@ Log details and mitigation in `INCIDENTS/<date>.md` after an incident.
 - `dune build @fmt` enforces ocamlformat.
 - For releases: document validation commands in the PR (build/test/smoke), ensure the embedding worker/API restart cleanly, publish containers, and announce rollout steps.
 - Future goal: automated integration tests hitting `/query` against live Postgres/Qdrant in CI/CD.
+
+## 13. Prometheus Rollout Checklist (Staging → Prod)
+- [ ] Configure scrape jobs for API (`localhost:8080`), CLI exporters (dynamic ports such as 9101), and worker (`--listen-prometheus` / `CHESSMATE_WORKER_PROM_PORT`). See sample in `README.md`.
+- [ ] Add alert rules for API latency (p95 > 2s five-minute window), embedding failures (`embedding_jobs_total{outcome="failed"}`), and queue depth (`embedding_pending_jobs`).
+- [ ] Ensure `/metrics` endpoints are exposed behind the ingress/load balancer with appropriate auth (basic auth, IP allowlist).
+- [ ] Update dashboards to chart `db_pool_wait_ratio`, `api_requests_total`, worker throughput gauges, and agent cache hit rate.
+- [ ] Verify `scripts/check_metrics.sh` passes for API, worker, and CLI exporters as part of staging smoke tests.
 
 ---
 

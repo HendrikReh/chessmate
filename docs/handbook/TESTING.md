@@ -85,14 +85,14 @@ This manual probe verifies that oddball request paths cannot break the `/metrics
 1. **API probe**: point your HTTP monitor to `http://<host>:8080/health`. Treat any HTTP status ≠ 200 as an alert. Parse the JSON body for `status` and surface it as a primary metric (`ok`, `degraded`, `error`) plus per-check details for dashboards.
 2. **Worker probe**: target `http://<host>:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/health`. If you run multiple workers on the same host, assign unique ports via `CHESSMATE_WORKER_HEALTH_PORT` and configure the monitor per instance.
 3. **Sample curl** (useful for local smoke tests or scripted checks):
-   ```sh
-   for port in 8080 "${CHESSMATE_WORKER_HEALTH_PORT:-8081}"; do
-     echo "# probing ${port}"
-     curl -sf "http://localhost:${port}/health" \
-       | jq -r '.status as $s | ["health_status=" + $s] + (.checks[] | .name + ":" + .status) | @tsv'
-   done
-   ```
-   This prints the overall status followed by each check’s outcome (e.g., `postgres:ok`). Integrate the command (or equivalent agent) into your monitoring stack to capture both the aggregate health and individual dependency signals.
+  ```sh
+  for port in 8080 "${CHESSMATE_WORKER_HEALTH_PORT:-8081}"; do
+    echo "# probing ${port}"
+    curl -sf "http://localhost:${port}/health" \
+      | jq -r '.status as $s | ["health_status=" + $s] + (.checks[] | .name + ":" + .status) | @tsv'
+  done
+  ```
+  This prints the overall status followed by each check’s outcome (e.g., `postgres:ok`). Integrate the command (or equivalent agent) into your monitoring stack to capture both the aggregate health and individual dependency signals.
 4. **CLI pagination spot-check** (optional):
 
 ### 4d. Chaos Drill (Postgres/Qdrant/Redis)
@@ -115,15 +115,50 @@ Exercise the health checks and failure handling by briefly removing dependencies
    ```sh
    docker compose stop redis
    curl -s http://localhost:8080/health | jq '.status'
-   docker compose start redis
-   ```
+  docker compose start redis
+  ```
 
 Allow each dependency to come back online before moving to the next step. The health endpoints should recover without manual intervention; if they do not, capture logs and open an issue.
 
+  ```sh
+  dune exec -- chessmate -- query --limit 5 --offset 10 "Find Queens Gambit games"
+  ```
+  The `Limit:`/`Offset:` lines in the CLI output reflect the effective pagination parameters; compare them with `total`/`has_more` to confirm behaviour.
+
+### 4e. Metrics Endpoint Smoke Test (API, CLI Exporter, Worker)
+
+1. **Prerequisites**: ensure the API is running on `http://localhost:8080` and, if desired, enable a CLI exporter and worker exporter:
    ```sh
-   dune exec -- chessmate -- query --limit 5 --offset 10 "Find Queens Gambit games"
+   dune exec -- services/api/chessmate_api.exe --port 8080 &
+   API_PID=$!
+
+   dune exec -- chessmate -- --listen-prometheus 9101 ingest test/fixtures/sample_game.pgn &
+   CLI_PID=$!
+
+   OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate \
+     dune exec -- embedding_worker -- --listen-prometheus 9102 --exit-after-empty 1 &
+   WORKER_PID=$!
    ```
-   The `Limit:`/`Offset:` lines in the CLI output reflect the effective pagination parameters; compare them with `total`/`has_more` to confirm behaviour.
+
+2. **Run the helper**: `scripts/check_metrics.sh` verifies HTTP 200 and the Prometheus text banner.
+   ```sh
+   scripts/check_metrics.sh PORT=8080
+   scripts/check_metrics.sh PORT=9101 || true   # CLI exporter exits with the command
+   scripts/check_metrics.sh PORT=9102 || true   # worker exporter exits when the worker stops
+   ```
+   The script prints `Metrics endpoint healthy` on success; non-zero exit codes indicate failures:
+   - `2`: unexpected status code (e.g., exporter not running).
+   - `3`: banner mismatch (payload not in Prometheus text format).
+
+3. **Scrape manually**: inspect the first lines from each endpoint for sanity checks.
+   ```sh
+   curl -s http://localhost:8080/metrics | head -n 5
+   curl -s http://localhost:9101/metrics | head -n 5
+   curl -s http://localhost:9102/metrics | head -n 5
+   ```
+   Expect to see `# HELP`/`# TYPE` lines followed by chessmate metrics like `chessmate_api_requests_total` or `chessmate_worker_embedding_jobs_total`.
+
+4. **Cleanup**: terminate background processes (`kill $API_PID $CLI_PID $WORKER_PID`) once verification completes.
 
 ---
 

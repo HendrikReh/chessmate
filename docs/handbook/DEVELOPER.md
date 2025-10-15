@@ -75,6 +75,8 @@ The executables validate configuration on startup; missing or malformed values r
 | `OPENAI_RETRY_BASE_DELAY_MS` | ⛏️ | `200` | CLI/API/worker | Positive float (milliseconds) controlling initial retry backoff. |
 | `OPENAI_EMBEDDING_CHUNK_SIZE` | ⛏️ | `2048` | Worker | Positive integer; maximum FEN batch size per embedding request. |
 | `OPENAI_EMBEDDING_MAX_CHARS` | ⛏️ | `120000` | Worker | Positive integer; character limit per batch (requests split recursively when exceeded). |
+| `CHESSMATE_PROM_PORT` | ⛏️ | — | CLI | Optional Prometheus exporter port (instead of `--listen-prometheus`). |
+| `CHESSMATE_WORKER_PROM_PORT` | ⛏️ | — | Worker | Optional Prometheus exporter port (instead of `--listen-prometheus`). |
 
 ✅ = required · ⛏️ = optional.
 
@@ -103,10 +105,18 @@ The executables validate configuration on startup; missing or malformed values r
    Monitors: `scripts/embedding_metrics.sh --interval 120`.
 
 4. **Run the query API**
-   ```sh
-   dune exec -- services/api/chessmate_api.exe --port 8080
-   ```
-   Logs include rate-limiter configuration and Qdrant bootstrap status.
+  ```sh
+  dune exec -- services/api/chessmate_api.exe --port 8080
+  ```
+  Logs include rate-limiter configuration and Qdrant bootstrap status.
+
+5. **Smoke test metrics endpoints**
+  ```sh
+  scripts/check_metrics.sh PORT=8080
+  scripts/check_metrics.sh PORT=9101 HOST=localhost PATHNAME=/metrics
+  ```
+  The helper verifies `/metrics` responds with the Prometheus text banner (CLI exporter example assumes `--listen-prometheus 9101`).
+  Capture the output alongside `dune build && dune runtest` results in PR descriptions whenever instrumentation changes touch metrics.
 
 5. **Query from the CLI**
    ```sh
