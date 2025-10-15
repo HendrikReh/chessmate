@@ -6,7 +6,7 @@ This document complements the [Developer Handbook](DEVELOPER.md), [Testing Plan]
 
 ## 1. Communication & Planning
 - Track work in GitHub Issues; every PR references its parent issue.
-- Record design decisions in `docs/ADR-<id>.md` with context and outcome.
+- Record design decisions in `docs/ADR/` (template: `ADR-000-template.md`). Seeded ADR-001..004 cover language choice, hybrid retrieval, rate limiting, and Caqti adoption.
 - Share daily async updates (progress, blockers, next steps) in the team channel.
 
 ---

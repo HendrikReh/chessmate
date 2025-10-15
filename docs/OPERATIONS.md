@@ -153,4 +153,4 @@ Log details and mitigation in `docs/INCIDENTS/<date>.md` after an incident.
 
 ---
 
-Keep this playbook updated alongside system changes. Combine it with the architecture roadmap ([REVIEW_v4.md](REVIEW_v4.md)) to understand what’s changing and why.
+Keep this playbook updated alongside system changes. Combine it with the architecture roadmap ([REVIEW_v4.md](REVIEW_v4.md)) to understand what’s changing and why. Incident retrospectives live in `docs/INCIDENTS/`; use the template in `docs/INCIDENTS/incident-template.md` after each SEV event.
