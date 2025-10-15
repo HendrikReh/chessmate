@@ -12,6 +12,12 @@ if [[ ! -f "$PAYLOAD" ]]; then
   exit 1
 fi
 
+if command -v jq >/dev/null 2>&1; then
+  REQUEST_BODY=$(jq -c . <"$PAYLOAD")
+else
+  REQUEST_BODY=$(tr '\n' ' ' <"$PAYLOAD" | tr -s ' ')
+fi
+
 if ! command -v "$TOOL" >/dev/null 2>&1; then
   echo "$TOOL not found on PATH" >&2
   exit 1
@@ -19,19 +25,31 @@ fi
 
 case "$TOOL" in
   oha)
-    "$TOOL" \
-      --no-tui \
-      --duration "$DURATION" \
-      --connections "$CONCURRENCY" \
-      --method POST \
-      --header 'Content-Type: application/json' \
-      --body "@$PAYLOAD" \
-      "$TARGET_URL"
+    if "$TOOL" --help 2>&1 | grep -q -- '--duration'; then
+      "$TOOL" \
+        --no-tui \
+        --duration "$DURATION" \
+        --connections "$CONCURRENCY" \
+        --method POST \
+        --header 'Content-Type: application/json' \
+        --body "$REQUEST_BODY" \
+        "$TARGET_URL"
+    else
+      "$TOOL" \
+        --no-tui \
+        -z "$DURATION" \
+        -c "$CONCURRENCY" \
+        -m POST \
+        -H 'Content-Type: application/json' \
+        -d "$REQUEST_BODY" \
+        "$TARGET_URL"
+    fi
     ;;
   vegeta)
     echo "POST $TARGET_URL" \
-     | echo "$(cat)" "$(jq -c . <"$PAYLOAD")" \
      | vegeta attack -rate=0 -duration="$DURATION" -workers="$CONCURRENCY" \
+        -header "Content-Type: application/json" \
+        -body "$PAYLOAD" \
      | vegeta report
     ;;
   *)
@@ -47,5 +65,22 @@ fi
 
 if command -v docker >/dev/null 2>&1; then
   echo "--- docker stats snapshot ---"
-  docker stats --no-stream postgres qdrant redis || true
+  docker_targets=()
+  if docker compose version >/dev/null 2>&1; then
+    while IFS= read -r id; do
+      if [[ -n "$id" ]]; then
+        docker_targets+=("$id")
+      fi
+    done < <(docker compose ps -q 2>/dev/null || true)
+  elif command -v docker-compose >/dev/null 2>&1; then
+    while IFS= read -r id; do
+      if [[ -n "$id" ]]; then
+        docker_targets+=("$id")
+      fi
+    done < <(docker-compose ps -q 2>/dev/null || true)
+  fi
+  if [[ ${#docker_targets[@]} -eq 0 ]]; then
+    docker_targets=(postgres qdrant redis)
+  fi
+  docker stats --no-stream "${docker_targets[@]}" || true
 fi

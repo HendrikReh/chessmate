@@ -22,6 +22,7 @@ Ensure `CHESSMATE_TEST_DATABASE_URL` points to a role with `CREATEDB` for integr
 eval "$(opam env --set-switch)"
 dune exec -- services/api/chessmate_api.exe --port 8080
 ```
+Restart the API before timed benchmarks so `/metrics` counters start from zero.
 Optional embedding worker:
 ```sh
 OPENAI_API_KEY=dummy   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate   dune exec -- embedding_worker -- --workers 1 --poll-sleep 1.0 --exit-after-empty 3
@@ -177,6 +178,6 @@ Useful when resetting local state (follow with integration test to confirm).
 
 ## 10. Optional Benchmarks
 - **Bulk ingest**: `CHESSMATE_INGEST_CONCURRENCY=1 time chessmate ingest /tmp/combined_twic.pgn`, then increase concurrency and compare timings. Watch Postgres load via `pg_stat_activity`.
-- **Load test**: `TOOL=oha DURATION=60s CONCURRENCY=50 ./scripts/load_test.sh` (see [LOAD_TESTING.md](LOAD_TESTING.md)). Review p95 latency, throughput, `db_pool_wait_ratio`, and rate limiter counters.
+- **Load test**: `TARGET_URL=http://localhost:8080/query PAYLOAD=scripts/fixtures/load_test_query.json DURATION=60s CONCURRENCY=50 TOOL=oha ./scripts/load_test.sh` (see [LOAD_TESTING.md](LOAD_TESTING.md)). Confirm the summary shows `[200]` responses; if you see `[400]`, ensure the payload was JSON (the wrapper now handles legacy `oha` binaries for you). Note any `aborted due to deadline`, inspect tail latencies, and capture the `/metrics` plus `docker stats` output for your PR description.
 
 Document results, warnings, or follow-up actions in PR descriptions or the issue tracker.
