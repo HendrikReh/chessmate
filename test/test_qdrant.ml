@@ -41,6 +41,15 @@ let test_upsert_and_search () =
               in
               Or_error.return [ result ]
           | _ -> Or_error.return []);
+      create_snapshot =
+        (fun ~collection:_ ~snapshot_name:_ ->
+          Or_error.error_string "create_snapshot hook not set");
+      list_snapshots =
+        (fun ~collection:_ ->
+          Or_error.error_string "list_snapshots hook not set");
+      restore_snapshot =
+        (fun ~collection:_ ~location:_ ->
+          Or_error.error_string "restore_snapshot hook not set");
     }
   in
   let test () =

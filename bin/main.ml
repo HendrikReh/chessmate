@@ -33,6 +33,11 @@ Commands:
   query [--json] <question>
                           Send a natural-language question to the query API
   fen <pgn-file> [output] Emit FEN after each half-move (optional output file)
+  collection snapshot --name <name> [--note TEXT]
+                          Create a Qdrant snapshot and log metadata locally
+  collection restore (--snapshot <name> | --location <path>)
+                          Restore Qdrant collection using a recorded snapshot
+  collection list         Show snapshots known to Qdrant and the local log
   embedding-worker        Placeholder (use `dune exec embedding_worker` for now)
   help                    Show this message
 |}
@@ -128,6 +133,86 @@ let run_fen parts =
       | Ok () -> ()
       | Error err -> exit_with_error err)
 
+type snapshot_cli_args = {
+  name : string option;
+  note : string option;
+  log_path : string option;
+}
+
+type restore_cli_args = {
+  snapshot : string option;
+  location : string option;
+  log_path : string option;
+}
+
+type list_cli_args = { log_path : string option }
+
+let rec parse_collection_snapshot (acc : snapshot_cli_args) = function
+  | [] -> (
+      let { name; note; log_path } = acc in
+      match name with
+      | None -> Or_error.error_string "collection snapshot requires --name"
+      | Some snapshot_name ->
+          Collection_command.snapshot ?log_path ?note ~snapshot_name ())
+  | "--name" :: [] -> Or_error.error_string "--name expects a value"
+  | "--name" :: value :: rest ->
+      parse_collection_snapshot
+        { acc with name = Some (String.strip value) }
+        rest
+  | "--note" :: [] -> Or_error.error_string "--note expects a value"
+  | "--note" :: value :: rest ->
+      parse_collection_snapshot { acc with note = Some value } rest
+  | "--log-path" :: [] -> Or_error.error_string "--log-path expects a value"
+  | "--log-path" :: value :: rest ->
+      parse_collection_snapshot { acc with log_path = Some value } rest
+  | flag :: _ -> Or_error.errorf "unknown collection snapshot flag %s" flag
+
+and parse_collection_restore (acc : restore_cli_args) = function
+  | [] ->
+      Collection_command.restore ?log_path:acc.log_path
+        ?snapshot_name:acc.snapshot ?location:acc.location ()
+  | "--snapshot" :: [] -> Or_error.error_string "--snapshot expects a value"
+  | "--snapshot" :: value :: rest ->
+      parse_collection_restore
+        { acc with snapshot = Some (String.strip value) }
+        rest
+  | "--location" :: [] -> Or_error.error_string "--location expects a value"
+  | "--location" :: value :: rest ->
+      parse_collection_restore { acc with location = Some value } rest
+  | "--log-path" :: [] -> Or_error.error_string "--log-path expects a value"
+  | "--log-path" :: value :: rest ->
+      parse_collection_restore { acc with log_path = Some value } rest
+  | flag :: _ -> Or_error.errorf "unknown collection restore flag %s" flag
+
+and parse_collection_list (acc : list_cli_args) = function
+  | [] -> Collection_command.list ?log_path:acc.log_path ()
+  | "--log-path" :: [] -> Or_error.error_string "--log-path expects a value"
+  | "--log-path" :: value :: rest ->
+      let next : list_cli_args = { log_path = Some value } in
+      parse_collection_list next rest
+  | flag :: _ -> Or_error.errorf "unknown collection list flag %s" flag
+
+and run_collection args =
+  let result : unit Or_error.t =
+    match args with
+    | [] -> Or_error.error_string "collection command requires a subcommand"
+    | sub :: rest -> (
+        match sub with
+        | "snapshot" ->
+            let init : snapshot_cli_args =
+              { name = None; note = None; log_path = None }
+            in
+            parse_collection_snapshot init rest
+        | "restore" ->
+            let init = { snapshot = None; location = None; log_path = None } in
+            parse_collection_restore init rest
+        | "list" ->
+            let init : list_cli_args = { log_path = None } in
+            parse_collection_list init rest
+        | other -> Or_error.errorf "unknown collection subcommand %s" other)
+  in
+  match result with Ok () -> () | Error err -> exit_with_error err
+
 let strip_dune_exec = function
   | [] -> []
   | first :: rest when String.equal first "--" -> rest
@@ -151,6 +236,7 @@ let run ?argv () =
       | "twic-precheck" :: path :: _ -> run_twic_precheck path
       | "query" :: args -> run_query args
       | "fen" :: args -> run_fen args
+      | "collection" :: args -> run_collection args
       | "embedding-worker" :: _ ->
           exit_with_error
             (Error.of_string

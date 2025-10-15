@@ -23,6 +23,8 @@ Cmdliner-based executable (`dune exec -- chessmate -- ...`).
   stdout or into a file, useful for debugging or creating fixtures.
 - `lib/cli/twic_precheck_command.ml`: scans TWIC drops (or any PGN batch) for
   malformed headers before they hit the main ingestion loop.
+- `lib/cli/collection_command.ml`: coordinates Qdrant snapshot creation,
+  restoration, and metadata journaling for zero-downtime reindexing.
 
 {1 Usage Tips}
 
@@ -47,6 +49,18 @@ Cmdliner-based executable (`dune exec -- chessmate -- ...`).
 {2 TWIC Precheck}
 - Use the precheck before long ingests to surface malformed headers and
   missing metadata early.
+
+{2 Collection Snapshots}
+- Create a named snapshot before major re-indexing: `dune exec -- chessmate --
+  collection snapshot --name nightly-backup --note "before fen migration"`.
+- The CLI appends metadata to `snapshots/qdrant_snapshots.jsonl` (override with
+  `CHESSMATE_SNAPSHOT_LOG`), capturing creation time, size, and location as
+  reported by Qdrant.
+- Restore the latest recorded snapshot by name:
+  `dune exec -- chessmate -- collection restore --snapshot nightly-backup`.
+  Provide `--location` to restore from an explicit filesystem path.
+- Inspect available snapshots and local log entries via
+  `dune exec -- chessmate -- collection list`.
 
 {2 Config Diagnostics}
 - `dune exec -- chessmate -- config` prints the same `[health] …` table the

@@ -16,6 +16,7 @@
   test_integration
   test_sql_filters
   test_qdrant
+  test_collection_command
   test_sanitizer
   test_health
   test_temp_file_guard

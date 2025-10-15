@@ -24,6 +24,11 @@ open! Base
 module Config = struct
   let collection = "positions"
 
+  let resolve_collection = function
+    | Some override when not (String.is_empty (String.strip override)) ->
+        override
+    | _ -> collection
+
   let url path =
     match Stdlib.Sys.getenv_opt "QDRANT_URL" with
     | Some base when not (String.is_empty (String.strip base)) -> base ^ path
@@ -38,6 +43,13 @@ type scored_point = {
   payload : Yojson.Safe.t option;
 }
 
+type snapshot = {
+  name : string;
+  location : string;
+  created_at : string;
+  size_bytes : int;
+}
+
 type test_hooks = {
   upsert : point list -> unit Or_error.t;
   search :
@@ -45,6 +57,10 @@ type test_hooks = {
     filters:Yojson.Safe.t list option ->
     limit:int ->
     scored_point list Or_error.t;
+  create_snapshot :
+    collection:string -> snapshot_name:string option -> snapshot Or_error.t;
+  list_snapshots : collection:string -> snapshot list Or_error.t;
+  restore_snapshot : collection:string -> location:string -> unit Or_error.t;
 }
 
 let test_hooks_ref : test_hooks option ref = ref None
@@ -77,6 +93,11 @@ let http_get ~path =
 let http_put ~path ~body =
   let uri = Config.url path |> Uri.of_string in
   Cohttp_lwt_unix.Client.put ~headers ~body:(Cohttp_lwt.Body.of_string body) uri
+
+let http_post_json ~path ~body =
+  let uri = Config.url path |> Uri.of_string in
+  let payload = Cohttp_lwt.Body.of_string body in
+  Cohttp_lwt_unix.Client.post ~headers ~body:payload uri
 
 let with_lwt_result f =
   let wrapped =
@@ -211,3 +232,129 @@ let ensure_collection ~name ~vector_size ~distance =
   match !test_hooks_ref with
   | Some _ -> Or_error.return ()
   | None -> run_request (ensure_collection_request ~name ~vector_size ~distance)
+
+let snapshot_of_json json =
+  let open Yojson.Safe.Util in
+  let string_field name =
+    match json |> member name with
+    | `String value -> Ok value
+    | `Null -> Error (Printf.sprintf "missing snapshot field %s" name)
+    | other ->
+        Error
+          (Printf.sprintf "snapshot field %s expected string, got %s" name
+             (Yojson.Safe.to_string other))
+  in
+  let int_field name =
+    match json |> member name with
+    | `Int value -> Ok value
+    | `Float value -> Ok (Float.to_int value)
+    | `Null -> Error (Printf.sprintf "missing snapshot field %s" name)
+    | other ->
+        Error
+          (Printf.sprintf "snapshot field %s expected number, got %s" name
+             (Yojson.Safe.to_string other))
+  in
+  let created_at =
+    match json |> member "creation_time" with
+    | `String value -> Ok value
+    | `Null -> (
+        match json |> member "created_at" with
+        | `String value -> Ok value
+        | _ -> Error "missing snapshot creation_time")
+    | other ->
+        Error
+          (Printf.sprintf "snapshot creation_time expected string, got %s"
+             (Yojson.Safe.to_string other))
+  in
+  match
+    (string_field "name", string_field "location", created_at, int_field "size")
+  with
+  | Ok name, Ok location, Ok created_at, Ok size_bytes ->
+      Ok { name; location; created_at; size_bytes }
+  | Error err, _, _, _
+  | _, Error err, _, _
+  | _, _, Error err, _
+  | _, _, _, Error err ->
+      Error err
+
+let create_snapshot_request ~collection ?snapshot_name () =
+  let open Lwt.Syntax in
+  let body =
+    match snapshot_name with
+    | None -> "{}"
+    | Some name ->
+        `Assoc [ ("snapshot_name", `String name) ] |> Yojson.Safe.to_string
+  in
+  let path = Printf.sprintf "/collections/%s/snapshots" collection in
+  let* response, body_stream = http_post_json ~path ~body in
+  let status = Cohttp.Response.status response |> Cohttp.Code.code_of_status in
+  let* body_string = Cohttp_lwt.Body.to_string body_stream in
+  if List.mem ~equal:Int.equal [ 200; 201; 202 ] status then
+    let open Yojson.Safe.Util in
+    try
+      let json = Yojson.Safe.from_string body_string in
+      match json |> member "result" with
+      | `Assoc _ as result -> Lwt.return (snapshot_of_json result)
+      | _ ->
+          Lwt.return (Error "Qdrant snapshot response missing 'result' object")
+    with Yojson.Json_error msg -> Lwt.return (Error msg)
+  else
+    Lwt.return
+      (Error
+         (Printf.sprintf "Qdrant snapshot creation failed (status %d): %s"
+            status body_string))
+
+let list_snapshots_request ~collection () =
+  let open Lwt.Syntax in
+  let path = Printf.sprintf "/collections/%s/snapshots" collection in
+  let* response, body_stream = http_get ~path in
+  let status = Cohttp.Response.status response |> Cohttp.Code.code_of_status in
+  let* body_string = Cohttp_lwt.Body.to_string body_stream in
+  if Int.equal status 200 then
+    let open Yojson.Safe.Util in
+    try
+      let json = Yojson.Safe.from_string body_string in
+      let entries = json |> member "result" |> to_list in
+      entries |> List.map ~f:snapshot_of_json |> Result.all |> Lwt.return
+    with
+    | Yojson.Json_error msg -> Lwt.return (Error msg)
+    | Type_error (msg, _) -> Lwt.return (Error msg)
+  else
+    Lwt.return
+      (Error
+         (Printf.sprintf "Qdrant snapshot list failed (status %d): %s" status
+            body_string))
+
+let restore_snapshot_request ~collection ~location () =
+  let open Lwt.Syntax in
+  let body =
+    `Assoc [ ("location", `String location) ] |> Yojson.Safe.to_string
+  in
+  let path = Printf.sprintf "/collections/%s/snapshots/recover" collection in
+  let* response, body_stream = http_post_json ~path ~body in
+  let status = Cohttp.Response.status response |> Cohttp.Code.code_of_status in
+  let* body_string = Cohttp_lwt.Body.to_string body_stream in
+  if List.mem ~equal:Int.equal [ 200; 201; 202 ] status then Lwt.return (Ok ())
+  else
+    Lwt.return
+      (Error
+         (Printf.sprintf "Qdrant snapshot restore failed (status %d): %s" status
+            body_string))
+
+let create_snapshot ?collection ?snapshot_name () =
+  let collection = Config.resolve_collection collection in
+  match !test_hooks_ref with
+  | Some hooks -> hooks.create_snapshot ~collection ~snapshot_name
+  | None -> run_request (create_snapshot_request ~collection ?snapshot_name ())
+
+let list_snapshots ?collection () =
+  let collection = Config.resolve_collection collection in
+  match !test_hooks_ref with
+  | Some hooks -> hooks.list_snapshots ~collection
+  | None -> run_request (list_snapshots_request ~collection ())
+
+let restore_snapshot ?collection ~location () =
+  let collection = Config.resolve_collection collection in
+  match !test_hooks_ref with
+  | Some hooks -> hooks.restore_snapshot ~collection ~location
+  | None -> run_request (restore_snapshot_request ~collection ~location ())

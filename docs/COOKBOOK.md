@@ -96,7 +96,24 @@ Follow with the integration smoke test to confirm the rebuild succeeded.
 
 ---
 
-## 9. Observe Rate Limiting (Optional)
+## 9. Snapshot Qdrant Before Reindexing
+```
+# Create a labelled snapshot and capture metadata (default log: snapshots/qdrant_snapshots.jsonl)
+dune exec -- chessmate -- collection snapshot --name nightly-backup --note "before bulk reindex"
+
+# List remote + locally recorded snapshots
+dune exec -- chessmate -- collection list
+
+# Restore from the latest recorded snapshot by name
+sudo systemctl stop chessmate-api  # or stop docker compose services
+CHESSMATE_SNAPSHOT_LOG=/backups/qdrant/log.jsonl \
+  dune exec -- chessmate -- collection restore --snapshot nightly-backup
+```
+The CLI resolves snapshot locations either from the metadata log or live Qdrant list; provide `--location` when restoring from an off-box path.
+
+---
+
+## 10. Observe Rate Limiting (Optional)
 ```
 CHESSMATE_API_URL=http://localhost:8080   for i in {1..70}; do dune exec -- chessmate -- query "Show 5 random games"; done
 ```
@@ -104,7 +121,7 @@ After the configured quota, requests return 429 with `Retry-After`. `/metrics` r
 
 ---
 
-## 10. Confirm Qdrant Bootstrap
+## 11. Confirm Qdrant Bootstrap
 ```
 dune exec -- services/api/chessmate_api.exe --port 8080
 # Look for [chessmate-api][config] qdrant collection ensured (name=positions)

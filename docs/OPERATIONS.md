@@ -119,10 +119,27 @@ Log details and mitigation in `docs/INCIDENTS/<date>.md` after an incident.
 | Component | Strategy |
 | --- | --- |
 | Postgres | Regular `pg_dump` + WAL archiving; store in secure object storage. |
-| Qdrant | Use built-in snapshots (`qdrant snapshot create --path ...`). |
+| Qdrant | Use built-in snapshots (`chessmate collection snapshot --name <label>`). Copy the recorded path off-host for durability. |
 | Redis | RDB snapshots (`redis-cli SAVE` / `BGSAVE`); consider separate instances per environment. |
 
 **Restore order**: stop services → restore Postgres → restore Qdrant snapshot → rerun migrations (if needed) → restart worker/API → re-ingest missing deltas.
+
+### Qdrant snapshot workflow
+1. Pause ingestion/workers (or ensure no writes) and create a labelled snapshot:
+   ```sh
+   dune exec -- chessmate -- collection snapshot --name nightly-backup --note "pre-reindex"
+   ```
+   The CLI logs metadata to `snapshots/qdrant_snapshots.jsonl`; archive both the
+   snapshot file (path printed under “location”) and the metadata log in durable storage.
+2. Perform maintenance (reindex, upgrade). If rollback is required, stop the API/worker,
+   restore the snapshot via:
+   ```sh
+   dune exec -- chessmate -- collection restore --snapshot nightly-backup
+   ```
+   Use `--location` when restoring from a copied snapshot outside the default Qdrant
+   data directory.
+3. Verify recovery with `chessmate -- collection list`, then restart services and resume
+   ingestion.
 
 ---
 

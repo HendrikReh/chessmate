@@ -28,6 +28,13 @@ type scored_point = {
   payload : Yojson.Safe.t option;
 }
 
+type snapshot = {
+  name : string;
+  location : string;
+  created_at : string;
+  size_bytes : int;
+}
+
 val upsert_points : point list -> unit Or_error.t
 (** Upsert a batch of points into the configured collection. *)
 
@@ -43,6 +50,22 @@ val ensure_collection :
 (** Ensure the target collection exists, creating it with the provided
     parameters if necessary. Idempotent. *)
 
+val create_snapshot :
+  ?collection:string -> ?snapshot_name:string -> unit -> snapshot Or_error.t
+(** Create a Qdrant snapshot for the target collection. When [snapshot_name] is
+    omitted, Qdrant generates a timestamped default. Returns metadata describing
+    the created snapshot. *)
+
+val list_snapshots : ?collection:string -> unit -> snapshot list Or_error.t
+(** List snapshots known to Qdrant for the target collection. Ordered as
+    returned by Qdrant (typically newest first). *)
+
+val restore_snapshot :
+  ?collection:string -> location:string -> unit -> unit Or_error.t
+(** Restore the target collection from the snapshot located at [location]
+    (filesystem path as reported by Qdrant). The operation is delegated to
+    Qdrant; callers should ensure the API process is stopped or writable. *)
+
 type test_hooks = {
   upsert : point list -> unit Or_error.t;
   search :
@@ -50,6 +73,10 @@ type test_hooks = {
     filters:Yojson.Safe.t list option ->
     limit:int ->
     scored_point list Or_error.t;
+  create_snapshot :
+    collection:string -> snapshot_name:string option -> snapshot Or_error.t;
+  list_snapshots : collection:string -> snapshot list Or_error.t;
+  restore_snapshot : collection:string -> location:string -> unit Or_error.t;
 }
 
 val with_test_hooks : test_hooks -> (unit -> 'a) -> 'a
