@@ -21,7 +21,69 @@ DEFAULT_DATABASE_URL="postgres://chess:chess@localhost:5433/chessmate"
 MIGRATE_SCRIPT="$ROOT_DIR/scripts/migrate.sh"
 HOOKS_DIR="$ROOT_DIR/.githooks"
 
+run_with_retries() {
+  local description="$1"
+  shift
+  local max_attempts="$1"
+  shift
+
+  local attempt=1
+  local delay=1
+  while (( attempt <= max_attempts )); do
+    if "$@"; then
+      return 0
+    fi
+    warn "${description} failed (attempt ${attempt}/${max_attempts})"
+    sleep "$delay"
+    delay=$((delay * 2))
+    attempt=$((attempt + 1))
+  done
+  error "${description} failed after ${max_attempts} attempts"
+  return 1
+}
+
+wait_for_postgres() {
+  if ! command -v pg_isready >/dev/null 2>&1; then
+    warn "pg_isready not found; skipping postgres readiness check"
+    return 0
+  fi
+  local url="${DATABASE_URL:-$DEFAULT_DATABASE_URL}"
+  run_with_retries "postgres readiness" 6 pg_isready -d "$url"
+}
+
+wait_for_qdrant() {
+  local base_url="${QDRANT_URL:-http://localhost:6333}"
+  run_with_retries "qdrant readiness" 6 curl -fsS "$base_url/healthz"
+}
+
+wait_for_redis() {
+  if ! command -v redis-cli >/dev/null 2>&1; then
+    warn "redis-cli not found; skipping redis readiness check"
+    return 0
+  fi
+  local redis_url="${REDIS_URL:-redis://localhost:6379}"
+  run_with_retries "redis readiness" 6 redis-cli -u "$redis_url" ping >/dev/null
+}
+
+parse_args() {
+  SKIP_TESTS=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --skip-tests)
+      SKIP_TESTS=true
+      shift
+      ;;
+    *)
+      error "Unknown option: $1"
+      exit 1
+      ;;
+    esac
+  done
+}
+
 main() {
+  parse_args "$@"
+
   info "Validating prerequisites"
   require_cmd opam
   require_cmd dune
@@ -45,6 +107,12 @@ main() {
     info ".env already present – leaving it untouched"
   fi
 
+  if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    source "$ENV_FILE"
+    set +a
+  fi
+
   if [[ ! -d "$OPAM_SWITCH_DIR" ]]; then
     info "Creating opam switch (5.1.0)"
     opam switch create . 5.1.0
@@ -58,12 +126,20 @@ main() {
   info "Installing OCaml dependencies"
   opam install . --deps-only --with-test --yes
 
-  info "Starting Docker services (postgres, qdrant, redis)"
+  local compose_cmd
   if command -v docker compose >/dev/null 2>&1; then
-    docker compose up -d postgres qdrant redis
+    compose_cmd=(docker compose)
   else
-    docker-compose up -d postgres qdrant redis
+    compose_cmd=(docker-compose)
   fi
+
+  info "Starting Docker services (postgres, qdrant, redis)"
+  run_with_retries "docker services startup" 5 "${compose_cmd[@]}" up -d postgres qdrant redis
+
+  info "Waiting for service readiness"
+  wait_for_postgres || exit 1
+  wait_for_qdrant || exit 1
+  wait_for_redis || exit 1
 
   if [[ -x "$MIGRATE_SCRIPT" ]]; then
     info "Running database migrations"
@@ -75,8 +151,12 @@ main() {
   info "Building workspace"
   dune build
 
-  info "Running test suite"
-  dune runtest
+  if [[ "$SKIP_TESTS" == true ]]; then
+    info "Skipping test suite (--skip-tests flag provided)"
+  else
+    info "Running test suite"
+    dune runtest
+  fi
 
   info "Bootstrap complete"
 }
