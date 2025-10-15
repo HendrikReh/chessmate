@@ -121,6 +121,30 @@ The executables validate configuration on startup; missing or malformed values r
 
 More recipes live in [COOKBOOK.md](COOKBOOK.md).
 
+### Snapshot Workflow (Qdrant)
+- Take snapshots before major reindex/migrations:
+  ```sh
+  dune exec -- chessmate -- collection snapshot --name nightly-backup --note "pre-reindex"
+  ```
+  Metadata is appended to `snapshots/qdrant_snapshots.jsonl`; override the log path with `CHESSMATE_SNAPSHOT_LOG` when archiving off-box.
+- Restore by name (or explicit `--location`) after quiescing API/worker processes:
+  ```sh
+  dune exec -- chessmate -- collection restore --snapshot nightly-backup
+  ```
+- Inspect available snapshots plus local log entries:
+  ```sh
+  dune exec -- chessmate -- collection list
+  ```
+
+### Load Testing Harness
+- Ensure a representative corpus is ingested and the API is running locally.
+- Run the script with defaults (`60s`, 50 concurrent connections):
+  ```sh
+  TOOL=oha DURATION=60s CONCURRENCY=50 TARGET_URL=http://localhost:8080/query scripts/load_test.sh
+  ```
+- The script detects legacy `oha` flags, minifies the JSON payload once (avoiding `@payload` 400s), and resolves Docker Compose container IDs before grabbing a stats snapshot. It also prints `/metrics` immediately after the run—capture the output for PR validation.
+- Monitor `api_request_latency_ms_p95`, `db_pool_wait_ratio`, `agent_cache_hits_total`, and Qdrant container CPU usage. Use `docs/LOAD_TESTING.md` for deeper analysis checklists.
+
 ---
 
 ## 5. Observability & Health

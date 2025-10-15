@@ -72,6 +72,7 @@ flowchart TD
 ### CLI
 - `chessmate ingest <pgn>`: parses PGNs, persists games/positions/embedding jobs in Postgres, respecting queue guard (`CHESSMATE_MAX_PENDING_EMBEDDINGS`).
 - `chessmate query [--json] <question>`: performs health checks, rate-limit enforcement, and issues HTTP queries to `/query`.
+- `chessmate collection snapshot|restore|list`: orchestrates Qdrant snapshots and logs metadata locally for reproducible rollback/reindex workflows.
 - Additional commands: `fen`, `twic-precheck`, diagnostics helpers.
 - Shared helpers live under `lib/cli` (environment parsing, pretty-printing).
 
@@ -144,7 +145,7 @@ flowchart TD
 - **Qdrant bootstrap**: ensures target collection exists with expected schema on startup.
 - **Secret sanitisation**: sensitive strings redacted from logs/errors.
 - **Health checks**: CLI verifies dependencies before query; API `/metrics` surfaces pool/rate-limiter counters (deeper `/health` JSON planned).
-- **Telemetry**: GPT-5 agent logs structured usage (latency, tokens, cost) and metrics; load-testing script integrates Prometheus snapshots.
+- **Telemetry**: GPT-5 agent logs structured usage (latency, tokens, cost) and metrics; `scripts/load_test.sh` now adapts to legacy/new `oha` flags, rewrites payloads to JSON, and captures Docker Compose stats alongside `/metrics` snapshots to speed up benchmarking.
 
 ---
 
