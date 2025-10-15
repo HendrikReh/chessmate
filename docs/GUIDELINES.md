@@ -40,7 +40,7 @@ This document complements the [Developer Handbook](DEVELOPER.md), [Testing Plan]
 ## 5. Documentation & Runbooks
 - Keep `docs/IMPLEMENTATION_PLAN.md` and `docs/ARCHITECTURE.md` current.
 - Maintain `.mld` odoc pages (`docs/*.mld`) alongside Markdown docs; they feed the generated documentation site.
-- Add runbooks or incident retrospectives under `docs/INCIDENTS/`.
+- Add runbooks under `docs/runbooks/` and incident retrospectives under `docs/INCIDENTS/`.
 
 ---
 

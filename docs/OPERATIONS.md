@@ -88,13 +88,22 @@ Exercises ingest → embedding pipeline → hybrid query. Vector hits are stubbe
 - **Worker metrics**: `curl http://localhost:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/metrics` returns processed/failed job totals, throughput gauges, and current queue depth.
 - **Metrics**: `/metrics` exposes DB pool usage, per-route latency/error histograms (`api_request_latency_ms_pXX{route="..."}`), agent cache hit/miss totals, circuit breaker state, and rate limiter counters.
 - **Agent candidate tuning**: adjust `AGENT_CANDIDATE_MULTIPLIER` (default 5) and `AGENT_CANDIDATE_MAX` (default 25) to control how many games the GPT-5 evaluator inspects per query.
-- **Rate limiter**: 429 responses include `Retry-After`. Tune `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` (and optional `..._BUCKET_SIZE`) as needed. Enable per-IP body budgets via `CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE`; monitor `api_rate_limited_body_total`. `CHESSMATE_MAX_REQUEST_BODY_BYTES` caps individual request size (set `0` to disable).
+- **Rate limiter**: 429 responses include `Retry-After`. Tune `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` (and optional `..._BUCKET_SIZE`) as needed. Enable per-IP body budgets via `CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE`; monitor `api_rate_limited_body_total`. `CHESSMATE_MAX_REQUEST_BODY_BYTES` caps individual request size (set `0` to disable). See [Rate Limiter HTTP test](../test/test_rate_limiter_http.ml) for coverage.
 - **Embedding queue monitoring**: `scripts/embedding_metrics.sh --interval 120` (processed, pending, ETA). Worker quits automatically if `--exit-after-empty` is set. Jobs/minute and characters/sec are also written to the optional `CHESSMATE_WORKER_METRICS_PATH` textfile for Prometheus textfile scraping.
 - **Graceful shutdown**: API/worker handle SIGINT/SIGTERM; look for `[shutdown]` logs confirming clean exit.
 
 ---
 
-## 6. Degraded Modes & Incident Hints
+## 6. Runbooks
+
+| Scenario | Runbook |
+| --- | --- |
+| Circuit breaker opened, agent disabled | [docs/runbooks/circuit-breaker.md](runbooks/circuit-breaker.md) |
+| GPT‑5 agent timeouts | [docs/runbooks/agent-timeouts.md](runbooks/agent-timeouts.md) |
+| Capacity planning & scaling | [docs/runbooks/capacity-planning.md](runbooks/capacity-planning.md) |
+| Incident retrospectives | [docs/INCIDENTS/incident-template.md](INCIDENTS/incident-template.md) |
+
+## 7. Degraded Modes & Incident Hints
 | Symptom | Behaviour | Remedy |
 | --- | --- | --- |
 | Qdrant unreachable | API logs `Vector search unavailable`, falls back to metadata-only results. CLI health shows `qdrant error`. | Check Qdrant service (`docker compose ps qdrant`, `/healthz`), restart; ensure config (`QDRANT_URL`). |
