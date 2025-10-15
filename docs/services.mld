@@ -56,7 +56,7 @@ modules documented elsewhere in this guide.
 
 {1 Deploying Services}
 
-- Use `dune exec services/api/chessmate_api.exe -- --port 8080` for local runs;
+- Use `dune exec -- chessmate-api -- --port 8080` for local runs;
   production deployments typically wrap the executable in systemd or container
   manifests.
 - The worker starts via `dune exec -- embedding_worker -- --workers <n>`.

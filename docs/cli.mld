@@ -43,6 +43,8 @@ Cmdliner-based executable (`dune exec -- chessmate -- ...`).
 {2 Query}
 - Use `--json` to print the raw service response; otherwise the CLI emits a
   human-readable summary.
+- Provide `--limit` and `--offset` to paginate results; the CLI mirrors the
+  JSON metadata (Limit/Offset/Total/Has_more) in its summary.
 - The command performs a pre-flight availability check (Postgres, Qdrant,
   Redis, API) and aborts when required services are unreachable.
 - Point `CHESSMATE_API_URL` at the correct environment (local/staging/prod)
@@ -93,8 +95,8 @@ Cmdliner-based executable (`dune exec -- chessmate -- ...`).
 - Batch loop: `for pgn in fixtures/*.pgn; do dune exec -- chessmate -- ingest "$pgn"; done`
 
 {2 Query}
-- Default output: `CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query "Find King's Indian games where White is 2500"`
-- Raw JSON: `CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query --json "Show French Defense draws"`
+- Default output: `CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query --limit 5 --offset 0 "Find King's Indian games where White is 2500"`
+- Raw JSON: `CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query --json --limit 5 "Show French Defense draws"`
 
 {2 FEN}
 - stdout preview: `dune exec -- chessmate -- fen test/fixtures/sample_game.pgn`

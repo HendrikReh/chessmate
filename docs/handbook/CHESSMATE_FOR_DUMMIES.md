@@ -66,9 +66,9 @@ Chessmate ingests PGN games, stores metadata and FEN snapshots in PostgreSQL, em
 | --- | --- | --- |
 | Rate limiting | ✅ | Token-bucket per IP via `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` (+ body budget `CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE`). Metrics: `api_rate_limited_total`, `api_rate_limited_body_total`. |
 | Qdrant bootstrap | ✅ | `Repo_qdrant.ensure_collection` runs at API/worker startup. |
-| Health probes | 🔄 | CLI covers Postgres/Qdrant/Redis; `/health` JSON + worker endpoint planned. |
+| Health probes | ✅ | CLI prints `[health]` lines; API and worker expose `/health` JSON with per-check latency/details for Postgres, Qdrant, Redis, and OpenAI. |
 | GPT-5 timeout/breaker | ✅ | Agent timeout (`AGENT_REQUEST_TIMEOUT_SECONDS`) and circuit breaker protect query latency, exposing status via `/metrics` and JSON warnings. |
-| Metrics | ☑️ | Caqti pool gauges, rate limiter counters; latency/error histograms to follow. |
+| Metrics | ✅ | Per-route request counters/latency histograms, Postgres pool gauges (`chessmate_api_db_pool_wait_ratio`), agent cache/evaluation metrics, circuit-breaker state, and rate-limiter totals. |
 | Telemetry | ✅ | GPT-5 agent logs latency/tokens/cost; CLI/formatting uses ocamlformat `0.27.0`. |
 
 Legend: ✅ shipped · ☑️ partial · 🔄 planned.
@@ -107,10 +107,10 @@ OPENAI_API_KEY=dummy DATABASE_URL=postgres://chess:chess@localhost:5433/chessmat
   dune exec -- embedding_worker -- --workers 2 --poll-sleep 1.0
 
 # Start API
-dune exec -- services/api/chessmate_api.exe --port 8080
+dune exec -- chessmate-api -- --port 8080
 
 # Ask a question (JSON mode)
-CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query --json "Show French Defense draws"
+CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query --json --limit 5 --offset 0 "Show French Defense draws"
 ```
 
 ---
@@ -119,6 +119,6 @@ CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query --json "
 - Architecture diagrams and module breakdown: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Detailed operations guidance: [OPERATIONS.md](OPERATIONS.md)
 - Prompt engineering ideas for GPT-5 scoring: [PROMPTS.md](PROMPTS.md)
-- Outstanding work and future plans: [REVIEW_v5.md](REVIEW_v5.md)
+- Outstanding work and future plans: [Release Notes](../../RELEASE_NOTES.md)
 
 Happy hacking! Chessmate blends classic chess knowledge with modern retrieval—keep the guardrails strong and the vectors fresh.

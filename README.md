@@ -2,7 +2,7 @@
 
 [![OCaml](https://img.shields.io/badge/OCaml-%3E%3D%205.1-orange.svg)](https://ocaml.org)
 [![Version](https://img.shields.io/badge/Version-0.7.0-blue.svg)](RELEASE_NOTES.md)
-[![Status](https://img.shields.io/badge/Status-Proof%20of%20Concept-yellow.svg)](docs/IMPLEMENTATION_PLAN.md)
+[![Status](https://img.shields.io/badge/Status-Proof%20of%20Concept-yellow.svg)](docs/handbook/ARCHITECTURE.md)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/HendrikReh/chessmate/ci.yml?branch=master)](https://github.com/HendrikReh/chessmate/actions)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![GitHub Issues](https://img.shields.io/github/issues/HendrikReh/chessmate)](https://github.com/HendrikReh/chessmate/issues)
@@ -69,7 +69,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
    dune exec -- chessmate-api --port 8080
    
    # In another shell, call the API via the CLI (set CHESSMATE_API_URL if you changed the port)
-   CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query "Find King's Indian games where White is 2500 and Black 100 points lower"
+   CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query --limit 5 --offset 0 "Find King's Indian games where White is 2500 and Black 100 points lower"
 
    # Ingest a PGN (persists players/games/positions/openings). The CLI aborts if the
    # embedding queue already exceeds CHESSMATE_MAX_PENDING_EMBEDDINGS (default 250k).
@@ -81,7 +81,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 
    # Enable GPT-5 agent ranking (optional)
    AGENT_API_KEY=dummy-agents-key AGENT_REASONING_EFFORT=high AGENT_CACHE_REDIS_URL=redis://localhost:6379/0 \
-     DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec -- chessmate -- query "Find attacking King's Indian games"
+   DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate dune exec -- chessmate -- query --limit 5 "Find attacking King's Indian games"
 
    # Generate FENs from a PGN for quick inspection
    dune exec -- chessmate -- fen test/fixtures/sample_game.pgn
@@ -103,9 +103,10 @@ data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
 - `dune exec -- chessmate -- config`: runs dependency/configuration diagnostics (exit codes: `0` OK, `2` warnings for optional components, `1` fatal error).
 - `dune exec -- chessmate -- ingest <pgn>`: parses and persists PGNs with parallel parsing (default 4 workers, set `CHESSMATE_INGEST_CONCURRENCY` to tune).
 - `dune exec -- chessmate -- twic-precheck <pgn>`: scans TWIC PGNs for malformed entries before ingestion.
-- `dune exec -- chessmate -- query "…"`: sends questions to the running query API (`CHESSMATE_API_URL` defaults to `http://localhost:8080`).
+- `dune exec -- chessmate -- query [--json] [--limit N] [--offset N] "…"`: sends questions to the running query API (`CHESSMATE_API_URL` defaults to `http://localhost:8080`).
 - `dune exec -- chessmate -- fen <pgn> [output]`: prints FEN after each half-move (optional output file).
 - `OPENAI_API_KEY=… dune exec -- embedding_worker -- [--workers N] [--poll-sleep SECONDS]`: polls `embedding_jobs`, calls OpenAI, updates vector IDs. Use `--workers` to run multiple concurrent loops safely.
+- `curl http://localhost:8080/health`: returns structured dependency probes (`status=ok|degraded|error`) with per-check latencies; non-200 responses signal degraded/failing services.
 
 ### Operational Scripts
 - `scripts/embedding_metrics.sh [--interval N] [--log path]`: report queue depth, recent throughput, and ETA for draining pending jobs.
@@ -162,7 +163,7 @@ data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
     scripts/load_test.sh
   ```
 - The script detects whether your `oha` build supports long-form flags, minifies the JSON payload once (handling the `@payload` pitfall), and resolves running Docker Compose container IDs before calling `docker stats`. After the run it prints the `/metrics` payload for quick inspection.
-- Watch `db_pool_wait_ratio`, `api_request_latency_ms_p95{route="..."}`, `agent_cache_hits_total`, and embedding throughput gauges. Healthy runs keep wait ratio near zero and p95 latency within expectations—use the values to decide whether to scale Postgres/Qdrant or tweak concurrency. See `docs/handbook/TESTING.md` for extended guidance and troubleshooting.
+- Watch `chessmate_api_db_pool_wait_ratio`, `chessmate_api_request_duration_seconds` (histogram p95), `chessmate_api_agent_cache_total{state="hit"}`, and embedding throughput gauges. Healthy runs keep wait ratio near zero and p95 latency within expectations—use the values to decide whether to scale Postgres/Qdrant or tweak concurrency. See `docs/handbook/TESTING.md` for extended guidance and troubleshooting.
 
 ### Prometheus Metrics
 - **API service:** `/metrics` is served from the main Opium process (default `http://localhost:8080/metrics`). The payload includes HTTP latency histograms, Postgres pool gauges, rate-limiter counters, and agent-derived telemetry.
@@ -195,7 +196,7 @@ data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
         - targets: ['localhost:9102']
           labels: {role: worker}
   ```
-  Adjust ports to match your deployment (for example, when running in Docker Compose expose the exporter via `ports:` or a `hostPort`). Pair these scrape jobs with alerting on `db_pool_wait_ratio`, request latency histograms, embedding queue depth, and worker failure counters.
+  Adjust ports to match your deployment (for example, when running in Docker Compose expose the exporter via `ports:` or a `hostPort`). Pair these scrape jobs with alerting on `chessmate_api_db_pool_wait_ratio`, request latency histograms, embedding queue depth, and worker failure counters.
 - **Quick start:** copy `prometheus/prometheus.yml.example` to `prometheus/prometheus.yml`, tweak targets, then run `scripts/run_prometheus.sh`. Combine with `PLAN.md` for the full setup walkthrough.
 
 ### Agent Configuration
@@ -231,7 +232,8 @@ dune exec -- chessmate -- ingest test/fixtures/extended_sample_game.pgn
 # Set CHESSMATE_MAX_PENDING_EMBEDDINGS=0 (or a higher integer) to adjust the limit.
 
 # Ask a question (make sure the API is running in another shell)
-dune exec -- chessmate -- query "Show French Defense draws with queenside majority endings"
+dune exec -- chessmate -- query --limit 5 --offset 10 "Show French Defense draws with queenside majority endings"
+# => CLI output shows Limit/Offset, total matches, and has_more when pagination applies.
 # => Summary, filters, and curated results printed to stdout
 
 # Need metrics during long-running commands? Prefix with `--listen-prometheus <port>` (or set `CHESSMATE_PROM_PORT`) and scrape `http://localhost:<port>/metrics` while the command runs.
@@ -357,11 +359,11 @@ Typical JSON response:
 ### Metrics
 ```sh
 curl http://localhost:8080/metrics
-# db_pool_capacity 10
-# db_pool_in_use 1
-# db_pool_available 9
-# db_pool_waiting 0
-# db_pool_wait_ratio 0.000
+chessmate_api_db_pool_connections{state="capacity"} 10
+chessmate_api_db_pool_connections{state="in_use"} 1
+chessmate_api_db_pool_connections{state="available"} 9
+chessmate_api_db_pool_connections{state="waiting"} 0
+chessmate_api_db_pool_wait_ratio 0.000
 ```
 
 The pool size can be tuned via `CHESSMATE_DB_POOL_SIZE` (default 10).
@@ -372,7 +374,7 @@ Need a clean slate? Stop the containers (`docker compose down`), wipe the volume
 ## Documentation
 - **Roadmaps & Overviews**
   - [Architecture](docs/handbook/ARCHITECTURE.md) – component diagrams, data flow, and responsibilities.
-  - [Review & Planning Notes](docs/handbook/REVIEW_v4.md) – open issues, prioritised work, and follow-up tasks.
+  - [Release Notes](RELEASE_NOTES.md) – version history and recently delivered capabilities.
 - **How-To Guides**
   - [Developer Handbook](docs/handbook/DEVELOPER.md) – environment setup, CLI usage, and daily workflows.
   - [Chessmate for Dummies](docs/handbook/CHESSMATE_FOR_DUMMIES.md) – narrative walkthrough of ingestion and search.

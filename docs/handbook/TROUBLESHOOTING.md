@@ -59,7 +59,7 @@ Run this loop whenever you reset dependencies or suspect ingest/embedding is wed
 | Symptom | Root Cause | Solution |
 | --- | --- | --- |
 | `opam: "open" failed on ... config.lock` | Shell sandboxing writes | Run `eval "$(opam env --set-switch)"` instead of `opam switch set .` |
-| `Program 'chessmate_api' not found` | Using public name | `dune exec -- chessmate-api --port 8080` or `dune exec -- services/api/chessmate_api.exe -- --port 8080` |
+| `Program 'chessmate_api' not found` | Using public name | `dune exec -- chessmate-api -- --port 8080` (preferred) or `dune exec -- services/api/chessmate_api.exe -- --port 8080` |
 
 ---
 

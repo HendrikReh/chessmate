@@ -35,7 +35,7 @@ docker compose exec postgres psql -U chess -c "ALTER ROLE chess WITH CREATEDB;"
 ## 3. Service Startup
 | Command | Purpose |
 | --- | --- |
-| `dune exec -- services/api/chessmate_api.exe --port 8080` | Start the query API. Logs include rate-limiter quota and Qdrant bootstrap status. |
+| `dune exec -- chessmate-api -- --port 8080` | Start the query API. Logs include rate-limiter quota and Qdrant bootstrap status. |
 | `OPENAI_API_KEY=... dune exec -- embedding_worker -- --workers N --poll-sleep 1.0 --exit-after-empty 3` | Run embedding worker loops. Adjust `N` gradually; monitor queue via `scripts/embedding_metrics.sh --interval 120`. |
 | `dune exec chessmate -- query [--limit N] [--offset N] [--json] "..."` | CLI queries; paginate with `--limit/--offset` and use `--json` for raw payloads. Prints `[health] ...` lines before execution. |
 | `curl http://localhost:8080/metrics` | Inspect Prometheus gauges/counters (DB pool usage, per-route latency histograms, agent cache stats, rate limiter). |
@@ -87,7 +87,7 @@ Exercises ingest → embedding pipeline → hybrid query. Vector hits are stubbe
 ## 5. Runtime Operations
 - **Health checks**: `curl http://localhost:8080/health`, `curl http://localhost:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/health`, `pg_isready`, `curl http://qdrant:6333/healthz`, `redis-cli PING`.
 - **Worker metrics**: `curl http://localhost:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/metrics` returns processed/failed job totals, throughput gauges, and current queue depth.
-- **Metrics**: `/metrics` exposes DB pool usage, per-route latency/error histograms (`api_request_latency_ms_pXX{route="..."}`), agent cache hit/miss totals, circuit breaker state, and rate limiter counters.
+- **Metrics**: `/metrics` exposes per-route request counters/latency histograms (`chessmate_api_requests_total`, `chessmate_api_request_duration_seconds`), Postgres pool gauges (including `chessmate_api_db_pool_wait_ratio`), agent cache/evaluation totals, circuit-breaker state, and rate-limiter counters.
 - **Agent candidate tuning**: adjust `AGENT_CANDIDATE_MULTIPLIER` (default 5) and `AGENT_CANDIDATE_MAX` (default 25) to control how many games the GPT-5 evaluator inspects per query.
 - **Rate limiter**: 429 responses include `Retry-After`. Tune `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` (and optional `..._BUCKET_SIZE`) as needed. Enable per-IP body budgets via `CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE`; monitor `api_rate_limited_body_total`. `CHESSMATE_MAX_REQUEST_BODY_BYTES` caps individual request size (set `0` to disable). See [Rate Limiter HTTP test](../test/test_rate_limiter_http.ml) for coverage.
 - **Embedding queue monitoring**: `scripts/embedding_metrics.sh --interval 120` (processed, pending, ETA). Worker quits automatically if `--exit-after-empty` is set. Jobs/minute and characters/sec are also written to the optional `CHESSMATE_WORKER_METRICS_PATH` textfile for Prometheus textfile scraping.
@@ -109,7 +109,7 @@ Exercises ingest → embedding pipeline → hybrid query. Vector hits are stubbe
 | --- | --- | --- |
 | Qdrant unreachable | API logs `Vector search unavailable`, falls back to metadata-only results. CLI health shows `qdrant error`. | Check Qdrant service (`docker compose ps qdrant`, `/healthz`), restart; ensure config (`QDRANT_URL`). |
 | Rate limiter triggered heavily | `429` responses + `api_rate_limited_total` increases. | Raise per-IP quota for the test window or reduce concurrency; verify legitimate traffic isn’t starved. |
-| GPT‑5 latency/timeouts (future) | Planned: warnings in response (`agent timeout`) + circuit-breaker logs. | Investigate OpenAI limits, fall back to heuristic mode, adjust timeout env (`AGENT_REQUEST_TIMEOUT_SECONDS`). |
+| GPT‑5 latency/timeouts | Responses include `agent_status="timeout"` warnings; circuit-breaker logs show `open`/`closed` transitions while requests fall back to heuristic mode. | Investigate OpenAI limits, fall back to heuristic mode, adjust timeout env (`AGENT_REQUEST_TIMEOUT_SECONDS`). |
 | Postgres saturation | High `db_pool_waiting`, CPU spikes. | Increase `CHESSMATE_DB_POOL_SIZE`, scale Postgres vertically/horizontally, audit slow queries. |
 
 Log details and mitigation in `INCIDENTS/<date>.md` after an incident.
@@ -185,7 +185,7 @@ Log details and mitigation in `INCIDENTS/<date>.md` after an incident.
 - [ ] Configure scrape jobs for API (`localhost:8080`), CLI exporters (dynamic ports such as 9101), and worker (`--listen-prometheus` / `CHESSMATE_WORKER_PROM_PORT`). See sample in `README.md`.
 - [ ] Add alert rules for API latency (p95 > 2s five-minute window), embedding failures (`embedding_jobs_total{outcome="failed"}`), and queue depth (`embedding_pending_jobs`).
 - [ ] Ensure `/metrics` endpoints are exposed behind the ingress/load balancer with appropriate auth (basic auth, IP allowlist).
-- [ ] Update dashboards to chart `db_pool_wait_ratio`, `api_requests_total`, worker throughput gauges, and agent cache hit rate.
+- [ ] Update dashboards to chart `chessmate_api_db_pool_wait_ratio`, `chessmate_api_requests_total`, worker throughput gauges, and agent cache hit rate.
 - [ ] Verify `scripts/check_metrics.sh` passes for API, worker, and CLI exporters as part of staging smoke tests.
 
 ---
@@ -206,7 +206,7 @@ Log details and mitigation in `INCIDENTS/<date>.md` after an incident.
 
 3. **Expose metrics** – start Chessmate services with exporters enabled:
    ```sh
-   dune exec -- services/api/chessmate_api.exe --port 8080
+   dune exec -- chessmate-api -- --port 8080
    dune exec -- chessmate -- --listen-prometheus 9101 ingest test/fixtures/sample_game.pgn
    OPENAI_API_KEY=... DATABASE_URL=... \
      dune exec -- embedding_worker -- --listen-prometheus 9102
@@ -219,4 +219,4 @@ Log details and mitigation in `INCIDENTS/<date>.md` after an incident.
 
 ---
 
-Keep this playbook updated alongside system changes. Combine it with the architecture roadmap ([REVIEW_v5.md](REVIEW_v5.md)) to understand what's changing and why. Incident retrospectives live in `INCIDENTS/`; use the template in `INCIDENTS/incident-template.md` after each SEV event.
+Keep this playbook updated alongside system changes. Combine it with the architecture overview and [Release Notes](../../RELEASE_NOTES.md) to understand what's changing and why. Incident retrospectives live in `INCIDENTS/`; use the template in `INCIDENTS/incident-template.md` after each SEV event.

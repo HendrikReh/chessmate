@@ -11,7 +11,7 @@ Evaluate Chessmate’s `/query` path under sustained load. Use this guide when v
 | Requirement | Notes |
 | --- | --- |
 | Services running | `docker compose up -d postgres qdrant redis` (script auto-detects the resulting `chessmate-*-1` container names) |
-| API listening | `eval "$(opam env --set-switch)" && dune exec -- services/api/chessmate_api.exe --port 8080` (restart before each run to reset `/metrics`) |
+| API listening | `eval "$(opam env --set-switch)" && dune exec -- chessmate-api -- --port 8080` (restart before each run to reset `/metrics`) |
 | Data seeded | Ingest a representative PGN corpus before testing |
 | Load tool | [oha](https://github.com/hatoo/oha) (default) or [vegeta](https://github.com/tsenart/vegeta) |
 | opam env | Run `eval "$(opam env --set-switch)"` so `dune` and scripts resolve |
@@ -108,7 +108,7 @@ Monitor `[agent-telemetry]` logs for token usage and latency, and compare throug
 
 - **Status codes**: Expect `[200]` in the `oha` summary. If you see `[400]`, verify the request body is JSON (avoid `--body @file` with older `oha` releases).
 - **Deadline aborts**: `oha` counts unfinished requests as `aborted due to deadline` when the timer elapses. Increase `DURATION` if you need a clean exit; the queries still completed.
-- **Metrics alignment**: Restart `chessmate_api.exe` before each run so `api_request_total` and latency histograms represent the current benchmark window.
+- **Metrics alignment**: Restart `chessmate-api` before each run so `chessmate_api_requests_total` and latency histograms represent the current benchmark window.
 - **Resource focus**: Qdrant should dominate CPU usage for hybrid queries; Postgres and Redis remain lightly loaded unless ingest or caching tests run simultaneously.
 - **Baseline targets**: With the canonical payload and GPT-5 disabled, a modern laptop should see ~500 req/s, median latency around 110 ms, and p95 around 180 ms. Record your numbers for regression tracking.
 
@@ -118,10 +118,10 @@ Monitor `[agent-telemetry]` logs for token usage and latency, and compare throug
 
 | Metric/Signal | Healthy Behaviour | Action if Degraded |
 | --- | --- | --- |
-| `db_pool_waiting` | Near zero | Increase `CHESSMATE_DB_POOL_SIZE` (watch CPU) |
-| `db_pool_in_use` vs capacity | Well below capacity | If saturated, scale Postgres pool or optimise queries |
+| `chessmate_api_db_pool_connections{state="waiting"}` | Near zero | Increase `CHESSMATE_DB_POOL_SIZE` (watch CPU) |
+| `chessmate_api_db_pool_connections{state="in_use"}` vs `{state="capacity"}` | Well below capacity | If saturated, scale Postgres pool or optimise queries |
 | Rate limiter counters (`api_rate_limited_total`) | Zero or expected level | If rising unintentionally, raise quota or reduce load |
-| `/metrics` agent timeout counters (future) | Zero | Investigate GPT‑5 latency; consider fallbacks |
+| Agent evaluation counters (`chessmate_api_agent_evaluations_total{outcome="failure"}`) | Zero | Investigate GPT‑5 latency/timeouts; consider fallbacks |
 | `docker stats` CPU/memory | Within resource budget | Increase resources or lower concurrency |
 | HTTP errors (5xx) | None | Inspect API logs, Postgres, Qdrant |
 
@@ -131,7 +131,7 @@ Also review CLI health logs (`[health] ...`) during the run to ensure dependenci
 
 ## 5. Common Tuning Steps
 
-1. **Postgres pool** – Increase `CHESSMATE_DB_POOL_SIZE` incrementally (5–10 connections at a time). Monitor `db_pool_waiting`, CPU, and connection limits.
+1. **Postgres pool** – Increase `CHESSMATE_DB_POOL_SIZE` incrementally (5–10 connections at a time). Monitor `chessmate_api_db_pool_connections{state="waiting"}`, CPU, and connection limits.
 2. **Rate limiter** – Increase `CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE` during benchmarking or track how quickly 429s appear.
 3. **Embedding/Qdrant** – If queries see slow vector responses, confirm Qdrant resources (CPU/IO) and adjust worker/API concurrency.
 4. **OpenAI agent** – Disable GPT‑5 re-ranking during raw latency benchmarks if it introduces uncontrolled variance.

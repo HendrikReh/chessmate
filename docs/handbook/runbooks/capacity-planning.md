@@ -6,7 +6,7 @@ _Last updated: 2025-10-15_
 Right-size Postgres, Qdrant, Redis, and worker/API concurrency to meet latency SLOs while keeping resource usage within budget.
 
 ## Key Metrics
-- **API**: `api_request_latency_ms_p95`, `api_rate_limited_total`, `db_pool_wait_ratio`.
+- **API**: `chessmate_api_request_duration_seconds` (p95), `api_rate_limited_total`, `chessmate_api_db_pool_wait_ratio`.
 - **Postgres**: `db_pool_in_use`, `db_pool_waiting`, host CPU/IO.
 - **Qdrant**: `qdrant_request_duration_seconds`, container CPU/memory.
 - **Worker**: `embedding_worker_jobs_per_min`, `embedding_worker_queue_depth`.
@@ -16,7 +16,7 @@ Right-size Postgres, Qdrant, Redis, and worker/API concurrency to meet latency S
    - Run load tests for agent-on and agent-off scenarios (`../LOAD_TESTING.md`).
    - Capture metrics snapshots and note throughput/latency.
 2. **Evaluate Postgres Pool**
-   - If `db_pool_wait_ratio > 0.2` or `waiting > 0`, increase `CHESSMATE_DB_POOL_SIZE` by increments of 5.
+   - If `chessmate_api_db_pool_wait_ratio > 0.2` or `waiting > 0`, increase `CHESSMATE_DB_POOL_SIZE` by increments of 5.
    - Monitor `pg_stat_activity` and host CPU; revert if saturation occurs.
 3. **Adjust Worker Concurrency**
    - Increase `--workers` gradually while watching queue depth and GPT-5 rate limits.

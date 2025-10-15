@@ -21,8 +21,8 @@ export CHESSMATE_API_URL=http://localhost:8080
 docker compose up -d postgres qdrant redis
 ./scripts/migrate.sh
 
-dune exec chessmate -- ingest test/fixtures/extended_sample_game.pgn
-dune exec -- services/api/chessmate_api.exe --port 8080 &
+dune exec -- chessmate -- ingest test/fixtures/extended_sample_game.pgn
+dune exec -- chessmate-api -- --port 8080 &
 CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query "Show King's Indian games"
 ```
 Add `--json` for machine-readable output. Rate limiter responses (429 + `Retry-After`) confirm guardrails are active.
@@ -44,7 +44,7 @@ Validates ingest → embedding queue → query using disposable DBs. Vector hits
 ```
 export DATABASE_URL=postgres://chess:chess@localhost:5433/chessmate
 export CHESSMATE_MAX_PENDING_EMBEDDINGS=400000
-dune exec chessmate -- ingest data/games/twic1611.pgn
+dune exec -- chessmate -- ingest data/games/twic1611.pgn
 
 OPENAI_API_KEY=real-key   dune exec -- embedding_worker -- --workers 6 --poll-sleep 1.0 --exit-after-empty 3
 
@@ -66,11 +66,11 @@ CI runs `dune build @fmt`; mismatches fail the pipeline.
 
 ## 6. Serve the OpenAPI Spec
 ```
-dune exec -- services/api/chessmate_api.exe --port 8080 &
+dune exec -- chessmate-api -- --port 8080 &
 curl http://localhost:8080/openapi.yaml
 
 # Use a custom spec
-CHESSMATE_OPENAPI_SPEC=/tmp/openapi.yaml   dune exec -- services/api/chessmate_api.exe --port 8080
+CHESSMATE_OPENAPI_SPEC=/tmp/openapi.yaml   dune exec -- chessmate-api -- --port 8080
 ```
 Pair with Redoc or swagger-ui for docs/previews.
 
@@ -81,7 +81,7 @@ Pair with Redoc or swagger-ui for docs/previews.
 curl http://localhost:8080/metrics
 CHESSMATE_API_URL=http://localhost:8080 dune exec -- chessmate -- query "Show 5 random games"
 ```
-Metrics include DB pool gauges and rate limiter counters. Planned `/health` JSON will provide per-dependency status (see [REVIEW_v5.md](REVIEW_v5.md)).
+Metrics include request totals/latency histograms, DB pool gauges (`chessmate_api_db_pool_wait_ratio`), agent cache/evaluation counters, circuit-breaker state, and rate-limiter totals. `/health` on `http://localhost:8080/health` (and the worker endpoint at `:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/health`) returns structured dependency status with per-check latency.
 
 ---
 
@@ -123,7 +123,7 @@ After the configured quota, requests return 429 with `Retry-After`. `/metrics` r
 
 ## 11. Confirm Qdrant Bootstrap
 ```
-dune exec -- services/api/chessmate_api.exe --port 8080
+dune exec -- chessmate-api -- --port 8080
 # Look for [chessmate-api][config] qdrant collection ensured (name=positions)
 
 OPENAI_API_KEY=dummy   dune exec -- embedding_worker -- --workers 1

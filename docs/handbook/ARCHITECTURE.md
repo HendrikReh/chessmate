@@ -14,7 +14,7 @@ Chessmate is a self-hosted chess tutor that ingests PGNs, stores structured meta
 - [Developer Handbook](DEVELOPER.md) – environment setup, CLI usage, configuration reference.
 - [Operations Playbook](OPERATIONS.md) – deployment, monitoring, incident response.
 - [Testing Plan](TESTING.md) – manual checklists and automation guidance.
-- [Review & Improvement Plan](REVIEW_v5.md) – roadmap and outstanding gaps.
+- [Release Notes](../../RELEASE_NOTES.md) – shipped capabilities and upcoming milestones.
 
 ---
 
@@ -61,8 +61,8 @@ flowchart TD
 ```
 
 **Key guarantees**
-- API enforces per-IP rate limits and auto-creates the Qdrant collection at startup.
-- CLI health checks and `/health` endpoints verify Postgres, Qdrant, Redis, and (planned) OpenAI connectivity.
+- API enforces per-IP rate limits, request body guards, and auto-creates the Qdrant collection at startup.
+- CLI health output and `/health` endpoints (API + worker) verify Postgres, Qdrant, Redis, and OpenAI integrations with per-check latency.
 - All SQL uses Caqti (parameterised queries) and sensitive strings are sanitised before logging.
 
 ---
@@ -111,21 +111,20 @@ flowchart TD
 2. `Query_intent.analyse` normalises text, extracts keywords/opening filters, rating ranges, and result limit.
 3. `Hybrid_planner` builds SQL predicates and optional Qdrant filters; `Hybrid_executor` fetches metadata from Postgres and vector candidates from Qdrant.
 4. Redis cache consulted for agent evaluations. On miss, GPT-5 is invoked (`Agents_gpt5_client.evaluate`); results cached and telemetry logged.
-5. `Result_formatter` merges heuristic and agent scores into JSON payload/CLI summary.
+5. `Result_formatter` merges heuristic and agent scores into the JSON payload/CLI summary, including pagination metadata (`limit`, `offset`, `total`, `has_more`).
 
 ### Observability & Health
-- `/metrics` currently exposes Caqti pool gauges and rate-limiter counters. Upcoming work adds request latency histograms and `health_dependency_status{service}` gauges (Postgres/Qdrant/Redis/OpenAI), plus counters for agent timeouts and circuit-breaker events.
-- `/health` (planned extension) will return structured JSON such as `{ status: "degraded", details: { postgres: { ok: true, latency_ms: 12 }, qdrant: { ok: false, error: "Connection refused" } } }`. Both API and worker reuse the same probe helpers so responses stay consistent.
-- Probes include Postgres connection tests, Qdrant `/healthz`, Redis `PING` (when cache enabled), and a lightweight OpenAI sanity check. Failures bubble up to CLI health output, logs, and metrics for alerting.
-- CLI `chessmate health` command reuses these probes, giving operators immediate feedback before running queries.
-- Alerts fire after configurable numbers of degraded probes, with logs and docs linking to remediation playbooks.
+- `/metrics` now publishes per-route request counters/latency histograms, Postgres pool gauges (capacity/in-use/available/waiting + wait ratio), agent cache and evaluation counters, and the agent circuit-breaker state. Rate-limiter counters and optional CLI/worker exporters reuse the same registry so dashboards stay aligned across processes.
+- `/health` returns structured JSON with `status=ok|degraded|error`, per-check latency, and sanitized detail for Postgres, Qdrant, Redis, and OpenAI. The embedding worker exposes the identical schema on `http://localhost:${CHESSMATE_WORKER_HEALTH_PORT:-8081}/health`.
+- Probes exercise live connectivity: Postgres connection/pending jobs, Qdrant `/healthz`, Redis `PING` (when configured), OpenAI client instantiation, and embedding endpoint verification for the worker.
+- The CLI prints `[health] ...` lines before commands such as `query`, surfacing the same probe results in operator workflows. Failures bubble up to metrics and logs for alerting.
+- Alerts watch degraded/error health responses alongside Prometheus series like `chessmate_api_db_pool_wait_ratio`, `chessmate_api_requests_total`, agent evaluation failures, and rate-limiter saturation.
 
-### Planned GPT-5 Timeout & Circuit Breaker
-- **Request timeout**: wrap GPT-5 calls in a configurable deadline (e.g., 10s). On timeout, cancel the request, log `[agent-timeout]`, and increment `agent_timeouts_total`.
-- **Fallback**: surface heuristic-only results with a JSON warning (`"agent": { "status": "timeout", "fallback": "heuristic" }`) and matching CLI message. This keeps queries responsive when the agent is slow or offline.
-- **Circuit breaker**: after N consecutive failures/timeouts, open the breaker for a cooling period (e.g., 60s). During that window the agent path is skipped and we log `[agent-circuit] open` / `[agent-circuit] closed` when recovering.
-- **Retry policy**: maintain limited retries for transient errors but cap aggregate wait time to avoid wedging the request thread.
-- **Telemetry**: expose breaker state and timeout counts via `/metrics`; add OpenAPI documentation so clients know how to interpret new fields.
+### GPT-5 Timeout & Circuit Breaker
+- **Request timeout**: `AGENT_REQUEST_TIMEOUT_SECONDS` bounds GPT-5 calls; on timeout the executor falls back to heuristic scoring and surfaces structured warnings in JSON/CLI output.
+- **Circuit breaker**: `AGENT_CIRCUIT_BREAKER_THRESHOLD` and `AGENT_CIRCUIT_BREAKER_COOLOFF_SECONDS` gate retries after repeated failures. The breaker state is exported via `agent_circuit_breaker_state` and mirrored in logs.
+- **Caching**: Redis or in-memory caches short-circuit repeat evaluations; cache hits/misses increment `agent_cache_total{state}`.
+- **Telemetry**: `agent_evaluations_total{outcome}`, `agent_evaluation_latency_seconds`, and warning lists emitted by `Hybrid_executor` describe agent health. Logs include `[agent-telemetry]` records with latency, tokens, and cost estimates.
 
 ---
 
@@ -144,17 +143,16 @@ flowchart TD
 - **Rate limiting**: configurable per-IP quotas with `Retry-After` responses.
 - **Qdrant bootstrap**: ensures target collection exists with expected schema on startup.
 - **Secret sanitisation**: sensitive strings redacted from logs/errors.
-- **Health checks**: CLI verifies dependencies before query; API `/metrics` surfaces pool/rate-limiter counters (deeper `/health` JSON planned).
-- **Telemetry**: GPT-5 agent logs structured usage (latency, tokens, cost) and metrics; `scripts/load_test.sh` now adapts to legacy/new `oha` flags, rewrites payloads to JSON, and captures Docker Compose stats alongside `/metrics` snapshots to speed up benchmarking.
+- **Health checks**: CLI verifies dependencies before queries and the API/worker expose `/health` JSON with per-check latency plus sanitized detail for Postgres, Qdrant, Redis, and OpenAI.
+- **Telemetry**: GPT-5 agent logs structured usage (latency, tokens, cost) while metrics cover request durations, agent cache/evaluations, circuit-breaker state, and rate-limiter counters; `scripts/load_test.sh` captures `/metrics` + `docker stats` snapshots for regression tracking.
 
 ---
 
 ## Roadmap Snapshot
-Refer to [REVIEW_v5.md](REVIEW_v5.md) for the detailed roadmap. Critical next steps:
-- Deep health checks (structured `/health`, dependency probes, worker health endpoint).
-- Agent evaluation timeout/circuit breaker with fallback warnings and metrics.
-- Expanded Prometheus instrumentation (request latency, error rates, cache statistics).
-- Query pagination and richer client controls.
+Track near-term planning via [Release Notes](../../RELEASE_NOTES.md) and the GitHub issue tracker. Current focus areas:
+- Broader query controls (structured filters, richer pagination ergonomics, result sorting).
+- Extended observability (runtime-events export, proactive alerting around agent behaviour and queue depth).
+- Operational automation (snapshot scheduling helpers, repeatable load/regression harnesses baked into CI).
 
 ---
 
@@ -165,7 +163,7 @@ dune fmt
 dune build && dune runtest
 
 # Run API (port 8080) and worker
-dune exec -- services/api/chessmate_api.exe --port 8080
+dune exec -- chessmate-api -- --port 8080
 OPENAI_API_KEY=dummy dune exec embedding_worker -- --workers 2 --poll-sleep 1.0
 
 # Issue a query (JSON mode)

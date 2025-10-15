@@ -20,7 +20,7 @@ Ensure `CHESSMATE_TEST_DATABASE_URL` points to a role with `CREATEDB` for integr
 ## 2. Start Services
 ```sh
 eval "$(opam env --set-switch)"
-dune exec -- services/api/chessmate_api.exe --port 8080
+dune exec -- chessmate-api -- --port 8080
 ```
 Restart the API before timed benchmarks so `/metrics` counters start from zero.
 Optional embedding worker:
@@ -129,7 +129,7 @@ Allow each dependency to come back online before moving to the next step. The he
 
 1. **Prerequisites**: ensure the API is running on `http://localhost:8080` and, if desired, enable a CLI exporter and worker exporter:
    ```sh
-   dune exec -- services/api/chessmate_api.exe --port 8080 &
+   dune exec -- chessmate-api -- --port 8080 &
    API_PID=$!
 
    dune exec -- chessmate -- --listen-prometheus 9101 ingest test/fixtures/sample_game.pgn &

@@ -2,7 +2,7 @@
 
 This handbook gets you from zero to productive with Chessmate: installing dependencies, understanding
 configuration, and running the core services. For architecture diagrams and reliability plans see
-[ARCHITECTURE.md](ARCHITECTURE.md) and [REVIEW_v5.md](REVIEW_v5.md).
+[ARCHITECTURE.md](ARCHITECTURE.md) and [Release Notes](../../RELEASE_NOTES.md).
 
 ---
 
@@ -106,7 +106,7 @@ The executables validate configuration on startup; missing or malformed values r
 
 4. **Run the query API**
   ```sh
-  dune exec -- services/api/chessmate_api.exe --port 8080
+  dune exec -- chessmate-api -- --port 8080
   ```
   Logs include rate-limiter configuration and Qdrant bootstrap status.
 
@@ -156,13 +156,13 @@ More recipes live in [COOKBOOK.md](COOKBOOK.md).
   TOOL=oha DURATION=60s CONCURRENCY=50 TARGET_URL=http://localhost:8080/query scripts/load_test.sh
   ```
 - The script detects legacy `oha` flags, minifies the JSON payload once (avoiding `@payload` 400s), and resolves Docker Compose container IDs before grabbing a stats snapshot. It also prints `/metrics` immediately after the run—capture the output for PR validation.
-- Monitor `api_request_latency_ms_p95`, `db_pool_wait_ratio`, `agent_cache_hits_total`, and Qdrant container CPU usage. Use `LOAD_TESTING.md` for deeper analysis checklists.
+- Monitor `chessmate_api_request_duration_seconds` (histogram p95), `chessmate_api_db_pool_wait_ratio`, `chessmate_api_agent_cache_total{state="hit"}`, and Qdrant container CPU usage. Use `LOAD_TESTING.md` for deeper analysis checklists.
 
 ---
 
 ## 5. Observability & Health
 
-- `/metrics` exposes Caqti pool gauges, rate-limiter counters, and (soon) per-dependency health/timeouts.
+- `/metrics` exposes per-route request counters/latency histograms (`chessmate_api_requests_total`, `chessmate_api_request_duration_seconds`), Postgres pool gauges (including `chessmate_api_db_pool_wait_ratio`), agent cache/evaluation metrics, circuit-breaker state, and rate-limiter counters.
 - CLI prints `[health] postgres/qdrant/redis/api` lines before executing queries. Run `dune exec -- chessmate -- config` to see the full dependency report at any time.
 - API and worker expose `/health` (JSON) and `/metrics` on their respective ports (worker defaults to `CHESSMATE_WORKER_HEALTH_PORT`, 8081). Worker metrics include processed/failed totals and current queue depth.
 - Use `scripts/embedding_metrics.sh` to monitor queue depth; rate limiter increments appear under `api_rate_limited_total`.
