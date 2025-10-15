@@ -22,13 +22,12 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 - Optional: [`oha`](https://github.com/hatoo/oha) or `vegeta` for load testing via `scripts/load_test.sh`.
 
 ## Feature Highlights
-- **PGN ingestion pipeline:** parses headers/SAN, derives per-ply FEN snapshots, extracts ECO codes, and persists metadata (players, openings, results) to Postgres.
-- **Opening catalogue:** maps natural-language opening phrases to ECO ranges (`lib/chess/openings`), so queries like “King’s Indian games” become deterministic filters.
-- **Prototype hybrid search:** milestone 4 ships an Opium-based `/query` API (`dune exec -- chessmate_api`) plus `dune exec -- chessmate -- query` CLI surfacing intent analysis and curated sample results.
-- **Embedding pipeline & safeguards:** worker polls `embedding_jobs`, calls OpenAI embeddings, records vector identifiers for Qdrant, and now benefits from an ingest guard that halts new PGNs when the queue crosses a configurable threshold. Requests are chunked by default (2,048 FENs / ~120k characters); tune via `OPENAI_EMBEDDING_CHUNK_SIZE` and `OPENAI_EMBEDDING_MAX_CHARS` if OpenAI adjusts limits.
-- **Agent ranking (optional):** when `AGENT_API_KEY` is set, a GPT-5 agent re-scores results, surfaces explanations/themes, honours the new `reasoning.effort`/verbosity controls, and now emits structured telemetry (latency, tokens, cost estimates).
-- **Diagnostics tooling:** `chessmate fen <game.pgn>` prints per-ply FENs; ingestion/worker CLIs emit structured logs for troubleshooting; `scripts/embedding_metrics.sh` surfaces queue depth, throughput, and ETA snapshots.
-- **Snapshot-aware operations:** the `chessmate collection` CLI can snapshot, list, and restore Qdrant collections while journaling metadata, making reindexing and rollback workflows predictable.
+- **Turnkey ingestion & queue safeguards:** parse PGNs into FEN snapshots, persist metadata via Caqti, and keep the embedding queue in check with `CHESSMATE_MAX_PENDING_EMBEDDINGS`.
+- **Deterministic + vector search:** analyse intent, merge Postgres and Qdrant hits, and reuse cached rating checks for faster hybrid execution; fall back gracefully when vector search is unavailable.
+- **Agent scoring with guardrails:** optionally re-rank results with GPT‑5, honour reasoning/verbosity knobs, enforce request timeouts, and log structured telemetry (latency, tokens, cost).
+- **Snapshot-aware operations:** `chessmate collection snapshot|restore|list` wraps Qdrant’s snapshot API, journals metadata locally, and enables repeatable reindex/rollback workflows.
+- **Observability & load harness:** rich Prometheus metrics (latencies, rate limiter, agent counters), a smarter `scripts/load_test.sh` (auto-detect flags, JSON payload minification, Docker stats), and CLI health checks for rapid triage.
+- **Docs & tooling:** extensive handbook under `docs/handbook/`, cookbook recipes, runbooks, and odoc pages to keep architecture, operations, and CLI guidance in sync.
 
 ## Getting Started
 1. Clone and enter the repository.
