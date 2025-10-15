@@ -20,29 +20,42 @@ open! Base
 open Alcotest
 open Chessmate
 
-let find_metric name lines =
+let collect_lines () =
+  Lwt_main.run (Api_metrics.collect ())
+  |> String.split_lines
+  |> List.filter ~f:(fun line -> not (String.is_empty (String.strip line)))
+
+let find_metric prefix lines =
   List.find_map lines ~f:(fun line ->
-      match String.lsplit2 ~on:' ' line with
-      | Some (key, value) when String.equal key name -> Some value
-      | _ -> None)
+      if String.is_prefix line ~prefix then
+        String.lsplit2 line ~on:' ' |> Option.map ~f:snd
+      else None)
 
 let test_request_metrics () =
   Api_metrics.reset_for_tests ();
   Api_metrics.record_request ~route:"GET /query" ~latency_ms:10. ~status:200;
   Api_metrics.record_request ~route:"GET /query" ~latency_ms:20. ~status:500;
   Api_metrics.record_request ~route:"GET /health" ~latency_ms:5. ~status:200;
-  let lines = Api_metrics.render () in
-  let count = find_metric "api_request_total{route=\"GET /query\"}" lines in
-  check (option string) "request count" (Some "2") count;
-  let errors =
-    find_metric "api_request_errors_total{route=\"GET /query\"}" lines
+  let lines = collect_lines () in
+  let query_ok =
+    find_metric
+      "chessmate_api_requests_total{route=\"GET /query\",status=\"200\"}" lines
   in
-  check (option string) "error count" (Some "1") errors;
-  match
-    find_metric "api_request_latency_ms_p50{route=\"GET /query\"}" lines
-  with
-  | Some _ -> ()
-  | None -> fail "missing latency metric"
+  check (option string) "query 200 count" (Some "1") query_ok;
+  let query_error =
+    find_metric
+      "chessmate_api_requests_total{route=\"GET /query\",status=\"500\"}" lines
+  in
+  check (option string) "query 500 count" (Some "1") query_error;
+  let latency_sum =
+    find_metric
+      "chessmate_api_request_duration_seconds_sum{route=\"GET /query\"}" lines
+  in
+  match latency_sum with
+  | None -> fail "missing latency sum metric"
+  | Some value ->
+      let parsed = Float.of_string value in
+      check bool "latency sum > 0" true Float.(parsed > 0.0)
 
 let test_agent_metrics () =
   Api_metrics.reset_for_tests ();
@@ -52,27 +65,48 @@ let test_agent_metrics () =
   Api_metrics.record_agent_evaluation ~success:true ~latency_ms:12.5;
   Api_metrics.record_agent_evaluation ~success:false ~latency_ms:7.5;
   Api_metrics.set_agent_circuit_state ~open_:true;
-  let lines = Api_metrics.render () in
-  let hits = find_metric "agent_cache_hits_total" lines in
+  let lines = collect_lines () in
+  let hits =
+    find_metric "chessmate_api_agent_cache_total{state=\"hit\"}" lines
+  in
   check (option string) "cache hits" (Some "2") hits;
-  let misses = find_metric "agent_cache_misses_total" lines in
+  let misses =
+    find_metric "chessmate_api_agent_cache_total{state=\"miss\"}" lines
+  in
   check (option string) "cache misses" (Some "1") misses;
-  let evals = find_metric "agent_evaluations_total" lines in
-  check (option string) "evaluations" (Some "2") evals;
-  let errors = find_metric "agent_evaluation_errors_total" lines in
-  check (option string) "eval errors" (Some "1") errors;
-  let circuit = find_metric "agent_circuit_breaker_state" lines in
-  check (option string) "circuit state" (Some "1") circuit;
-  ()
+  let eval_success =
+    find_metric "chessmate_api_agent_evaluations_total{outcome=\"success\"}"
+      lines
+  in
+  check (option string) "successful evaluations" (Some "1") eval_success;
+  let eval_failure =
+    find_metric "chessmate_api_agent_evaluations_total{outcome=\"failure\"}"
+      lines
+  in
+  check (option string) "failed evaluations" (Some "1") eval_failure;
+  let latency_sum =
+    find_metric
+      "chessmate_api_agent_evaluation_latency_seconds_sum{outcome=\"success\"}"
+      lines
+  in
+  (match latency_sum with
+  | None -> fail "missing latency sum"
+  | Some value ->
+      let parsed = Float.of_string value in
+      check bool "latency sum > 0" true Float.(parsed > 0.0));
+  let circuit = find_metric "chessmate_api_agent_circuit_breaker_state" lines in
+  check (option string) "circuit state" (Some "1") circuit
 
 let test_request_metric_escapes_route () =
   Api_metrics.reset_for_tests ();
   Api_metrics.record_request ~route:"GET /metrics\"bad\\name\n" ~latency_ms:5.
     ~status:200;
-  let lines = Api_metrics.render () in
+  let lines = collect_lines () in
   let metric_line =
     List.find lines ~f:(fun line ->
-        String.is_substring line ~substring:"api_request_total{route=")
+        String.is_prefix line
+          "chessmate_api_requests_total{route=\"GET \
+           /metrics\\\"bad\\\\name\\n\",status=\"200\"}")
   in
   match metric_line with
   | None -> fail "request metric missing"

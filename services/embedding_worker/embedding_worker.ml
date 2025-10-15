@@ -105,6 +105,8 @@ let update_worker_metrics ~failed ~fen_length =
   let elapsed = Float.max 0.001 (Unix.gettimeofday () -. start_time) in
   let jobs_per_min = Float.of_int processed /. (elapsed /. 60.) in
   let chars_per_sec = fen_chars /. elapsed in
+  Worker_metrics.record_job_completion ~failed ~fen_chars:fen_length;
+  Worker_metrics.observe_throughput ~jobs_per_min ~chars_per_sec;
   write_metrics_file ~processed ~failed:failed_count ~jobs_per_min
     ~chars_per_sec
 
@@ -356,6 +358,7 @@ let worker_config : Config.Worker.t =
       Stdlib.exit 1
 
 let () = jobs_per_batch := worker_config.Config.Worker.batch_size
+let prometheus_port = ref worker_config.Config.Worker.prometheus_port
 let api_config_lazy : Config.Api.t Or_error.t Lazy.t = lazy (Config.Api.load ())
 
 let ensure_qdrant_collection () =
@@ -387,6 +390,7 @@ let start_health_server ~postgres =
     | Ok repo -> (
         match Repo_postgres.pending_embedding_job_count repo with
         | Ok queue_depth ->
+            Worker_metrics.set_queue_depth queue_depth;
             Ok
               Worker_health_server.Metrics.
                 { processed; failed; jobs_per_min; chars_per_sec; queue_depth }
@@ -394,9 +398,16 @@ let start_health_server ~postgres =
   in
   Worker_health_server.start ~port ~summary ~metrics
 
+let set_prometheus_port value =
+  if value <= 0 || value > 65_535 then
+    raise
+      (Stdlib.Arg.Bad
+         "--listen-prometheus expects a port between 1 and 65535")
+  else prometheus_port := Some value
+
 let usage_msg =
   "Usage: embedding_worker [--poll-sleep SECONDS] [--workers COUNT] \\ \n\
-  \   [--exit-after-empty N] [--batch-size COUNT]"
+  \   [--exit-after-empty N] [--batch-size COUNT] [--listen-prometheus PORT]"
 
 let run () =
   ensure_qdrant_collection ();
@@ -414,6 +425,9 @@ let run () =
       ( "--batch-size",
         Stdlib.Arg.Int (fun n -> jobs_per_batch := n),
         "Number of jobs to claim per poll (default: 16)" );
+      ( "--listen-prometheus",
+        Stdlib.Arg.Int set_prometheus_port,
+        "Expose Prometheus metrics on the given port" );
       ("-w", Stdlib.Arg.Set_int concurrency, "Alias for --workers");
     ]
   in
@@ -464,6 +478,23 @@ let run () =
       let stop_health_server () =
         Option.iter health_server_stop ~f:(fun stop -> stop ())
       in
+      let prometheus_exporter =
+        match !prometheus_port with
+        | None -> None
+        | Some port -> (
+            match Metrics_http.start ~port with
+            | Ok server ->
+                Stdlib.at_exit (fun () -> Metrics_http.stop server);
+                Some server
+            | Error err ->
+                stop_health_server ();
+                eprintf
+                  "[worker][fatal] failed to start Prometheus exporter on \
+                   port %d: %s\n%!"
+                  port (Error.to_string_hum err);
+                Stdlib.exit 1)
+      in
+      let stop_prometheus () = Metrics_http.stop_opt prometheus_exporter in
       let start_time = Unix.gettimeofday () in
       let stats = { processed = 0; failed = 0 } in
       let exit_condition = make_exit_condition !exit_after_empty in
@@ -501,6 +532,7 @@ let run () =
              "summary: processed=%d failures=%d duration=%.2fs \
               jobs_per_min=%.2f chars_per_sec=%.2f"
              stats.processed stats.failed elapsed jobs_per_min chars_per_sec);
+        stop_prometheus ();
         stop_health_server ())
       else (
         log
@@ -541,6 +573,7 @@ let run () =
              "summary: processed=%d failures=%d duration=%.2fs \
               jobs_per_min=%.2f chars_per_sec=%.2f"
              stats.processed stats.failed elapsed jobs_per_min chars_per_sec);
+        stop_prometheus ();
         stop_health_server ())
 
 let () = run ()

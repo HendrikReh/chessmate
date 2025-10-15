@@ -26,7 +26,7 @@ Self-hosted chess tutor that blends relational data (PostgreSQL) with vector sea
 - **Deterministic + vector search:** analyse intent, merge Postgres and Qdrant hits, and reuse cached rating checks for faster hybrid execution; fall back gracefully when vector search is unavailable.
 - **Agent scoring with guardrails:** optionally re-rank results with GPT‑5, honour reasoning/verbosity knobs, enforce request timeouts, and log structured telemetry (latency, tokens, cost).
 - **Snapshot-aware operations:** `chessmate collection snapshot|restore|list` wraps Qdrant’s snapshot API, journals metadata locally, and enables repeatable reindex/rollback workflows.
-- **Observability & load harness:** rich Prometheus metrics (latencies, rate limiter, agent counters), a smarter `scripts/load_test.sh` (auto-detect flags, JSON payload minification, Docker stats), and CLI health checks for rapid triage.
+- **Observability & load harness:** rich Prometheus metrics (latencies, rate limiter, agent counters), optional standalone exporters for the CLI/worker (`--listen-prometheus`), a smarter `scripts/load_test.sh` (auto-detect flags, JSON payload minification, Docker stats), and CLI health checks for rapid triage.
 - **Docs & tooling:** extensive handbook under `docs/handbook/`, cookbook recipes, runbooks, and odoc pages to keep architecture, operations, and CLI guidance in sync.
 
 ## Getting Started
@@ -164,6 +164,38 @@ data/           # Bind-mounted volumes for Postgres, Qdrant, and Redis
 - The script detects whether your `oha` build supports long-form flags, minifies the JSON payload once (handling the `@payload` pitfall), and resolves running Docker Compose container IDs before calling `docker stats`. After the run it prints the `/metrics` payload for quick inspection.
 - Watch `db_pool_wait_ratio`, `api_request_latency_ms_p95{route="..."}`, `agent_cache_hits_total`, and embedding throughput gauges. Healthy runs keep wait ratio near zero and p95 latency within expectations—use the values to decide whether to scale Postgres/Qdrant or tweak concurrency. See `docs/handbook/TESTING.md` for extended guidance and troubleshooting.
 
+### Prometheus Metrics
+- **API service:** `/metrics` is served from the main Opium process (default `http://localhost:8080/metrics`). The payload includes HTTP latency histograms, Postgres pool gauges, rate-limiter counters, and agent-derived telemetry.
+- **CLI commands:** pass `--listen-prometheus=<port>` (or export `CHESSMATE_PROM_PORT`) before the sub-command and the exporter will stream metrics at `http://localhost:<port>/metrics` for the lifetime of the run. Example:
+  ```sh
+  DATABASE_URL=postgres://... dune exec -- chessmate -- --listen-prometheus=9101 ingest data/sample.pgn
+  # scrape http://localhost:9101/metrics while ingest is running
+  ```
+- **Embedding worker:** enable the exporter via `--listen-prometheus <port>` or `CHESSMATE_WORKER_PROM_PORT`. Metrics cover queue depth, throughput, failure counts, and FEN character volume.
+  ```sh
+  OPENAI_API_KEY=... DATABASE_URL=postgres://... \
+    dune exec -- embedding_worker -- --listen-prometheus 9102 --workers 4
+  ```
+- **Recommended scrape config:**
+  ```yaml
+  scrape_configs:
+    - job_name: chessmate-api
+      static_configs:
+        - targets: ['localhost:8080']
+          labels: {role: api}
+
+    - job_name: chessmate-cli
+      static_configs:
+        - targets: ['localhost:9101']
+          labels: {role: cli-ingest}
+
+    - job_name: chessmate-worker
+      static_configs:
+        - targets: ['localhost:9102']
+          labels: {role: worker}
+  ```
+  Adjust ports to match your deployment (for example, when running in Docker Compose expose the exporter via `ports:` or a `hostPort`). Pair these scrape jobs with alerting on `db_pool_wait_ratio`, request latency histograms, embedding queue depth, and worker failure counters.
+
 ### Agent Configuration
 - `AGENT_API_KEY`: required to enable GPT-5 ranking (absent → agent disabled).
 - `AGENT_MODEL`: optional, defaults to `gpt-5` (also supports `gpt-5-mini`, `gpt-5-nano`).
@@ -182,6 +214,7 @@ When any of these variables change, restart API/CLI sessions so the lazy client 
 ### Embedding Worker Configuration
 - `OPENAI_EMBEDDING_ENDPOINT`: optional override for the embeddings API endpoint (defaults to `https://api.openai.com/v1/embeddings`).
 - `CHESSMATE_WORKER_BATCH_SIZE`: optional positive integer controlling how many jobs the worker claims per poll (defaults to `16`). Use lower values to reduce peak load or higher values to improve throughput when resources allow.
+- `CHESSMATE_WORKER_PROM_PORT`: optional TCP port that exposes the worker's Prometheus exporter (identical to passing `--listen-prometheus`).
 
 ### CLI Usage
 Example CLI session (assuming Postgres is running locally):
@@ -198,6 +231,8 @@ dune exec -- chessmate -- ingest test/fixtures/extended_sample_game.pgn
 # Ask a question (make sure the API is running in another shell)
 dune exec -- chessmate -- query "Show French Defense draws with queenside majority endings"
 # => Summary, filters, and curated results printed to stdout
+
+# Need metrics during long-running commands? Prefix with `--listen-prometheus <port>` (or set `CHESSMATE_PROM_PORT`) and scrape `http://localhost:<port>/metrics` while the command runs.
 
 # Generate FENs (stdout, filtered, file output)
 dune exec -- chessmate -- fen test/fixtures/sample_game.pgn

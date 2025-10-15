@@ -144,7 +144,9 @@ let test_worker_config_batch_size_defaults () =
           failf "unexpected worker config failure: %s" (Error.to_string_hum err)
       | Ok config ->
           check int "default batch size" 16 config.batch_size;
-          check int "default health port" 8081 config.health_port)
+          check int "default health port" 8081 config.health_port;
+          check bool "prometheus disabled" true
+            (Option.is_none config.prometheus_port))
 
 let test_worker_config_batch_size_override () =
   with_env
@@ -159,7 +161,9 @@ let test_worker_config_batch_size_override () =
           failf "unexpected worker config failure: %s" (Error.to_string_hum err)
       | Ok config ->
           check int "override batch size" 32 config.batch_size;
-          check int "default health port" 8081 config.health_port)
+          check int "default health port" 8081 config.health_port;
+          check bool "prometheus disabled" true
+            (Option.is_none config.prometheus_port))
 
 let test_worker_config_health_port_override () =
   with_env
@@ -188,6 +192,35 @@ let test_worker_config_health_port_invalid () =
           check bool "mentions env" true
             (String.is_substring (Error.to_string_hum err)
                ~substring:"CHESSMATE_WORKER_HEALTH_PORT"))
+
+let test_worker_config_prometheus_override () =
+  with_env
+    [
+      ("DATABASE_URL", Some "postgres://localhost/db");
+      ("OPENAI_API_KEY", Some "abc");
+      ("CHESSMATE_WORKER_PROM_PORT", Some "9100");
+    ]
+    (fun () ->
+      match Config.Worker.load () with
+      | Error err ->
+          failf "unexpected worker config failure: %s" (Error.to_string_hum err)
+      | Ok config ->
+          check (option int) "prometheus port" (Some 9100) config.prometheus_port)
+
+let test_worker_config_prometheus_invalid () =
+  with_env
+    [
+      ("DATABASE_URL", Some "postgres://localhost/db");
+      ("OPENAI_API_KEY", Some "abc");
+      ("CHESSMATE_WORKER_PROM_PORT", Some "70000");
+    ]
+    (fun () ->
+      match Config.Worker.load () with
+      | Ok _ -> fail "expected prometheus port validation failure"
+      | Error err ->
+          check bool "mentions env" true
+            (String.is_substring (Error.to_string_hum err)
+               ~substring:"CHESSMATE_WORKER_PROM_PORT"))
 
 let test_worker_config_batch_size_invalid () =
   with_env
@@ -250,6 +283,14 @@ let suite =
       test_worker_config_batch_size_override;
     test_case "worker config batch size invalid" `Quick
       test_worker_config_batch_size_invalid;
+    test_case "worker config health port override" `Quick
+      test_worker_config_health_port_override;
+    test_case "worker config health port invalid" `Quick
+      test_worker_config_health_port_invalid;
+    test_case "worker config prometheus override" `Quick
+      test_worker_config_prometheus_override;
+    test_case "worker config prometheus invalid" `Quick
+      test_worker_config_prometheus_invalid;
     test_case "cli guard limit parses" `Quick test_cli_guard_limit;
     test_case "cli guard limit disables" `Quick test_cli_guard_limit_disable;
     test_case "cli guard limit detects invalid" `Quick

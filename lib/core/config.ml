@@ -380,11 +380,13 @@ module Worker = struct
     openai_endpoint : string;
     batch_size : int;
     health_port : int;
+    prometheus_port : int option;
   }
 
   let default_endpoint = "https://api.openai.com/v1/embeddings"
   let default_batch_size = 16
   let default_health_port = 8081
+  let prometheus_env = "CHESSMATE_WORKER_PROM_PORT"
 
   let load_batch_size () =
     match Helpers.optional "CHESSMATE_WORKER_BATCH_SIZE" with
@@ -397,6 +399,17 @@ module Worker = struct
     | None -> Or_error.return default_health_port
     | Some raw when String.is_empty raw -> Or_error.return default_health_port
     | Some raw -> Helpers.parse_positive_int "CHESSMATE_WORKER_HEALTH_PORT" raw
+
+  let load_prometheus_port () =
+    match Helpers.optional prometheus_env with
+    | None -> Or_error.return None
+    | Some raw when String.is_empty raw -> Or_error.return None
+    | Some raw -> (
+        match Helpers.parse_positive_int prometheus_env raw with
+        | Error err -> Error err
+        | Ok port when port <= 65_535 -> Or_error.return (Some port)
+        | Ok _ ->
+            Helpers.invalid prometheus_env raw "expected a TCP port (1-65535)")
 
   let load () =
     match Helpers.require "DATABASE_URL" with
@@ -415,15 +428,19 @@ module Worker = struct
             | Ok batch_size -> (
                 match load_health_port () with
                 | Error err -> Error err
-                | Ok health_port ->
-                    Or_error.return
-                      {
-                        database_url;
-                        openai_api_key;
-                        openai_endpoint;
-                        batch_size;
-                        health_port;
-                      })))
+                | Ok health_port -> (
+                    match load_prometheus_port () with
+                    | Error err -> Error err
+                    | Ok prometheus_port ->
+                        Or_error.return
+                          {
+                            database_url;
+                            openai_api_key;
+                            openai_endpoint;
+                            batch_size;
+                            health_port;
+                            prometheus_port;
+                          }))))
 end
 
 module Cli = struct

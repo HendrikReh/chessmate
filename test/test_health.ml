@@ -55,6 +55,7 @@ let sample_worker_config =
     openai_endpoint = "https://api.openai.example/v1/embeddings";
     batch_size = 16;
     health_port = 9000;
+    prometheus_port = None;
   }
 
 let status_to_string = function

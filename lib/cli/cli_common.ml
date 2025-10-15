@@ -43,3 +43,15 @@ let positive_float_from_env ~name ~default =
       | value when Float.(value > 0.) -> Or_error.return value
       | _ ->
           Config.Helpers.invalid name raw "expected a positive floating value")
+
+let prometheus_port_from_env () =
+  match Config.Helpers.optional "CHESSMATE_PROM_PORT" with
+  | None -> Or_error.return None
+  | Some raw -> (
+      match Config.Helpers.parse_positive_int "CHESSMATE_PROM_PORT" raw with
+      | Error err -> Error err
+      | Ok port ->
+          if port > 65_535 then
+            Config.Helpers.invalid "CHESSMATE_PROM_PORT" raw
+              "expected a TCP port (1-65535)"
+          else Or_error.return (Some port))

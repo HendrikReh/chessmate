@@ -88,6 +88,7 @@ module Worker : sig
     openai_endpoint : string;
     batch_size : int;
     health_port : int;
+    prometheus_port : int option;
   }
 
   val load : unit -> t Or_error.t

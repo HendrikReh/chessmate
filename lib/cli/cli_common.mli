@@ -35,3 +35,6 @@ val positive_int_from_env : name:string -> default:int -> int Or_error.t
 val positive_float_from_env : name:string -> default:float -> float Or_error.t
 (** Parse [name] from the environment as a positive floating-point value.
     Returns [default] when unset; errors on malformed or non-positive input. *)
+
+val prometheus_port_from_env : unit -> int option Or_error.t
+(** Read [CHESSMATE_PROM_PORT] when present and validate it as a TCP port. *)

@@ -46,6 +46,7 @@ let enforce_pending_guard repo = function
   | None -> Or_error.return ()
   | Some limit ->
       let* pending = Repo_postgres.pending_embedding_job_count repo in
+      Cli_metrics.set_embedding_pending_jobs pending;
       if Int.(pending >= limit) then
         Or_error.errorf
           "Pending embedding queue has %d jobs which meets or exceeds the \
@@ -61,56 +62,67 @@ let enforce_pending_guard repo = function
         Or_error.return ())
 
 let run path =
-  if not (Stdlib.Sys.file_exists path) then
-    Or_error.errorf "PGN file %s does not exist" path
-  else
-    let contents = In_channel.read_all path in
-    let* concurrency =
-      Cli_common.positive_int_from_env ~name:"CHESSMATE_INGEST_CONCURRENCY"
-        ~default:default_worker_count
-    in
-    pending_guard_limit ()
-    |> Or_error.bind ~f:(fun guard ->
-           Cli_common.with_db_url (fun url ->
-               let* repo = Repo_postgres.create url in
-               let* () = enforce_pending_guard repo guard in
-               let stats = ref empty_stats in
-               let mutex = Lwt_mutex.create () in
-               eprintf "Using ingest concurrency %d\n%!" concurrency;
-               let on_error ~index ~raw err =
-                 Lwt_mutex.with_lock mutex (fun () ->
-                     log_skip index (Error.to_string_hum err) raw;
-                     stats := { !stats with skipped = !stats.skipped + 1 };
-                     Lwt.return ())
-               in
-               let queue =
-                 Lwt_pool.create concurrency (fun () -> Lwt.return_unit)
-               in
-               let process_game ~index ~raw game =
-                 Lwt_pool.use queue (fun () ->
-                     let metadata =
-                       Game_metadata.of_headers game.Pgn_parser.headers
-                     in
-                     match
-                       Repo_postgres.insert_game repo ~metadata ~pgn:raw
-                         ~moves:game.moves
-                     with
-                     | Ok (game_id, position_count) ->
-                         Lwt_mutex.with_lock mutex (fun () ->
-                             printf
-                               "Stored game %d (PGN #%d) with %d positions\n"
-                               game_id index position_count;
-                             stats :=
-                               { !stats with inserted = !stats.inserted + 1 };
-                             Lwt.return_unit)
-                     | Error err -> on_error ~index ~raw err)
-               in
-               Lwt_main.run
-                 (Pgn_parser.stream_games contents ~on_error ~f:process_game);
-               if Int.equal !stats.inserted 0 then
-                 Or_error.error_string
-                   "No games ingested; see skipped entries above."
-               else (
-                 printf "Ingest complete: %d stored, %d skipped.\n"
-                   !stats.inserted !stats.skipped;
-                 Or_error.return ())))
+  let start_time = Unix.gettimeofday () in
+  let finalize outcome =
+    let duration = Unix.gettimeofday () -. start_time in
+    Cli_metrics.record_ingest_run ~outcome ~duration_s:duration
+  in
+  let result =
+    if not (Stdlib.Sys.file_exists path) then
+      Or_error.errorf "PGN file %s does not exist" path
+    else
+      let contents = In_channel.read_all path in
+      let* concurrency =
+        Cli_common.positive_int_from_env ~name:"CHESSMATE_INGEST_CONCURRENCY"
+          ~default:default_worker_count
+      in
+      let* guard = pending_guard_limit () in
+      Cli_common.with_db_url (fun url ->
+          let* repo = Repo_postgres.create url in
+          let* () = enforce_pending_guard repo guard in
+          (match guard with
+          | None -> Cli_metrics.set_embedding_pending_jobs 0
+          | Some _ -> ());
+          let stats = ref empty_stats in
+          let mutex = Lwt_mutex.create () in
+          eprintf "Using ingest concurrency %d\n%!" concurrency;
+          let on_error ~index ~raw err =
+            Lwt_mutex.with_lock mutex (fun () ->
+                log_skip index (Error.to_string_hum err) raw;
+                Cli_metrics.record_ingest_game ~result:`Skipped;
+                stats := { !stats with skipped = !stats.skipped + 1 };
+                Lwt.return ())
+          in
+          let queue = Lwt_pool.create concurrency (fun () -> Lwt.return_unit) in
+          let process_game ~index ~raw game =
+            Lwt_pool.use queue (fun () ->
+                let metadata =
+                  Game_metadata.of_headers game.Pgn_parser.headers
+                in
+                match
+                  Repo_postgres.insert_game repo ~metadata ~pgn:raw
+                    ~moves:game.moves
+                with
+                | Ok (game_id, position_count) ->
+                    Lwt_mutex.with_lock mutex (fun () ->
+                        printf "Stored game %d (PGN #%d) with %d positions\n"
+                          game_id index position_count;
+                        Cli_metrics.record_ingest_game ~result:`Stored;
+                        stats := { !stats with inserted = !stats.inserted + 1 };
+                        Lwt.return_unit)
+                | Error err -> on_error ~index ~raw err)
+          in
+          Lwt_main.run
+            (Pgn_parser.stream_games contents ~on_error ~f:process_game);
+          if Int.equal !stats.inserted 0 then
+            Or_error.error_string
+              "No games ingested; see skipped entries above."
+          else (
+            printf "Ingest complete: %d stored, %d skipped.\n" !stats.inserted
+              !stats.skipped;
+            Or_error.return ()))
+  in
+  (match result with
+  | Ok () -> finalize `Success
+  | Error _ -> finalize `Failure);
+  result

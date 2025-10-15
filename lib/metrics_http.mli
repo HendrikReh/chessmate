@@ -1,6 +1,6 @@
 (*  Chessmate - Hybrid chess tutor combining Postgres metadata with Qdrant
     vector search
-    Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
+   Copyright (C) 2025 Hendrik Reh <hendrik.reh@blacksmith-consulting.ai>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -18,20 +18,16 @@
 
 open! Base
 
-val record_request : route:string -> latency_ms:float -> status:int -> unit
-val record_agent_cache_hit : unit -> unit
-val record_agent_cache_miss : unit -> unit
-val record_agent_evaluation : success:bool -> latency_ms:float -> unit
-val set_agent_circuit_state : open_:bool -> unit
+type t
 
-val set_db_pool_stats :
-  capacity:int ->
-  in_use:int ->
-  available:int ->
-  waiting:int ->
-  wait_ratio:float ->
-  unit
+val start : port:int -> t Or_error.t
+(** Start a Prometheus HTTP exporter on the provided [port]. *)
 
-val registry : unit -> Metrics.Registry.t
-val collect : unit -> string Lwt.t
-val reset_for_tests : unit -> unit
+val start_if_configured : port:int option -> t option Or_error.t
+(** Convenience helper returning [Ok None] when no port is supplied. *)
+
+val stop : t -> unit
+(** Stop the exporter and release resources. Safe to call multiple times. *)
+
+val stop_opt : t option -> unit
+(** [stop_opt] is a no-op when given [None]. *)

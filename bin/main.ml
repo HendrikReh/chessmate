@@ -24,7 +24,11 @@ open Chessmate
 
 let usage =
   {|
-Usage: chessmate <command> [options]
+Usage: chessmate [options] <command> [command-args]
+
+Options:
+  --listen-prometheus=<port>
+                          Expose Prometheus metrics at http://localhost:<port>/metrics
 
 Commands:
   config                  Run configuration and dependency checks
@@ -47,6 +51,39 @@ let print_usage () = printf "%s\n" usage
 let exit_with_error err =
   eprintf "Error: %s\n" (Error.to_string_hum err);
   Stdlib.exit 1
+
+let parse_listen_prometheus_flag args =
+  let rec loop seen_port acc = function
+    | [] -> Or_error.return (seen_port, List.rev acc)
+    | "--listen-prometheus" :: [] ->
+        Or_error.error_string "--listen-prometheus expects a port value"
+    | "--listen-prometheus" :: value :: rest ->
+        if Option.is_some seen_port then
+          Or_error.error_string "--listen-prometheus supplied more than once"
+        else (
+          match parse_port_value value with
+          | Error _ as err -> err
+          | Ok port -> loop (Some port) acc rest)
+    | arg :: rest when String.is_prefix arg ~prefix:"--listen-prometheus=" ->
+        if Option.is_some seen_port then
+          Or_error.error_string "--listen-prometheus supplied more than once"
+        else
+          let value =
+            String.drop_prefix arg (String.length "--listen-prometheus=")
+          in
+          (match parse_port_value value with
+          | Error _ as err -> err
+          | Ok port -> loop (Some port) acc rest)
+    | arg :: rest -> loop seen_port (arg :: acc) rest
+  and parse_port_value raw =
+    match Int.of_string raw with
+    | exception _ ->
+        Or_error.errorf "Invalid Prometheus port '%s' (expected integer)" raw
+    | port when port < 1 || port > 65_535 ->
+        Or_error.errorf "Invalid Prometheus port %d (expected 1-65535)" port
+    | port -> Or_error.return port
+  in
+  loop None [] args
 
 let run_ingest path =
   match Ingest_command.run path with
@@ -224,27 +261,44 @@ let run ?argv () =
   | [] | [ _ ] -> print_usage ()
   | _ :: rest -> (
       let rest = strip_dune_exec rest in
-      match rest with
-      | ("help" | "--help" | "-h") :: _ -> print_usage ()
-      | "config" :: _ -> Config_command.run ()
-      | "ingest" :: [] ->
-          exit_with_error (Error.of_string "ingest requires a PGN file path")
-      | "ingest" :: path :: _ -> run_ingest path
-      | "twic-precheck" :: [] ->
-          exit_with_error
-            (Error.of_string "twic-precheck requires a PGN file path")
-      | "twic-precheck" :: path :: _ -> run_twic_precheck path
-      | "query" :: args -> run_query args
-      | "fen" :: args -> run_fen args
-      | "collection" :: args -> run_collection args
-      | "embedding-worker" :: _ ->
-          exit_with_error
-            (Error.of_string
-               "embedding-worker command not yet wired; use dune exec \
-                embedding_worker")
-      | [] -> print_usage ()
-      | _ ->
-          print_usage ();
-          Stdlib.exit 1)
+      match parse_listen_prometheus_flag rest with
+      | Error err -> exit_with_error err
+      | Ok (flag_port, args) -> (
+          match Cli_common.prometheus_port_from_env () with
+          | Error err -> exit_with_error err
+          | Ok env_port ->
+              let effective_port =
+                match flag_port with Some _ -> flag_port | None -> env_port
+              in
+              let () =
+                match Metrics_http.start_if_configured ~port:effective_port with
+                | Error err -> exit_with_error err
+                | Ok exporter ->
+                    Option.iter exporter ~f:(fun server ->
+                        Stdlib.at_exit (fun () -> Metrics_http.stop server))
+              in
+              match args with
+              | ("help" | "--help" | "-h") :: _ -> print_usage ()
+              | "config" :: _ -> Config_command.run ()
+              | "ingest" :: [] ->
+                  exit_with_error
+                    (Error.of_string "ingest requires a PGN file path")
+              | "ingest" :: path :: _ -> run_ingest path
+              | "twic-precheck" :: [] ->
+                  exit_with_error
+                    (Error.of_string "twic-precheck requires a PGN file path")
+              | "twic-precheck" :: path :: _ -> run_twic_precheck path
+              | "query" :: args -> run_query args
+              | "fen" :: args -> run_fen args
+              | "collection" :: args -> run_collection args
+              | "embedding-worker" :: _ ->
+                  exit_with_error
+                    (Error.of_string
+                       "embedding-worker command not yet wired; use dune exec \
+                        embedding_worker")
+              | [] -> print_usage ()
+              | _ ->
+                  print_usage ();
+                  Stdlib.exit 1))
 
 let () = run ()

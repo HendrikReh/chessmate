@@ -549,23 +549,25 @@ let metrics_handler _req =
         if Int.(stats.capacity <= 0) then 0.0
         else Float.of_int stats.waiting /. Float.of_int stats.capacity
       in
-      let base_metrics =
-        [
-          Printf.sprintf "db_pool_capacity %d" stats.capacity;
-          Printf.sprintf "db_pool_in_use %d" stats.in_use;
-          Printf.sprintf "db_pool_available %d" stats.available;
-          Printf.sprintf "db_pool_waiting %d" stats.waiting;
-          Printf.sprintf "db_pool_wait_ratio %.3f" wait_ratio;
-        ]
-      in
-      let request_metrics = Api_metrics.render () in
-      let base_metrics = base_metrics @ request_metrics in
-      let all_metrics =
+      Api_metrics.set_db_pool_stats ~capacity:stats.capacity
+        ~in_use:stats.in_use ~available:stats.available ~waiting:stats.waiting
+        ~wait_ratio;
+      let open Lwt.Syntax in
+      let* api_metrics = Api_metrics.collect () in
+      let limiter_lines =
         match Lazy.force rate_limiter with
-        | None -> base_metrics
-        | Some limiter -> base_metrics @ Rate_limiter.metrics limiter
+        | None -> []
+        | Some limiter -> Rate_limiter.metrics limiter
       in
-      let body = String.concat ~sep:"\n" all_metrics ^ "\n" in
+      let body =
+        match limiter_lines with
+        | [] -> api_metrics
+        | lines ->
+            let suffix =
+              if String.is_suffix api_metrics ~suffix:"\n" then "" else "\n"
+            in
+            api_metrics ^ suffix ^ String.concat ~sep:"\n" lines ^ "\n"
+      in
       respond_plain_text body
 
 type incoming_query = {
