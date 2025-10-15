@@ -21,6 +21,8 @@ depends: [
   "uri"
   "lwt"
   "cohttp-lwt-unix"
+  "prometheus"
+  "prometheus-app"
   "opium"
   "caqti"
   "caqti-driver-postgresql"

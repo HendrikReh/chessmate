@@ -9,6 +9,7 @@
   unix
   yojson
   lwt
+  prometheus
   cohttp-lwt-unix
   uri
   re

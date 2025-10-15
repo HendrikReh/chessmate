@@ -25,13 +25,15 @@
   base
   stdio
   yojson
-  uri
-  lwt
-  cohttp-lwt-unix
-  opium
-  caqti
-  caqti-driver-postgresql
-  (alcotest :with-test))
+ uri
+ lwt
+ cohttp-lwt-unix
+ prometheus
+ prometheus-app
+ opium
+ caqti
+ caqti-driver-postgresql
+ (alcotest :with-test))
  (tags
   ("chess" "ocaml" "vector-search" "postgres" "qdrant")))
 
