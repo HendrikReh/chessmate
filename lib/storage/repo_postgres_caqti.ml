@@ -91,17 +91,11 @@ let with_connection t f =
     t.waiting <- Int.max 0 (t.waiting - 1);
     t.in_use <- t.in_use + 1;
     Stdlib.Mutex.unlock t.stats_mutex;
-    match f conn with
-    | Ok value ->
-        Stdlib.Mutex.lock t.stats_mutex;
-        t.in_use <- t.in_use - 1;
-        Stdlib.Mutex.unlock t.stats_mutex;
-        Ok value
-    | Error err ->
-        Stdlib.Mutex.lock t.stats_mutex;
-        t.in_use <- t.in_use - 1;
-        Stdlib.Mutex.unlock t.stats_mutex;
-        Error err
+    let result = f conn in
+    Stdlib.Mutex.lock t.stats_mutex;
+    t.in_use <- t.in_use - 1;
+    Stdlib.Mutex.unlock t.stats_mutex;
+    result
   in
   let result = Pool.use run t.pool in
   if not !ran then (
