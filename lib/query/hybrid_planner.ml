@@ -134,16 +134,6 @@ let vector_hit_of_point (point : Repo_qdrant.scored_point) =
           in
           Some { game_id; score = point.score; phases; themes; keywords })
 
-let vector_hits_of_points points =
-  points
-  |> List.filter_map ~f:vector_hit_of_point
-  |> List.dedup_and_sort ~compare:(fun a b -> Int.compare a.game_id b.game_id)
-
-let index_hits_by_game hits =
-  List.fold hits
-    ~init:(Map.empty (module Int))
-    ~f:(fun acc hit -> Map.set acc ~key:hit.game_id ~data:hit)
-
 let merge_keywords base additional =
   List.rev_append base additional
   |> List.map ~f:String.lowercase
@@ -151,3 +141,34 @@ let merge_keywords base additional =
 
 let merge_phases base additional = merge_keywords base additional
 let merge_themes base additional = merge_keywords base additional
+
+let combine_hits existing incoming =
+  {
+    game_id = existing.game_id;
+    score = Float.max existing.score incoming.score;
+    phases = merge_phases existing.phases incoming.phases;
+    themes = merge_themes existing.themes incoming.themes;
+    keywords = merge_keywords existing.keywords incoming.keywords;
+  }
+
+let vector_hits_of_points points =
+  let by_game =
+    List.fold points
+      ~init:(Map.empty (module Int))
+      ~f:(fun acc point ->
+        match vector_hit_of_point point with
+        | None -> acc
+        | Some hit ->
+            let combined =
+              match Map.find acc hit.game_id with
+              | None -> hit
+              | Some existing -> combine_hits existing hit
+            in
+            Map.set acc ~key:hit.game_id ~data:combined)
+  in
+  Map.data by_game
+
+let index_hits_by_game hits =
+  List.fold hits
+    ~init:(Map.empty (module Int))
+    ~f:(fun acc hit -> Map.set acc ~key:hit.game_id ~data:hit)

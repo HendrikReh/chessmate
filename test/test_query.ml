@@ -102,6 +102,28 @@ let make_vector_points game_id score ~phases ~themes ~keywords =
   in
   [ { Repo_qdrant.id = Int.to_string game_id; score; payload = Some payload } ]
 
+let test_vector_hits_collapse_multiple_points () =
+  let points =
+    make_vector_points sample_summary.Repo_postgres.id 0.45
+      ~phases:[ "opening" ] ~themes:[ "positional" ] ~keywords:[ "indian" ]
+    @ make_vector_points sample_summary.Repo_postgres.id 0.9
+        ~phases:[ "middlegame" ]
+        ~themes:[ "tactics"; "positional" ]
+        ~keywords:[ "attack"; "indian" ]
+  in
+  let hits = Hybrid_planner.vector_hits_of_points points in
+  check int "single merged hit" 1 (List.length hits);
+  let hit = List.hd_exn hits in
+  check bool "max score kept" true
+    Float.(abs (hit.Hybrid_planner.score -. 0.9) < 1e-6);
+  let has value items =
+    List.mem items value ~equal:(String.equal : string -> string -> bool)
+  in
+  check bool "opening phase retained" true (has "opening" hit.phases);
+  check bool "middlegame phase added" true (has "middlegame" hit.phases);
+  check bool "tactics theme retained" true (has "tactics" hit.themes);
+  check bool "keywords merged" true (has "attack" hit.keywords)
+
 let test_hybrid_executor_merges_vector_hits () =
   let question =
     "Show me King's Indian games where white is rated at least 2800 and \
@@ -406,6 +428,9 @@ let suite =
   [
     ("query intent opening", `Quick, test_query_intent_opening);
     ("query intent draw", `Quick, test_query_intent_draw);
+    ( "vector hits collapse duplicates",
+      `Quick,
+      test_vector_hits_collapse_multiple_points );
     ( "hybrid executor merges vector hits",
       `Quick,
       test_hybrid_executor_merges_vector_hits );
