@@ -167,6 +167,7 @@ Log details and mitigation in `INCIDENTS/<date>.md` after an incident.
   - API p95 > 2s sustained.
   - Embedding backlog > 500 jobs for >10 min.
   - Embedding failure rate > 5%/h.
+  - Query embedding fallback ratio > 20% (15m) or p95 latency > 1s (10m).
   - Disk usage on `data/` volumes > 80%.
   - Postgres/Qdrant health probe failures.
   - Prometheus scrape failures (`up == 0`) for API, CLI exporters, or worker endpoints.
@@ -183,7 +184,7 @@ Log details and mitigation in `INCIDENTS/<date>.md` after an incident.
 
 ## 13. Prometheus Rollout Checklist (Staging → Prod)
 - [ ] Configure scrape jobs for API (`localhost:8080`), CLI exporters (dynamic ports such as 9101), and worker (`--listen-prometheus` / `CHESSMATE_WORKER_PROM_PORT`). See sample in `README.md`.
-- [ ] Add alert rules for API latency (p95 > 2s five-minute window), embedding failures (`embedding_jobs_total{outcome="failed"}`), and queue depth (`embedding_pending_jobs`).
+- [ ] Add alert rules for API latency (p95 > 2s five-minute window), embedding failures (`embedding_jobs_total{outcome="failed"}`), queue depth (`embedding_pending_jobs`), and query embedding fallbacks/latency (`chessmate-query-embedding-alerts.yml`).
 - [ ] Ensure `/metrics` endpoints are exposed behind the ingress/load balancer with appropriate auth (basic auth, IP allowlist).
 - [ ] Update dashboards to chart `chessmate_api_db_pool_wait_ratio`, `chessmate_api_requests_total`, worker throughput gauges, and agent cache hit rate.
 - [ ] Verify `scripts/check_metrics.sh` passes for API, worker, and CLI exporters as part of staging smoke tests.
@@ -216,6 +217,12 @@ Log details and mitigation in `INCIDENTS/<date>.md` after an incident.
 4. **Smoke test** – run `scripts/check_metrics.sh PORT=8080`, `scripts/check_metrics.sh PORT=9101 || true`, `scripts/check_metrics.sh PORT=9102 || true`. In the Prometheus UI check `Status → Targets` and explore metrics (`chessmate_api_requests_total`, `chessmate_worker_embedding_jobs_total`).
 
 5. **Optional** – integrate with Grafana, add Alertmanager, or expand scrape configs for staging/prod using service discovery.
+
+6. **Validate alert rules** – install Prometheus locally (`brew install prometheus` or download from prometheus.io) and run:
+   ```sh
+   promtool check rules prometheus/rules/chessmate-query-embedding-alerts.yml
+   ```
+   Re-run after editing alert files to catch syntax errors before reloading Prometheus.
 
 ---
 

@@ -1,0 +1,38 @@
+groups:
+  - name: chessmate-query-embeddings
+    rules:
+      - alert: QueryEmbeddingFallbackRateHigh
+        expr: |
+          increase(chessmate_api_query_embedding_total{source="fallback"}[15m])
+          /
+          clamp_min(
+            increase(chessmate_api_query_embedding_total[15m]),
+            1
+          ) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Query embedding fallback ratio > 20% (15m)"
+          description: >
+            More than 20% of query embeddings are falling back to the deterministic
+            vector during the last 15 minutes. Investigate the embedding provider
+            (API availability, credentials, rate limits).
+
+      - alert: QueryEmbeddingLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(chessmate_api_query_embedding_duration_seconds_bucket[5m])
+            )
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Query embedding p95 latency > 1s (10m)"
+          description: >
+            The 95th percentile latency for query embeddings exceeded 1 second
+            over the last 10 minutes. Check OpenAI performance and local network
+            saturation before fallbacks begin to dominate.
