@@ -1,5 +1,10 @@
 # Release Notes
 
+## Unreleased – Query Embedding Integration
+
+### Query & Retrieval
+- **GH-061** – Hybrid planner now sources real embeddings for query vectors (falling back to deterministic hashes when unavailable), exposes warning propagation, and rebalances ranking weights (75% vector / 25% keyword). Documentation updated with new `QUERY_EMBEDDING_*` knobs.
+
 ## 0.7.0 – Snapshot Tooling & Hybrid Optimisations (2025-10-15)
 
 ### Infrastructure & Reliability

@@ -27,8 +27,13 @@ LLM-based scoring.
 
 {1 Extending the Pipeline}
 
-- Replace the placeholder query vectors with real embeddings once available by
-  updating `Hybrid_planner.query_vector`.
+- Configure query embeddings by exporting `QUERY_EMBEDDING_API_KEY` (falls back
+  to `OPENAI_API_KEY`) and optionally `QUERY_EMBEDDING_ENDPOINT`. With those set,
+  `Hybrid_planner.query_vector` now calls the embeddings client and only falls
+  back to the deterministic hash when the service is unavailable (warnings are
+  surfaced through the executor).
+- Tune hybrid scoring weights (default 75% vector / 25% keyword) in
+  `Hybrid_planner.default` as you calibrate real embedding quality.
 - Add metadata filters by extending `Query_intent.metadata_filter` and updating
   the planner’s conversion logic.
 - Expand telemetry or cost reporting in `lib/query/agent_telemetry.ml` to match

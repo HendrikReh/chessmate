@@ -149,7 +149,7 @@ let test_hybrid_executor_pipeline () =
               }
             in
             let fetch_vector_hits (_ : Query_intent.plan) =
-              Or_error.return [ vector_hit ]
+              Or_error.return ([ vector_hit ], [])
             in
             let* execution =
               Hybrid_executor.execute ~fetch_games ~fetch_vector_hits plan

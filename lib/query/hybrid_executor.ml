@@ -277,7 +277,7 @@ let execute ~fetch_games ~fetch_vector_hits ?fetch_game_pgns ?agent_evaluator
   | Ok { Repo_postgres.games = summaries; total } ->
       let vector_hits, warnings =
         match fetch_vector_hits plan with
-        | Ok hits -> (hits, [])
+        | Ok (hits, warnings) -> (hits, warnings)
         | Error err ->
             let message = Error.to_string_hum err in
             ([], [ Printf.sprintf "Vector search unavailable (%s)" message ])

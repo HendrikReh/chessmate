@@ -124,6 +124,46 @@ let test_vector_hits_collapse_multiple_points () =
   check bool "tactics theme retained" true (has "tactics" hit.themes);
   check bool "keywords merged" true (has "attack" hit.keywords)
 
+let analyse text =
+  Query_intent.analyse { Query_intent.text; limit = None; offset = None }
+
+let test_query_vector_fallback_warns () =
+  let plan = analyse "Find sharp sicilian attacks" in
+  let provider =
+    Query_embedding_provider.For_tests.make_disabled ~reason:"missing api key"
+  in
+  Query_embedding_provider.For_tests.with_provider provider (fun () ->
+      let result = Hybrid_planner.query_vector plan in
+      check bool "fallback source" true
+        (match result.Hybrid_planner.source with
+        | Hybrid_planner.Deterministic_fallback -> true
+        | _ -> false);
+      check bool "warnings present" true (not (List.is_empty result.warnings));
+      let deterministic = Query_embedding_provider.deterministic_vector plan in
+      check bool "vector matches deterministic" true
+        (List.equal
+           (fun a b -> Float.(abs (a -. b) < 1e-6))
+           deterministic result.vector))
+
+let test_query_vector_embedding_success () =
+  let plan = analyse "Show me queen's gambit attacks" in
+  let stub_embed _ = Or_error.return [ [| 0.1; 0.4; 0.7 |] ] in
+  let provider =
+    Query_embedding_provider.For_tests.make_enabled ~embed:stub_embed
+  in
+  Query_embedding_provider.For_tests.with_provider provider (fun () ->
+      let result = Hybrid_planner.query_vector plan in
+      check bool "embedding source" true
+        (match result.Hybrid_planner.source with
+        | Hybrid_planner.Embedding_service -> true
+        | _ -> false);
+      check bool "no warnings" true (List.is_empty result.warnings);
+      let expected = [ 0.1; 0.4; 0.7 ] in
+      check bool "vector returned" true
+        (List.equal
+           (fun a b -> Float.(abs (a -. b) < 1e-9))
+           expected result.vector))
+
 let test_hybrid_executor_merges_vector_hits () =
   let question =
     "Show me King's Indian games where white is rated at least 2800 and \
@@ -142,7 +182,7 @@ let test_hybrid_executor_merges_vector_hits () =
       ~keywords:[ "indian"; "attack" ]
     |> Hybrid_planner.vector_hits_of_points
   in
-  let fetch_vectors _ = Or_error.return vector_hits in
+  let fetch_vectors _ = Or_error.return (vector_hits, []) in
   match
     Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors plan
   with
@@ -224,7 +264,7 @@ let test_hybrid_executor_with_agent () =
     Or_error.return
       Repo_postgres.{ games = summaries; total = List.length summaries }
   in
-  let fetch_vectors _ = Or_error.return [] in
+  let fetch_vectors _ = Or_error.return ([], []) in
   let fetch_game_pgns ids =
     let pgn = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 1-0" in
     Or_error.return (List.map ids ~f:(fun id -> (id, pgn)))
@@ -317,7 +357,7 @@ let test_hybrid_executor_agent_cache () =
     Or_error.return
       Repo_postgres.{ games = summaries; total = List.length summaries }
   in
-  let fetch_vectors _ = Or_error.return [] in
+  let fetch_vectors _ = Or_error.return ([], []) in
   let fetch_game_pgns _ = Or_error.return [ (10, "1. e4 e5 2. Nf3 Nc6") ] in
   let cache = Agent_cache.create ~capacity:8 in
   let call_count = ref 0 in
@@ -368,7 +408,7 @@ let test_hybrid_executor_pagination_has_more () =
   let fetch_games _ =
     Or_error.return Repo_postgres.{ games = summaries; total = 5 }
   in
-  let fetch_vectors _ = Or_error.return [] in
+  let fetch_vectors _ = Or_error.return ([], []) in
   match
     Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors plan
   with
@@ -389,7 +429,7 @@ let test_hybrid_executor_offset_exceeds_total () =
       }
   in
   let fetch_games _ = Or_error.return Repo_postgres.{ games = []; total = 3 } in
-  let fetch_vectors _ = Or_error.return [] in
+  let fetch_vectors _ = Or_error.return ([], []) in
   match
     Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors plan
   with
@@ -431,6 +471,12 @@ let suite =
     ( "vector hits collapse duplicates",
       `Quick,
       test_vector_hits_collapse_multiple_points );
+    ( "query vector fallback emits warning",
+      `Quick,
+      test_query_vector_fallback_warns );
+    ( "query vector embeds when available",
+      `Quick,
+      test_query_vector_embedding_success );
     ( "hybrid executor merges vector hits",
       `Quick,
       test_hybrid_executor_merges_vector_hits );

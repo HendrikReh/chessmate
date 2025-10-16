@@ -17,18 +17,18 @@
 *)
 
 (** Translate analysed query intent into Postgres predicates, optional Qdrant
-    payload filters, and deterministic vector placeholders plus scoring weights.
-*)
+    payload filters, and query embeddings (with deterministic fallbacks) plus
+    scoring weights. *)
 
 open! Base
 module Util = Yojson.Safe.Util
+module Query_embedding_provider = Query_embedding_provider
 
-let vector_dimension = 8
 let clamp_float value ~min ~max = Float.min max (Float.max min value)
 
 type t = { vector_weight : float; keyword_weight : float }
 
-let default = { vector_weight = 0.7; keyword_weight = 0.3 }
+let default = { vector_weight = 0.75; keyword_weight = 0.25 }
 
 let scoring_weights t ~vector ~keyword =
   (t.vector_weight *. vector) +. (t.keyword_weight *. keyword)
@@ -70,27 +70,18 @@ let build_payload_filters plan =
   let combined = converted_filters @ rating_filters in
   if List.is_empty combined then None else Some combined
 
-let hash_component token index =
-  let hashed = Hashtbl.hash (token, index) |> Int.abs in
-  let bucket = Int.rem hashed 10_000 in
-  Float.of_int bucket /. 10_000.0
+type query_vector_source = Query_embedding_provider.source =
+  | Embedding_service
+  | Deterministic_fallback
+
+type query_vector = Query_embedding_provider.fetch_result = {
+  vector : float list;
+  source : query_vector_source;
+  warnings : string list;
+}
 
 let query_vector plan =
-  let tokens =
-    if List.is_empty plan.Query_intent.keywords then [ plan.cleaned_text ]
-    else plan.Query_intent.keywords
-  in
-  List.init vector_dimension ~f:(fun index ->
-      match tokens with
-      | [] -> 0.0
-      | _ ->
-          let total =
-            List.fold tokens ~init:0.0 ~f:(fun acc token ->
-                acc +. hash_component token index)
-          in
-          clamp_float
-            (total /. Float.of_int (List.length tokens))
-            ~min:0.0 ~max:1.0)
+  Query_embedding_provider.fetch (Query_embedding_provider.current ()) plan
 
 let normalize_vector_score score =
   if Float.is_nan score || not (Float.is_finite score) then 0.0

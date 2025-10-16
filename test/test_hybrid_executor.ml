@@ -41,7 +41,7 @@ let test_skip_when_circuit_open () =
   let fetch_games _plan =
     Or_error.return Repo_postgres.{ games = [ sample_summary 1 ]; total = 1 }
   in
-  let fetch_vector_hits _plan = Or_error.return [] in
+  let fetch_vector_hits _plan = Or_error.return ([], []) in
   let fetch_game_pgns _ids = Or_error.return [ (1, "1. e4 e5 2. Nf3 Nc6") ] in
   let evaluator_called = ref 0 in
   let agent_evaluator ~plan:_ ~candidates:_ =

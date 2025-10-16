@@ -443,13 +443,26 @@ let fetch_game_pgns_impl ids =
   | Ok repo -> Repo_postgres.fetch_games_with_pgn repo ~ids
 
 let fetch_vector_hits_impl plan =
-  let vector = Hybrid_planner.query_vector plan in
+  let vector_info = Hybrid_planner.query_vector plan in
   let filters = Hybrid_planner.build_payload_filters plan in
   let limit = Int.max (plan.Query_intent.limit * 3) 15 in
-  Or_error.try_with (fun () ->
-      Repo_qdrant.vector_search ~vector ~filters ~limit)
-  |> Or_error.bind ~f:Fn.id
-  |> Or_error.map ~f:Hybrid_planner.vector_hits_of_points
+  match
+    Or_error.try_with (fun () ->
+        Repo_qdrant.vector_search ~vector:vector_info.vector ~filters ~limit)
+    |> Or_error.bind ~f:Fn.id
+  with
+  | Ok points ->
+      let hits = Hybrid_planner.vector_hits_of_points points in
+      Or_error.return (hits, vector_info.warnings)
+  | Error err ->
+      let message = Error.to_string_hum err in
+      Stdio.eprintf "[chessmate-api][qdrant] vector search failed: %s\n%!"
+        message;
+      let warnings =
+        vector_info.warnings
+        @ [ Printf.sprintf "Vector search unavailable (%s)" message ]
+      in
+      Or_error.return ([], warnings)
 
 let fetch_games = fetch_games_impl
 let fetch_vector_hits = fetch_vector_hits_impl

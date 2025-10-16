@@ -20,8 +20,8 @@
     Given a {!Query_intent.plan}, the planner produces:
     - SQL predicates (filters/rating) the repository understands
     - optional Qdrant payload filters
-    - a deterministic “query vector” used as a placeholder until true query
-      embeddings are introduced
+    - a query vector sourced from the embedding service (or a deterministic
+      fallback when the service is unavailable)
     - helper functions for merging vector metadata with SQL metadata
 
     The executor consumes the results emitted by this module. *)
@@ -35,7 +35,7 @@ type t = { vector_weight : float; keyword_weight : float }
     [keyword_weight] multiplies heuristic keyword overlap. *)
 
 val default : t
-(** Default weighting (70% vector, 30% keyword today). *)
+(** Default weighting (75% vector, 25% keyword today). *)
 
 val scoring_weights : t -> vector:float -> keyword:float -> float
 (** Combine normalised vector/keyword scores using the configured weights. *)
@@ -43,10 +43,18 @@ val scoring_weights : t -> vector:float -> keyword:float -> float
 val build_payload_filters : Query_intent.plan -> Yojson.Safe.t list option
 (** Convert a query plan into Qdrant payload filter clauses. *)
 
-val query_vector : Query_intent.plan -> float list
-(** Deterministically derive a query embedding from the analysed intent. *)
+type query_vector_source = Embedding_service | Deterministic_fallback
 
-(** TODO: replace with real query embeddings once available. *)
+type query_vector = {
+  vector : float list;
+  source : query_vector_source;
+  warnings : string list;
+}
+
+val query_vector : Query_intent.plan -> query_vector
+(** Resolve the query embedding for [plan], yielding the embedding-service
+    output or a deterministic fallback vector when embeddings are disabled.
+    [warnings] surfaces fallback reasons to the caller. *)
 
 type vector_hit = {
   game_id : int;
