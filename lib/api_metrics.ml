@@ -29,6 +29,8 @@ type metric_handles = {
   agent_circuit_breaker : Metrics.Gauge.t;
   db_pool_size : Metrics.Gauge.t;
   db_pool_wait_ratio : Metrics.Gauge.t;
+  query_embedding_total : Metrics.Counter.t;
+  query_embedding_latency : Metrics.Histogram.t;
 }
 
 let metrics_ref : (Registry.t * metric_handles) option ref = ref None
@@ -90,6 +92,14 @@ let create_metrics registry =
       create_gauge
         ~help:"Ratio of waiting clients to total capacity in the Postgres pool"
         "db_pool_wait_ratio";
+    query_embedding_total =
+      create_counter ~label_names:[ "source" ]
+        ~help:"Query embedding attempts by source (service vs fallback)"
+        "query_embedding_total";
+    query_embedding_latency =
+      create_histogram ~label_names:[ "source" ]
+        ~help:"Latency of query embedding resolution in seconds"
+        "query_embedding_duration_seconds";
   }
 
 let ensure_metrics () =
@@ -154,6 +164,16 @@ let set_db_pool_stats ~capacity ~in_use ~available ~waiting ~wait_ratio =
           Metrics.Gauge.set ~label_values:[ label ] value metrics.db_pool_size));
   record_or_warn "db_pool_wait_ratio" (fun () ->
       Metrics.Gauge.set wait_ratio metrics.db_pool_wait_ratio)
+
+let record_query_embedding ~source ~latency_ms =
+  let metrics = ensure_metrics () in
+  record_or_warn "query_embedding_total" (fun () ->
+      Metrics.Counter.inc_one ~label_values:[ source ]
+        metrics.query_embedding_total);
+  let latency_seconds = latency_ms /. 1000.0 in
+  record_or_warn "query_embedding_duration_seconds" (fun () ->
+      Metrics.Histogram.observe ~label_values:[ source ] latency_seconds
+        metrics.query_embedding_latency)
 
 let registry () =
   let _ = ensure_metrics () in

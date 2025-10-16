@@ -443,7 +443,23 @@ let fetch_game_pgns_impl ids =
   | Ok repo -> Repo_postgres.fetch_games_with_pgn repo ~ids
 
 let fetch_vector_hits_impl plan =
+  let embedding_start = Unix.gettimeofday () in
   let vector_info = Hybrid_planner.query_vector plan in
+  let embedding_latency_ms =
+    (Unix.gettimeofday () -. embedding_start) *. 1000.0
+  in
+  let embedding_source =
+    match vector_info.Hybrid_planner.source with
+    | Hybrid_planner.Embedding_service -> "service"
+    | Hybrid_planner.Deterministic_fallback -> "fallback"
+  in
+  Api_metrics.record_query_embedding ~source:embedding_source
+    ~latency_ms:embedding_latency_ms;
+  (match vector_info.Hybrid_planner.source with
+  | Hybrid_planner.Embedding_service -> ()
+  | Hybrid_planner.Deterministic_fallback ->
+      List.iter vector_info.warnings ~f:(fun warning ->
+          Stdio.eprintf "[chessmate-api][embedding][fallback] %s\n%!" warning));
   let filters = Hybrid_planner.build_payload_filters plan in
   let limit = Int.max (plan.Query_intent.limit * 3) 15 in
   match

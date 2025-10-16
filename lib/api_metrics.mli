@@ -23,6 +23,7 @@ val record_agent_cache_hit : unit -> unit
 val record_agent_cache_miss : unit -> unit
 val record_agent_evaluation : success:bool -> latency_ms:float -> unit
 val set_agent_circuit_state : open_:bool -> unit
+val record_query_embedding : source:string -> latency_ms:float -> unit
 
 val set_db_pool_stats :
   capacity:int ->

@@ -32,6 +32,9 @@ LLM-based scoring.
   `Hybrid_planner.query_vector` now calls the embeddings client and only falls
   back to the deterministic hash when the service is unavailable (warnings are
   surfaced through the executor).
+- Monitor `query_embedding_total{source="fallback"}` and
+  `query_embedding_duration_seconds` via Prometheus to ensure deterministic
+  fallbacks remain rare.
 - Tune hybrid scoring weights (default 75% vector / 25% keyword) in
   `Hybrid_planner.default` as you calibrate real embedding quality.
 - Add metadata filters by extending `Query_intent.metadata_filter` and updating
