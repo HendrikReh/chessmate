@@ -133,8 +133,10 @@ let test_hybrid_executor_pipeline () =
             let fetch_vector_hits (_ : Query_intent.plan) =
               Or_error.return ([ vector_hit ], [])
             in
+            let breaker = Agent_circuit_breaker.create () in
             let* execution =
-              Hybrid_executor.execute ~fetch_games ~fetch_vector_hits plan
+              Hybrid_executor.execute ~fetch_games ~fetch_vector_hits
+                ~agent_circuit_breaker:breaker plan
             in
             Or_error.return (execution, game_id))
       in

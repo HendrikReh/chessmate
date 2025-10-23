@@ -52,6 +52,7 @@ val execute :
   ?agent_timeout_seconds:float ->
   ?agent_candidate_multiplier:int ->
   ?agent_candidate_max:int ->
+  agent_circuit_breaker:Agent_circuit_breaker.t ->
   Query_intent.plan ->
   execution Or_error.t
 (** Run a hybrid query using the supplied data providers. *)

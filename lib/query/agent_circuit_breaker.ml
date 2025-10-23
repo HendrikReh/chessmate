@@ -1,6 +1,7 @@
 open! Base
 
 type status = Disabled | Closed | Half_open | Open
+type metrics_hook = open_:bool -> unit
 
 type t = {
   mutable enabled : bool;
@@ -9,9 +10,12 @@ type t = {
   mutable failure_count : int;
   mutable open_until : float option;
   mutable half_open : bool;
+  metrics_hook : metrics_hook;
 }
 
-let state : t =
+let default_metrics_hook ~open_ = Api_metrics.set_agent_circuit_state ~open_
+
+let create ?(metrics_hook = default_metrics_hook) () =
   {
     enabled = false;
     threshold = 0;
@@ -19,66 +23,65 @@ let state : t =
     failure_count = 0;
     open_until = None;
     half_open = false;
+    metrics_hook;
   }
 
-let reset_metrics () = Api_metrics.set_agent_circuit_state ~open_:false
-
-let configure ~threshold ~cooloff_seconds =
+let configure t ~threshold ~cooloff_seconds =
   if threshold <= 0 then (
-    state.enabled <- false;
-    state.threshold <- 0;
-    state.cooloff <- 0.;
-    state.failure_count <- 0;
-    state.open_until <- None;
-    state.half_open <- false;
-    reset_metrics ())
+    t.enabled <- false;
+    t.threshold <- 0;
+    t.cooloff <- 0.;
+    t.failure_count <- 0;
+    t.open_until <- None;
+    t.half_open <- false;
+    t.metrics_hook ~open_:false)
   else (
-    state.enabled <- true;
-    state.threshold <- threshold;
-    state.cooloff <- cooloff_seconds;
-    state.failure_count <- 0;
-    state.open_until <- None;
-    state.half_open <- false;
-    reset_metrics ())
+    t.enabled <- true;
+    t.threshold <- threshold;
+    t.cooloff <- cooloff_seconds;
+    t.failure_count <- 0;
+    t.open_until <- None;
+    t.half_open <- false;
+    t.metrics_hook ~open_:false)
 
-let current_status () =
-  if not state.enabled then Disabled
+let current_status t =
+  if not t.enabled then Disabled
   else
     let now = Unix.gettimeofday () in
-    match state.open_until with
+    match t.open_until with
     | Some until when Float.(now < until) -> Open
     | Some _ -> Half_open
-    | None -> if state.half_open then Half_open else Closed
+    | None -> if t.half_open then Half_open else Closed
 
-let should_allow () =
-  if not state.enabled then true
+let should_allow t =
+  if not t.enabled then true
   else
     let now = Unix.gettimeofday () in
-    match state.open_until with
+    match t.open_until with
     | Some until when Float.(now < until) -> false
     | Some _ ->
-        state.open_until <- None;
-        state.half_open <- true;
-        Api_metrics.set_agent_circuit_state ~open_:false;
+        t.open_until <- None;
+        t.half_open <- true;
+        t.metrics_hook ~open_:false;
         true
     | None -> true
 
-let record_success () =
-  if state.enabled then (
-    state.failure_count <- 0;
-    state.open_until <- None;
-    state.half_open <- false;
-    Api_metrics.set_agent_circuit_state ~open_:false)
+let record_success t =
+  if t.enabled then (
+    t.failure_count <- 0;
+    t.open_until <- None;
+    t.half_open <- false;
+    t.metrics_hook ~open_:false)
 
-let record_failure () =
-  if state.enabled then (
-    state.failure_count <- state.failure_count + 1;
-    state.half_open <- false;
+let record_failure t =
+  if t.enabled then (
+    t.failure_count <- t.failure_count + 1;
+    t.half_open <- false;
     let now = Unix.gettimeofday () in
-    if state.failure_count >= state.threshold then (
-      state.failure_count <- 0;
-      state.open_until <- Some (now +. state.cooloff);
-      Api_metrics.set_agent_circuit_state ~open_:true))
+    if t.failure_count >= t.threshold then (
+      t.failure_count <- 0;
+      t.open_until <- Some (now +. t.cooloff);
+      t.metrics_hook ~open_:true))
 
 let status_to_string = function
   | Disabled -> "disabled"

@@ -165,8 +165,10 @@ let test_hybrid_executor_merges_vector_hits () =
     |> Hybrid_planner.vector_hits_of_points
   in
   let fetch_vectors _ = Or_error.return (vector_hits, []) in
+  let breaker = Agent_circuit_breaker.create () in
   match
-    Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors plan
+    Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors
+      ~agent_circuit_breaker:breaker plan
   with
   | Error err -> failf "hybrid executor failed: %s" (Error.to_string_hum err)
   | Ok execution ->
@@ -196,8 +198,10 @@ let test_hybrid_executor_warns_on_vector_failure () =
     Or_error.return Repo_postgres.{ games = [ sample_summary ]; total = 1 }
   in
   let fetch_vectors _ = Or_error.error_string "boom" in
+  let breaker = Agent_circuit_breaker.create () in
   match
-    Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors plan
+    Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors
+      ~agent_circuit_breaker:breaker plan
   with
   | Error err -> failf "unexpected failure: %s" (Error.to_string_hum err)
   | Ok execution ->
@@ -277,9 +281,10 @@ let test_hybrid_executor_with_agent () =
     in
     Or_error.return evals
   in
+  let breaker = Agent_circuit_breaker.create () in
   match
     Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors
-      ~fetch_game_pgns ~agent_evaluator plan
+      ~fetch_game_pgns ~agent_evaluator ~agent_circuit_breaker:breaker plan
   with
   | Error err -> failf "agent execution failed: %s" (Error.to_string_hum err)
   | Ok execution ->
@@ -359,9 +364,11 @@ let test_hybrid_executor_agent_cache () =
     in
     Or_error.return evaluations
   in
+  let breaker = Agent_circuit_breaker.create () in
   let exec () =
     Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors
-      ~fetch_game_pgns ~agent_evaluator ~agent_cache:cache plan
+      ~fetch_game_pgns ~agent_evaluator ~agent_cache:cache
+      ~agent_circuit_breaker:breaker plan
   in
   (match exec () with
   | Error err -> failf "first execution failed: %s" (Error.to_string_hum err)
@@ -391,8 +398,10 @@ let test_hybrid_executor_pagination_has_more () =
     Or_error.return Repo_postgres.{ games = summaries; total = 5 }
   in
   let fetch_vectors _ = Or_error.return ([], []) in
+  let breaker = Agent_circuit_breaker.create () in
   match
-    Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors plan
+    Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors
+      ~agent_circuit_breaker:breaker plan
   with
   | Error err -> failf "unexpected failure: %s" (Error.to_string_hum err)
   | Ok execution ->
@@ -412,8 +421,10 @@ let test_hybrid_executor_offset_exceeds_total () =
   in
   let fetch_games _ = Or_error.return Repo_postgres.{ games = []; total = 3 } in
   let fetch_vectors _ = Or_error.return ([], []) in
+  let breaker = Agent_circuit_breaker.create () in
   match
-    Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors plan
+    Hybrid_executor.execute ~fetch_games ~fetch_vector_hits:fetch_vectors
+      ~agent_circuit_breaker:breaker plan
   with
   | Error err -> failf "unexpected failure: %s" (Error.to_string_hum err)
   | Ok execution ->

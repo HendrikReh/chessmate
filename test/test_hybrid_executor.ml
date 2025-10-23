@@ -18,8 +18,9 @@ let sample_summary id : Repo_postgres.game_summary =
   }
 
 let test_skip_when_circuit_open () =
-  Agent_circuit_breaker.configure ~threshold:1 ~cooloff_seconds:60.;
-  Agent_circuit_breaker.record_failure ();
+  let breaker = Agent_circuit_breaker.create () in
+  Agent_circuit_breaker.configure breaker ~threshold:1 ~cooloff_seconds:60.;
+  Agent_circuit_breaker.record_failure breaker;
   let fetch_games _plan =
     Or_error.return Repo_postgres.{ games = [ sample_summary 1 ]; total = 1 }
   in
@@ -50,7 +51,7 @@ let test_skip_when_circuit_open () =
   match
     Hybrid_executor.execute ~fetch_games ~fetch_vector_hits ~fetch_game_pgns
       ~agent_evaluator ~agent_candidate_multiplier:1 ~agent_candidate_max:1
-      ~agent_timeout_seconds:5. plan
+      ~agent_timeout_seconds:5. ~agent_circuit_breaker:breaker plan
   with
   | Error err -> failf "hybrid executor failed: %s" (Error.to_string_hum err)
   | Ok execution ->

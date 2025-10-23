@@ -64,6 +64,8 @@ module Api = struct
       | Disabled
   end
 
+  let ( let* ) t f = Or_error.bind t ~f
+
   type agent = {
     api_key : string option;
     endpoint : string;
@@ -205,56 +207,41 @@ module Api = struct
         ~default:default_agent_endpoint
     in
     let model = Helpers.optional "AGENT_MODEL" in
-    load_reasoning_effort ()
-    |> Or_error.bind ~f:(fun reasoning_effort ->
-           load_verbosity ()
-           |> Or_error.bind ~f:(fun verbosity ->
-                  load_agent_cache ()
-                  |> Or_error.bind ~f:(fun cache ->
-                         load_agent_timeout ()
-                         |> Or_error.bind ~f:(fun request_timeout_seconds ->
-                                load_candidate_multiplier ()
-                                |> Or_error.bind ~f:(fun candidate_multiplier ->
-                                       load_candidate_max ()
-                                       |> Or_error.bind ~f:(fun candidate_max ->
-                                              load_circuit_breaker_threshold ()
-                                              |> Or_error.bind
-                                                   ~f:(fun
-                                                       circuit_breaker_threshold
-                                                     ->
-                                                     load_circuit_breaker_cooloff
-                                                       ()
-                                                     |> Or_error.bind
-                                                          ~f:(fun
-                                                              circuit_breaker_cooloff_seconds
-                                                            ->
-                                                            Or_error.return
-                                                              {
-                                                                api_key;
-                                                                endpoint;
-                                                                model;
-                                                                reasoning_effort;
-                                                                verbosity;
-                                                                request_timeout_seconds;
-                                                                cache;
-                                                                candidate_multiplier;
-                                                                candidate_max;
-                                                                circuit_breaker_threshold;
-                                                                circuit_breaker_cooloff_seconds;
-                                                              }))))))))
+    let* reasoning_effort = load_reasoning_effort () in
+    let* verbosity = load_verbosity () in
+    let* cache = load_agent_cache () in
+    let* request_timeout_seconds = load_agent_timeout () in
+    let* candidate_multiplier = load_candidate_multiplier () in
+    let* candidate_max = load_candidate_max () in
+    let* circuit_breaker_threshold = load_circuit_breaker_threshold () in
+    let* circuit_breaker_cooloff_seconds =
+      load_circuit_breaker_cooloff ()
+    in
+    Or_error.return
+      {
+        api_key;
+        endpoint;
+        model;
+        reasoning_effort;
+        verbosity;
+        request_timeout_seconds;
+        cache;
+        candidate_multiplier;
+        candidate_max;
+        circuit_breaker_threshold;
+        circuit_breaker_cooloff_seconds;
+      }
 
   let load_rate_limit () =
     let parse_optional_positive name =
       match Helpers.optional name with
-      | None -> Or_error.return None
-      | Some raw when String.is_empty raw -> Or_error.return None
+      | None | Some "" -> Or_error.return None
       | Some raw ->
           Helpers.parse_positive_int name raw |> Or_error.map ~f:Option.some
     in
     let parse_body_bucket ~body_bytes_per_minute =
       match Helpers.optional "CHESSMATE_RATE_LIMIT_BODY_BUCKET_SIZE" with
-      | None -> Or_error.return None
-      | Some raw when String.is_empty raw -> Or_error.return None
+      | None | Some "" -> Or_error.return None
       | Some raw -> (
           match body_bytes_per_minute with
           | None ->
@@ -266,93 +253,65 @@ module Api = struct
               |> Or_error.map ~f:Option.some)
     in
     match Helpers.optional "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE" with
-    | None -> Or_error.return None
-    | Some raw when String.is_empty raw -> Or_error.return None
+    | None | Some "" -> Or_error.return None
     | Some raw ->
-        Helpers.parse_positive_int "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE"
-          raw
-        |> Or_error.bind ~f:(fun requests_per_minute ->
-               parse_optional_positive "CHESSMATE_RATE_LIMIT_BUCKET_SIZE"
-               |> Or_error.bind ~f:(fun bucket_size ->
-                      parse_optional_positive
-                        "CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE"
-                      |> Or_error.bind ~f:(fun body_bytes_per_minute ->
-                             parse_body_bucket ~body_bytes_per_minute
-                             |> Or_error.bind ~f:(fun body_bucket_size ->
-                                    Or_error.return
-                                      (Some
-                                         {
-                                           Rate_limit.requests_per_minute;
-                                           bucket_size;
-                                           body_bytes_per_minute;
-                                           body_bucket_size;
-                                         })))))
+        let* requests_per_minute =
+          Helpers.parse_positive_int "CHESSMATE_RATE_LIMIT_REQUESTS_PER_MINUTE" raw
+        in
+        let* bucket_size =
+          parse_optional_positive "CHESSMATE_RATE_LIMIT_BUCKET_SIZE"
+        in
+        let* body_bytes_per_minute =
+          parse_optional_positive "CHESSMATE_RATE_LIMIT_BODY_BYTES_PER_MINUTE"
+        in
+        let* body_bucket_size = parse_body_bucket ~body_bytes_per_minute in
+        Or_error.return
+          (Some
+             {
+               Rate_limit.requests_per_minute;
+               bucket_size;
+               body_bytes_per_minute;
+               body_bucket_size;
+             })
 
   let load_qdrant_collection () =
-    let name_result =
-      match Helpers.optional "QDRANT_COLLECTION_NAME" with
-      | None -> Ok default_collection_name
-      | Some raw when String.is_empty raw -> Ok default_collection_name
-      | Some raw -> Ok raw
+    let normalise_distance raw =
+      match raw with
+      | None | Some "" -> default_distance
+      | Some value -> String.capitalize (String.strip value)
     in
-    match name_result with
-    | Error err -> Error err
-    | Ok name -> (
-        match Helpers.optional "QDRANT_VECTOR_SIZE" with
-        | Some raw -> (
-            match Helpers.parse_positive_int "QDRANT_VECTOR_SIZE" raw with
-            | Error err -> Error err
-            | Ok vector_size ->
-                let distance =
-                  match Helpers.optional "QDRANT_DISTANCE" with
-                  | None -> default_distance
-                  | Some raw when String.is_empty raw -> default_distance
-                  | Some raw -> String.capitalize (String.strip raw)
-                in
-                Ok (Some Qdrant.{ name; vector_size; distance }))
-        | None ->
-            let distance =
-              match Helpers.optional "QDRANT_DISTANCE" with
-              | None -> default_distance
-              | Some raw when String.is_empty raw -> default_distance
-              | Some raw -> String.capitalize (String.strip raw)
-            in
-            Ok
-              (Some Qdrant.{ name; vector_size = default_vector_size; distance })
-        )
+    let* name =
+      match Helpers.optional "QDRANT_COLLECTION_NAME" with
+      | None | Some "" -> Or_error.return default_collection_name
+      | Some raw -> Or_error.return raw
+    in
+    let distance = normalise_distance (Helpers.optional "QDRANT_DISTANCE") in
+    match Helpers.optional "QDRANT_VECTOR_SIZE" with
+    | None ->
+        Or_error.return
+          (Some Qdrant.{ name; vector_size = default_vector_size; distance })
+    | Some raw ->
+        let* vector_size = Helpers.parse_positive_int "QDRANT_VECTOR_SIZE" raw in
+        Or_error.return (Some Qdrant.{ name; vector_size; distance })
 
   let load () =
-    match Helpers.require "DATABASE_URL" with
-    | Error err -> Error err
-    | Ok database_url -> (
-        match Helpers.require "QDRANT_URL" with
-        | Error err -> Error err
-        | Ok qdrant_url -> (
-            match load_port () with
-            | Error err -> Error err
-            | Ok port -> (
-                match load_agent () with
-                | Error err -> Error err
-                | Ok agent -> (
-                    match load_rate_limit () with
-                    | Error err -> Error err
-                    | Ok rate_limit -> (
-                        match load_qdrant_collection () with
-                        | Error err -> Error err
-                        | Ok qdrant_collection -> (
-                            match load_max_request_body_bytes () with
-                            | Error err -> Error err
-                            | Ok max_request_body_bytes ->
-                                Or_error.return
-                                  {
-                                    database_url;
-                                    qdrant_url;
-                                    port;
-                                    agent;
-                                    rate_limit;
-                                    qdrant_collection;
-                                    max_request_body_bytes;
-                                  }))))))
+    let* database_url = Helpers.require "DATABASE_URL" in
+    let* qdrant_url = Helpers.require "QDRANT_URL" in
+    let* port = load_port () in
+    let* agent = load_agent () in
+    let* rate_limit = load_rate_limit () in
+    let* qdrant_collection = load_qdrant_collection () in
+    let* max_request_body_bytes = load_max_request_body_bytes () in
+    Or_error.return
+      {
+        database_url;
+        qdrant_url;
+        port;
+        agent;
+        rate_limit;
+        qdrant_collection;
+        max_request_body_bytes;
+      }
 end
 
 module Worker = struct
