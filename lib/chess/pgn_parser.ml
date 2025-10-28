@@ -135,11 +135,11 @@ let parse_moves move_lines =
     in
     let rec loop tokens acc current_turn ply =
       match tokens with
-      | [] -> Or_error.return (List.rev acc)
+      | [] -> Or_error.return acc
       | token :: rest ->
           let token = String.strip token in
           if String.is_empty token then loop rest acc current_turn ply
-          else if is_result_token token then Or_error.return (List.rev acc)
+          else if is_result_token token then Or_error.return acc
           else if Char.(token.[0] = '$') then loop rest acc current_turn ply
           else
             let len = String.length token in
@@ -184,7 +184,7 @@ let parse_moves move_lines =
               in
               loop rest (move :: acc) next_turn next_ply
     in
-    loop tokens [] 0 0
+    loop tokens [] 0 0 |> Or_error.map ~f:List.rev
 
 let parse raw_pgn =
   let sanitized = strip_comments raw_pgn in
