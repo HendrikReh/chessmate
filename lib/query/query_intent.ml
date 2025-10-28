@@ -105,40 +105,41 @@ let tokenize text =
   String.split text ~on:' '
   |> List.filter ~f:(fun token -> not (String.is_empty token))
 
+let number_word_map =
+  Map.of_alist_exn
+    (module String)
+    [
+      ("one", 1);
+      ("two", 2);
+      ("three", 3);
+      ("four", 4);
+      ("five", 5);
+      ("six", 6);
+      ("seven", 7);
+      ("eight", 8);
+      ("nine", 9);
+      ("ten", 10);
+      ("eleven", 11);
+      ("twelve", 12);
+      ("thirteen", 13);
+      ("fourteen", 14);
+      ("fifteen", 15);
+      ("sixteen", 16);
+      ("seventeen", 17);
+      ("eighteen", 18);
+      ("nineteen", 19);
+      ("twenty", 20);
+      ("thirty", 30);
+      ("forty", 40);
+      ("fifty", 50);
+      ("hundred", 100);
+    ]
+
 let int_of_token token =
   if String.is_empty token then None
   else if String.for_all token ~f:Char.is_digit then
     try Some (Int.of_string token) with Failure _ -> None
-  else
-    let mapping =
-      [
-        ("one", 1);
-        ("two", 2);
-        ("three", 3);
-        ("four", 4);
-        ("five", 5);
-        ("six", 6);
-        ("seven", 7);
-        ("eight", 8);
-        ("nine", 9);
-        ("ten", 10);
-        ("eleven", 11);
-        ("twelve", 12);
-        ("thirteen", 13);
-        ("fourteen", 14);
-        ("fifteen", 15);
-        ("sixteen", 16);
-        ("seventeen", 17);
-        ("eighteen", 18);
-        ("nineteen", 19);
-        ("twenty", 20);
-        ("thirty", 30);
-        ("forty", 40);
-        ("fifty", 50);
-        ("hundred", 100);
-      ]
-    in
-    List.Assoc.find mapping ~equal:String.equal token
+  else Map.find number_word_map token
 
 let limit_from_tokens tokens =
   let qualifier_words =
