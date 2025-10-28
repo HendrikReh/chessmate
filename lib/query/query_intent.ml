@@ -228,20 +228,28 @@ let metadata_from_phrases cleaned =
   dedup_filters (manual_filters @ opening_filters)
 
 let result_filters cleaned =
-  let result = ref [] in
-  if
-    String.is_substring cleaned ~substring:"white win"
-    || String.is_substring cleaned ~substring:"white victory"
-  then result := { field = "result"; value = "1-0" } :: !result;
-  if
-    String.is_substring cleaned ~substring:"black win"
-    || String.is_substring cleaned ~substring:"black victory"
-  then result := { field = "result"; value = "0-1" } :: !result;
-  if
-    String.is_substring cleaned ~substring:"draw"
-    || String.is_substring cleaned ~substring:"drawn"
-  then result := { field = "result"; value = "1/2-1/2" } :: !result;
-  dedup_filters !result
+  let white_win_filter =
+    if
+      String.is_substring cleaned ~substring:"white win"
+      || String.is_substring cleaned ~substring:"white victory"
+    then [ { field = "result"; value = "1-0" } ]
+    else []
+  in
+  let black_win_filter =
+    if
+      String.is_substring cleaned ~substring:"black win"
+      || String.is_substring cleaned ~substring:"black victory"
+    then [ { field = "result"; value = "0-1" } ]
+    else []
+  in
+  let draw_filter =
+    if
+      String.is_substring cleaned ~substring:"draw"
+      || String.is_substring cleaned ~substring:"drawn"
+    then [ { field = "result"; value = "1/2-1/2" } ]
+    else []
+  in
+  dedup_filters (white_win_filter @ black_win_filter @ draw_filter)
 
 let extract_keywords tokens =
   let rec loop tokens seen acc =
@@ -254,6 +262,18 @@ let extract_keywords tokens =
         else loop rest (Set.add seen token) (token :: acc)
   in
   loop tokens (Set.empty (module String)) []
+
+let difference_words =
+  Set.of_list
+    (module String)
+    [ "lower"; "less"; "higher"; "greater"; "more"; "fewer" ]
+
+let min_context_words =
+  Set.of_list
+    (module String)
+    [
+      "least"; "minimum"; "min"; "over"; "above"; "atleast"; "at_least"; ">=";
+    ]
 
 let parse_rating tokens =
   let module State = struct
@@ -296,18 +316,6 @@ let parse_rating tokens =
         in
         { rating with black_min = updated }
     | None -> rating
-  in
-  let difference_words =
-    Set.of_list
-      (module String)
-      [ "lower"; "less"; "higher"; "greater"; "more"; "fewer" ]
-  in
-  let min_context_words =
-    Set.of_list
-      (module String)
-      [
-        "least"; "minimum"; "min"; "over"; "above"; "atleast"; "at_least"; ">=";
-      ]
   in
   let update_previous previous token =
     let trimmed = List.take previous 4 in
