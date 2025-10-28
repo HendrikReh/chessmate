@@ -86,7 +86,7 @@ let tokenize_sources sources =
     if Stdlib.Buffer.length buffer >= 3 then (
       let token = Stdlib.Buffer.contents buffer in
       Stdlib.Buffer.clear buffer;
-      token :: acc)
+      Set.add acc token)
     else (
       Stdlib.Buffer.clear buffer;
       acc)
@@ -99,12 +99,12 @@ let tokenize_sources sources =
     else flush acc
   in
   let acc =
-    List.fold sources ~init:[] ~f:(fun acc source ->
+    List.fold sources ~init:(Set.empty (module String)) ~f:(fun acc source ->
         let acc = String.fold source ~init:acc ~f:push_char in
         flush acc)
   in
   let acc = flush acc in
-  acc |> List.dedup_and_sort ~compare:String.compare
+  Set.to_list acc
 
 let summary_keyword_tokens summary =
   let sources =
